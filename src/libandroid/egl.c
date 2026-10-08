@@ -169,7 +169,7 @@ EGLSurface bionic_eglCreatePbufferSurface(EGLDisplay display, EGLConfig config, 
 			size_t attrib_list_len = 0;
 			for (EGLint *attr = (EGLint *)attrib_list; *attr != EGL_NONE; attr++)
 				attrib_list_len++;
-			new_attrib_list = malloc(attrib_list_len);
+			new_attrib_list = malloc(sizeof(EGLint) * (attrib_list_len + 1));
 			EGLint *new_attr_pos = new_attrib_list;
 			for (EGLint *attr = (EGLint *)attrib_list; *attr != EGL_NONE; attr += 2) {
 				if (*attr == EGL_WIDTH) {
@@ -508,12 +508,14 @@ EGLSurface bionic_eglGetCurrentSurface(EGLint readdraw)
 	if (getenv("ATL_DIRECT_EGL"))
 		return eglGetCurrentSurface(readdraw);
 	EGLContext current_context = eglGetCurrentContext();
+	EGLSurface surface = NULL; /* tl_current_surface_fallback */
 	if (readdraw == EGL_READ)
-		return tl_table_lookup(read_surface_hashtable, current_context);
+		surface = tl_table_lookup(read_surface_hashtable, current_context);
 	else if (readdraw == EGL_DRAW)
-		return tl_table_lookup(draw_surface_hashtable, current_context);
-
-	return NULL;
+		surface = tl_table_lookup(draw_surface_hashtable, current_context);
+	if (!surface)
+		surface = eglGetCurrentSurface(readdraw);
+	return surface;
 }
 
 void bionic_glBindFramebuffer(GLenum target, GLuint framebuffer)
