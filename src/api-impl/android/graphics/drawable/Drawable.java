@@ -427,4 +427,16 @@ public class Drawable {
 	public boolean canApplyTheme() { return false; }
 	public android.graphics.Region getTransparentRegion() { return null; }
 	protected boolean onLevelChange(int level) { return false; }
+
+	/** Inflate this Drawable from an XML resource (AOSP: reads android:visible). */
+	public void inflate(android.content.res.Resources r, org.xmlpull.v1.XmlPullParser parser, android.util.AttributeSet attrs) throws org.xmlpull.v1.XmlPullParserException, java.io.IOException {
+		inflate(r, parser, attrs, null);
+	}
+
+	public void inflate(android.content.res.Resources r, org.xmlpull.v1.XmlPullParser parser, android.util.AttributeSet attrs, android.content.res.Resources.Theme theme) throws org.xmlpull.v1.XmlPullParserException, java.io.IOException {
+		if (attrs != null) {
+			boolean visible = attrs.getAttributeBooleanValue("http://schemas.android.com/apk/res/android", "visible", true);
+			setVisible(visible, false);
+		}
+	}
 }

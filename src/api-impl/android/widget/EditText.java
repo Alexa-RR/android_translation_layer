@@ -74,4 +74,10 @@ public class EditText extends TextView {
 	}
 
 	public void selectAll() {}
+
+	/** Performs the editor action (IME action id); the listener gets it first, as with the IME. */
+	public void onEditorAction(int actionCode) {
+		if (tlEditorActionListener != null)
+			tlEditorActionListener.onEditorAction(this, actionCode, null);
+	}
 }

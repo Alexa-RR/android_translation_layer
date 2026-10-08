@@ -1,6 +1,13 @@
 package android.text;
 
-public interface Editable extends CharSequence {
+public interface Editable extends CharSequence, GetChars, Spannable, Appendable {
+
+	/** AOSP: append the text at the end (replace(length(), length(), text)). */
+	public Editable append(CharSequence text);
+
+	public Editable append(CharSequence text, int start, int end);
+
+	public Editable append(char text);
 
 	public class Factory {
 		public static Factory getInstance() {

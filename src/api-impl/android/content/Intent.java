@@ -949,4 +949,25 @@ public class Intent implements Parcelable {
 	public static final int URI_INTENT_SCHEME = 1 << 0;
 	public static final int URI_ANDROID_APP_SCHEME = 1 << 1;
 	public static final int URI_ALLOW_UNSAFE = 1 << 2;
+
+	/** API 33 typed extras: the value when it is an instance of clazz, else null (AOSP semantics). */
+	public <T> T getParcelableExtra(String name, Class<T> clazz) {
+		Object o = getParcelableExtra(name);
+		return clazz.isInstance(o) ? clazz.cast(o) : null;
+	}
+
+	public <T extends java.io.Serializable> T getSerializableExtra(String name, Class<T> clazz) {
+		Object o = getSerializableExtra(name);
+		return clazz.isInstance(o) ? clazz.cast(o) : null;
+	}
+
+	public <T> java.util.ArrayList<T> getParcelableArrayListExtra(String name, Class<? extends T> clazz) {
+		android.os.Bundle extras = getExtras();
+		return extras == null ? null : extras.getParcelableArrayList(name, clazz);
+	}
+
+	/** API 22: a chooser with a sender notified of the chosen component; no chooser UI exists here, so the target is used directly. */
+	public static Intent createChooser(Intent target, CharSequence title, IntentSender sender) {
+		return createChooser(target, title);
+	}
 }

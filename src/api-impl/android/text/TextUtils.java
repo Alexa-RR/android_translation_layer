@@ -462,4 +462,52 @@ public class TextUtils {
 		}
 		return text;
 	}
+
+	/** Writes a CharSequence to a Parcel (AOSP writes its spans too; this Parcel carries the text). */
+	public static void writeToParcel(CharSequence cs, android.os.Parcel p, int parcelableFlags) {
+		p.writeString(cs == null ? null : cs.toString());
+	}
+
+	public static final android.os.Parcelable.Creator<CharSequence> CHAR_SEQUENCE_CREATOR = new android.os.Parcelable.Creator<CharSequence>() {
+		public CharSequence createFromParcel(android.os.Parcel p) {
+			return p.readString();
+		}
+
+		public CharSequence[] newArray(int size) {
+			return new CharSequence[size];
+		}
+	};
+
+	/** Span type ids used by writeToParcel/CHAR_SEQUENCE_CREATOR and ParcelableSpan (AOSP). */
+	public static final int ALIGNMENT_SPAN = 1;
+	public static final int FIRST_SPAN = ALIGNMENT_SPAN;
+	public static final int FOREGROUND_COLOR_SPAN = 2;
+	public static final int RELATIVE_SIZE_SPAN = 3;
+	public static final int SCALE_X_SPAN = 4;
+	public static final int STRIKETHROUGH_SPAN = 5;
+	public static final int UNDERLINE_SPAN = 6;
+	public static final int STYLE_SPAN = 7;
+	public static final int BULLET_SPAN = 8;
+	public static final int QUOTE_SPAN = 9;
+	public static final int LEADING_MARGIN_SPAN = 10;
+	public static final int URL_SPAN = 11;
+	public static final int BACKGROUND_COLOR_SPAN = 12;
+	public static final int TYPEFACE_SPAN = 13;
+	public static final int SUPERSCRIPT_SPAN = 14;
+	public static final int SUBSCRIPT_SPAN = 15;
+	public static final int ABSOLUTE_SIZE_SPAN = 16;
+	public static final int TEXT_APPEARANCE_SPAN = 17;
+	public static final int ANNOTATION = 18;
+	public static final int SUGGESTION_SPAN = 19;
+	public static final int SPELL_CHECK_SPAN = 20;
+	public static final int SUGGESTION_RANGE_SPAN = 21;
+	public static final int EASY_EDIT_SPAN = 22;
+	public static final int LOCALE_SPAN = 23;
+	public static final int TTS_SPAN = 24;
+	public static final int ACCESSIBILITY_CLICKABLE_SPAN = 25;
+	public static final int ACCESSIBILITY_URL_SPAN = 26;
+	public static final int LINE_BACKGROUND_SPAN = 27;
+	public static final int LINE_HEIGHT_SPAN = 28;
+	public static final int ACCESSIBILITY_REPLACEMENT_SPAN = 29;
+	public static final int LAST_SPAN = ACCESSIBILITY_REPLACEMENT_SPAN;
 }

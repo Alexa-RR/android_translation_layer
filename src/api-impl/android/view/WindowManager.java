@@ -111,4 +111,16 @@ public interface WindowManager {
 	default void addCrossWindowBlurEnabledListener(java.util.function.Consumer<Boolean> listener) {}
 	default void addCrossWindowBlurEnabledListener(java.util.concurrent.Executor executor, java.util.function.Consumer<Boolean> listener) {}
 	default void removeCrossWindowBlurEnabledListener(java.util.function.Consumer<Boolean> listener) {}
+
+	/** Thrown when a window token is invalid (AOSP). */
+	public static class BadTokenException extends RuntimeException {
+		public BadTokenException() {}
+		public BadTokenException(String name) { super(name); }
+	}
+
+	/** Thrown when the display for a window is invalid (AOSP). */
+	public static class InvalidDisplayException extends RuntimeException {
+		public InvalidDisplayException() {}
+		public InvalidDisplayException(String name) { super(name); }
+	}
 }

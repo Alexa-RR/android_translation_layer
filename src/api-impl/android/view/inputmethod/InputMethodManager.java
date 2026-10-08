@@ -56,4 +56,9 @@ public class InputMethodManager {
 	private static native long nativeInit();
 	private native boolean nativeShowSoftInput(long im_context, long widget, InputConnection ic, int inputType);
 	private native void nativeHideSoftInput(long im_context);
+
+	/** Whether any view is currently the active input (AOSP: the IME is serving some view). */
+	public boolean isActive() {
+		return false;
+	}
 }

@@ -715,7 +715,8 @@ public class View implements Drawable.Callback {
 	}
 
 	public interface OnApplyWindowInsetsListener {
-		// TODO
+		/** When set on a View, called instead of the view's own onApplyWindowInsets. */
+		WindowInsets onApplyWindowInsets(View v, WindowInsets insets);
 	}
 
 	public interface OnLayoutChangeListener {

@@ -674,7 +674,20 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 			rightMargin = marginEnd;
 		}
 
-		public int getLayoutDirection() { return LAYOUT_DIRECTION_LTR; }
+		private int tlLayoutDirection = View.LAYOUT_DIRECTION_LTR;
+
+		public int getLayoutDirection() { return tlLayoutDirection; }
+
+		/** AOSP: the resolved layout direction of these params (LTR/RTL), used by start/end margins. */
+		public void setLayoutDirection(int layoutDirection) {
+			if (layoutDirection != View.LAYOUT_DIRECTION_LTR && layoutDirection != View.LAYOUT_DIRECTION_RTL)
+				return;
+			tlLayoutDirection = layoutDirection;
+		}
+
+		public void resolveLayoutDirection(int layoutDirection) {
+			setLayoutDirection(layoutDirection);
+		}
 
 		public boolean isMarginRelative() { return false; }
 	}

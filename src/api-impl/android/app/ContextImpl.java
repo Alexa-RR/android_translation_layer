@@ -174,6 +174,8 @@ public final class ContextImpl extends Context {
 				return new InputManager();
 			case "location":
 				return new LocationManager();
+			case "download":
+				return new DownloadManager(this);
 			case "uimode":
 				return new UiModeManager();
 			case "input_method":
@@ -250,6 +252,7 @@ public final class ContextImpl extends Context {
 			case "android.app.NotificationManager": return "notification";
 			case "android.app.KeyguardManager": return "keyguard";
 			case "android.location.LocationManager": return "location";
+			case "android.app.DownloadManager": return "download";
 			case "android.app.SearchManager": return "search";
 			case "android.hardware.SensorManager": return "sensor";
 			case "android.os.storage.StorageManager": return "storage";

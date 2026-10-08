@@ -272,4 +272,18 @@ public class Layout {
 	protected native int native_get_offset_for_horizontal(long layout, int line, float x);
 	protected static native float native_get_desired_width(long layout);
 	protected static native void native_free(long layout);
+
+	/** Break strategy, hyphenation and justification constants (AOSP Layout, API 23/26). */
+	public static final int BREAK_STRATEGY_SIMPLE = 0;
+	public static final int BREAK_STRATEGY_HIGH_QUALITY = 1;
+	public static final int BREAK_STRATEGY_BALANCED = 2;
+	public static final int HYPHENATION_FREQUENCY_NONE = 0;
+	public static final int HYPHENATION_FREQUENCY_NORMAL = 1;
+	public static final int HYPHENATION_FREQUENCY_FULL = 2;
+	public static final int HYPHENATION_FREQUENCY_NORMAL_FAST = 3;
+	public static final int HYPHENATION_FREQUENCY_FULL_FAST = 4;
+	public static final int JUSTIFICATION_MODE_NONE = 0;
+	public static final int JUSTIFICATION_MODE_INTER_WORD = 1;
+	/** Default text-direction heuristic for layouts (AOSP). */
+	public static final TextDirectionHeuristic DEFAULT_TEXT_DIRECTION = TextDirectionHeuristics.FIRSTSTRONG_LTR;
 }

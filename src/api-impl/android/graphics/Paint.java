@@ -56,7 +56,15 @@ public class Paint {
 		return native_get_alpha(paint);
 	}
 
+	/** AOSP: whether anti-aliasing is on (the ANTI_ALIAS_FLAG). */
+	public boolean isAntiAlias() {
+		return tlAntiAlias;
+	}
+
+	private boolean tlAntiAlias = true;
+
 	public void setAntiAlias(boolean aa) {
+		tlAntiAlias = aa;
 	}
 
 	public boolean setFontVariationSettings(String fvs) {
@@ -129,7 +137,7 @@ public class Paint {
 		return colorFilter;
 	}
 
-	public Object getColorFilter() {
+	public ColorFilter getColorFilter() {
 		return color_filter;
 	}
 
@@ -364,7 +372,7 @@ public class Paint {
 		return Join.values[native_get_stroke_join(paint)];
 	}
 
-	public Locale getTextLocale() { return Locale.getDefault(); }
+	public Locale getTextLocale() { return getTextLocales().get(0); }
 
 	public float getLetterSpacing() { return 1.0f; }
 
@@ -420,4 +428,46 @@ public class Paint {
 	public String getFontVariationSettings() { return null; }
 	public void setColor(long color) { setColor((int) (color >> 32)); }
 	public long getColorLongCompat() { return getColorLong(); }
+
+	/** Text locales (AOSP mLocales): never empty, defaults to the system locale list. */
+	private android.os.LocaleList mLocales;
+
+	/** Sets the text locale list; must not be empty (AOSP semantics). */
+	public void setTextLocales(android.os.LocaleList locales) {
+		if (locales == null || locales.isEmpty())
+			throw new IllegalArgumentException("locales cannot be null or empty");
+		mLocales = locales;
+	}
+
+	/** Sets a single text locale. */
+	public void setTextLocale(Locale locale) {
+		if (locale == null)
+			throw new IllegalArgumentException("locale cannot be null");
+		mLocales = new android.os.LocaleList(locale);
+	}
+
+	/** The text locale list (AOSP getTextLocales). */
+	public android.os.LocaleList getTextLocales() {
+		if (mLocales == null)
+			mLocales = new android.os.LocaleList(Locale.getDefault());
+		return mLocales;
+	}
+
+	/** Bounds of the text (API 29 CharSequence overload). */
+	public void getTextBounds(CharSequence text, int start, int end, Rect bounds) {
+		getTextBounds(text.toString(), start, end, bounds);
+	}
+
+	private String mFontFeatureSettings;
+
+	/** CSS-style font feature settings, e.g. "smcp" (AOSP); kept for the layout engine to read. */
+	public String getFontFeatureSettings() {
+		return mFontFeatureSettings;
+	}
+
+	public void setFontFeatureSettings(String settings) {
+		if (settings != null && settings.isEmpty())
+			settings = null;
+		mFontFeatureSettings = settings;
+	}
 }

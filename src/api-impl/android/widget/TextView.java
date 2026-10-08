@@ -190,7 +190,11 @@ public class TextView extends View {
 
 	public void addTextChangedListener(TextWatcher watcher) {}
 	public void removeTextChangedListener(TextWatcher watcher) {}
-	public void setOnEditorActionListener(TextView.OnEditorActionListener l) {}
+	protected TextView.OnEditorActionListener tlEditorActionListener;
+
+	public void setOnEditorActionListener(TextView.OnEditorActionListener l) {
+		tlEditorActionListener = l;
+	}
 
 	public TransformationMethod getTransformationMethod() {
 		return null;

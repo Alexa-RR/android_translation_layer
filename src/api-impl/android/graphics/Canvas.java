@@ -651,4 +651,44 @@ public class Canvas {
 	public void drawVertices(VertexMode mode, int vertexCount, float[] verts, int vertOffset, float[] texs, int texOffset, int[] colors, int colorOffset, short[] indices, int indexOffset, int indexCount, Paint paint) {}
 	public void drawBitmapMesh(Bitmap bitmap, int meshWidth, int meshHeight, float[] verts, int vertOffset, int[] colors, int colorOffset, Paint paint) {}
 	public enum VertexMode { TRIANGLES, TRIANGLE_STRIP, TRIANGLE_FAN }
+	/** Draws a RenderNode's display list (API 29); only the Gsk canvas can append render nodes. */
+	public void drawRenderNode(android.view.RenderNode node) {
+		android.util.Log.w("Canvas", "drawRenderNode on a canvas that is not a display list");
+	}
+	public void drawRenderNode(android.graphics.RenderNode node) {
+		drawRenderNode((android.view.RenderNode) node);
+	}
+
+	/** API 21 saveLayer with flags (flags only steer the save; the layer is the same). */
+	public int saveLayer(float left, float top, float right, float bottom, Paint paint, int saveFlags) {
+		return saveLayer(left, top, right, bottom, paint);
+	}
+
+	/** API 29: fill with a ColorLong. */
+	public void drawColor(long color) {
+		drawColor(Color.toArgb(color));
+	}
+
+	/** API 29: fill with the colour through a BlendMode (mapped onto the PorterDuff modes this canvas has). */
+	public void drawColor(int color, BlendMode mode) {
+		PorterDuff.Mode pd = tlPorterDuff(mode);
+		if (pd != null)
+			drawColor(color, pd);
+		else
+			drawColor(color);
+	}
+
+	public void drawColor(long color, BlendMode mode) {
+		drawColor(Color.toArgb(color), mode);
+	}
+
+	private static PorterDuff.Mode tlPorterDuff(BlendMode mode) {
+		if (mode == null)
+			return null;
+		try {
+			return PorterDuff.Mode.valueOf(mode.name());
+		} catch (IllegalArgumentException e) {
+			return null; // a blend mode without a PorterDuff equivalent (e.g. the separable modes)
+		}
+	}
 }

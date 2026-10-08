@@ -207,4 +207,8 @@ public class ImageView extends View {
 	protected native long native_constructor(Context context, AttributeSet attrs);
 	protected native void native_setDrawable(long widget, long paintable);
 	protected native void native_setScaleType(long widget, int scale_type);
+
+	public final void clearColorFilter() {
+		setColorFilter((android.graphics.ColorFilter) null);
+	}
 }

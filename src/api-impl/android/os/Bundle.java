@@ -1176,4 +1176,42 @@ public final class Bundle extends BaseBundle implements Cloneable, Parcelable {
 		}
 		return copy;
 	}
+
+	/** API 33 typed getters: the value when it is an instance of clazz, else null (AOSP semantics). */
+	public <T> T getParcelable(String key, Class<T> clazz) {
+		Object o = getParcelable(key);
+		return clazz.isInstance(o) ? clazz.cast(o) : null;
+	}
+
+	public <T extends java.io.Serializable> T getSerializable(String key, Class<T> clazz) {
+		Object o = getSerializable(key);
+		return clazz.isInstance(o) ? clazz.cast(o) : null;
+	}
+
+	public <T> T[] getParcelableArray(String key, Class<T> clazz) {
+		Parcelable[] arr = getParcelableArray(key);
+		if (arr == null)
+			return null;
+		@SuppressWarnings("unchecked")
+		T[] out = (T[]) java.lang.reflect.Array.newInstance(clazz, arr.length);
+		for (int i = 0; i < arr.length; i++) {
+			if (arr[i] != null && !clazz.isInstance(arr[i]))
+				return null;
+			out[i] = clazz.cast(arr[i]);
+		}
+		return out;
+	}
+
+	public <T> ArrayList<T> getParcelableArrayList(String key, Class<? extends T> clazz) {
+		ArrayList<? extends Parcelable> list = getParcelableArrayList(key);
+		if (list == null)
+			return null;
+		ArrayList<T> out = new ArrayList<>(list.size());
+		for (Parcelable p : list) {
+			if (p != null && !clazz.isInstance(p))
+				return null;
+			out.add(clazz.cast(p));
+		}
+		return out;
+	}
 }
