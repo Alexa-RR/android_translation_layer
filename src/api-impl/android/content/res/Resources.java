@@ -172,7 +172,12 @@ public class Resources {
 		public NotFoundException(String name) {
 			super(name);
 		}
-	}
+	
+		/* teslalinux: AOSP NotFoundException(String, Exception) */
+		public NotFoundException(String name, Exception cause) {
+			super(name, cause);
+		}
+}
 
 	/**
 	 * Create a new Resources object on top of an existing set of assets in an

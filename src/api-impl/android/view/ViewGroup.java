@@ -555,7 +555,10 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		 * Used to animate layouts.
 		 */
 		//public LayoutAnimationController.AnimationParameters layoutAnimationParameters;
-	}
+	
+		/** AOSP: used by LayoutAnimationController to stagger child animations. */
+		public android.view.animation.LayoutAnimationController.AnimationParameters layoutAnimationParameters;
+}
 
 	public static class MarginLayoutParams extends ViewGroup.LayoutParams {
 		public int leftMargin;
