@@ -1,4 +1,13 @@
 srcs = [
+	'android/window/OnBackInvokedDispatcher.java',
+	'android/window/OnBackInvokedCallback.java',
+	'android/window/OnBackAnimationCallback.java',
+	'android/window/BackEvent.java',
+	'android/location/OnNmeaMessageListener.java',
+	'android/location/LocationRequest.java',
+	'android/location/LocationProvider.java',
+	'android/location/GnssMeasurementsEvent.java',
+	'android/graphics/DrawFilter.java',
 	'android/util/Range.java',
 	'android/util/CloseGuard.java',
 	'android/os/TransactionTooLargeException.java',

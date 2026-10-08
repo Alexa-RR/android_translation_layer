@@ -106,4 +106,19 @@ public class NotificationManager {
 	public NotificationChannel getNotificationChannel(String channel) {
 		return null;
 	}
+
+	/* teslalinux-frag d5b0a0352af6 */
+	/* teslalinux: NotificationManager additions */
+	public static final int IMPORTANCE_UNSPECIFIED = -1000, IMPORTANCE_NONE = 0, IMPORTANCE_MIN = 1, IMPORTANCE_LOW = 2, IMPORTANCE_DEFAULT = 3, IMPORTANCE_HIGH = 4, IMPORTANCE_MAX = 5;
+	public static final int INTERRUPTION_FILTER_UNKNOWN = 0, INTERRUPTION_FILTER_ALL = 1, INTERRUPTION_FILTER_PRIORITY = 2, INTERRUPTION_FILTER_NONE = 3, INTERRUPTION_FILTER_ALARMS = 4;
+	public NotificationChannelGroup getNotificationChannelGroup(String channelGroupId) { return null; }
+	public int getImportance() { return IMPORTANCE_DEFAULT; }
+	public int getCurrentInterruptionFilter() { return INTERRUPTION_FILTER_ALL; }
+	public boolean canUseFullScreenIntent() { return true; }
+	public boolean canPostPromotedNotifications() { return false; }
+	public void deleteNotificationChannelGroup(String groupId) {}
+	public String getNotificationDelegate() { return null; }
+	public void setNotificationDelegate(String delegate) {}
+	public boolean isNotificationPolicyAccessGranted() { return false; }
+	public boolean shouldHideSilentStatusBarIcons() { return false; }
 }

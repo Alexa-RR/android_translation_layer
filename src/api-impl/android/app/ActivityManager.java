@@ -101,4 +101,13 @@ public class ActivityManager {
 
 	public void moveTaskToFront(int taskId, int flags, Bundle options) {
 	}
+
+	/* teslalinux-frag 0818ea008f19 */
+	/* teslalinux: ActivityManager additions */
+	public boolean isRunningInTestHarness() { return false; }
+	public static boolean isRunningInUserTestHarness() { return false; }
+	public int getLauncherLargeIconSize() { return 96; }
+	public int getLauncherLargeIconDensity() { return 320; }
+	public boolean isBackgroundRestricted() { return false; }
+	public static boolean isUserAMonkeyStatic() { return false; }
 }

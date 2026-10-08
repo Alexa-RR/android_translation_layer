@@ -79,4 +79,10 @@ public class Typeface {
 			return DEFAULT;
 		}
 	}
+
+	/* teslalinux-frag 582089e661c0 */
+	/* teslalinux: Typeface additions */
+	public boolean isBold() { return (getStyle() & BOLD) != 0; }
+	public boolean isItalic() { return (getStyle() & ITALIC) != 0; }
+	public int getWeight() { return isBold() ? 700 : 400; }
 }
