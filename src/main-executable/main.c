@@ -305,7 +305,7 @@ char *find_jar_or_die(char *builddir_path, char *installed_path, char *install_p
 static gboolean tl_trace_window_event(GtkEventControllerLegacy *controller, GdkEvent *event, gpointer user_data)
 {
 	GdkEventType t = gdk_event_get_event_type(event);
-	if (t == GDK_BUTTON_PRESS || t == GDK_BUTTON_RELEASE || t == GDK_TOUCH_BEGIN || t == GDK_TOUCH_END || t == GDK_ENTER_NOTIFY || t == GDK_LEAVE_NOTIFY) {
+	if (t != GDK_MOTION_NOTIFY || getenv("ATL_DEBUG_TOUCH_MOTION")) {
 		double x = 0, y = 0;
 		gdk_event_get_position(event, &x, &y);
 		GtkWidget *w = gtk_widget_pick(GTK_WIDGET(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller))), x, y, GTK_PICK_DEFAULT);
@@ -313,7 +313,8 @@ static gboolean tl_trace_window_event(GtkEventControllerLegacy *controller, GdkE
 	}
 	return FALSE;
 }
-\nstatic void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *hint, struct jni_callback_data *d)
+
+static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *hint, struct jni_callback_data *d)
 {
 	// TODO: pass all files to classpath
 	/*
