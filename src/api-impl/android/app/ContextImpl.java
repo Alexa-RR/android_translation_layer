@@ -207,6 +207,9 @@ public final class ContextImpl extends Context {
 				return new StorageManager();
 			case "media_metrics":
 				return new android.media.metrics.MediaMetricsManager();
+			case "content_capture":
+				/* no content capture service on this device: Android returns null for the service too */
+				return null;
 			default:
 				Slog.e(TAG, "!!!!!!! getSystemService: case >" + name + "< is not implemented yet");
 				return null;
