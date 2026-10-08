@@ -256,16 +256,4 @@ public final class Bitmap {
 	private static native byte[] native_save_to_png(long texture);
 	private static native void native_set_pixels(long snapshot, int[] pixels, int offset, int stride, int x, int y, int width, int height);
 
-	/* teslalinux-frag f8c32c8efab9 */
-	/* teslalinux: Bitmap additions */
-	private boolean tlMipMap;
-	public int getPixel(int x, int y) { int[] p = new int[1]; getPixels(p, 0, 1, x, y, 1, 1); return p[0]; }
-	public void setPixel(int x, int y, int color) { setPixels(new int[] { color }, 0, 1, x, y, 1, 1); }
-	public boolean hasMipMap() { return tlMipMap; }
-	public void setHasMipMap(boolean hasMipMap) { tlMipMap = hasMipMap; }
-	public boolean sameAs(Bitmap other) { return this == other; }
-	public ColorSpace getColorSpace() { return null; }
-	public void setColorSpace(ColorSpace colorSpace) {}
-	public Bitmap asShared() { return this; }
-	public int getGenerationId() { return 0; }
 }

@@ -916,33 +916,4 @@ public class Intent implements Parcelable {
 		return extras.getIntArray(name);
 	}
 
-	/* teslalinux-frag ee39f844c46d */
-	/* teslalinux: Intent additions */
-	private String tlIdentifier;
-	public boolean hasCategory(String category) { java.util.Set<String> c = getCategories(); return c != null && c.contains(category); }
-	public CharSequence getCharSequenceExtra(String name) { android.os.Bundle b = getExtras(); return b == null ? null : b.getCharSequence(name); }
-	public Intent setIdentifier(String identifier) { tlIdentifier = identifier; return this; }
-	public String getIdentifier() { return tlIdentifier; }
-	public Intent cloneFilter() { Intent i = new Intent(this); i.tlIdentifier = tlIdentifier; return i; }
-	@Override public Object clone() { return new Intent(this); }
-	public static Intent makeMainActivity(ComponentName mainActivity) {
-		Intent i = new Intent("android.intent.action.MAIN"); i.setComponent(mainActivity); i.addCategory("android.intent.category.LAUNCHER"); return i;
-	}
-	public static Intent makeMainSelectorActivity(String selectorAction, String selectorCategory) {
-		Intent i = new Intent("android.intent.action.MAIN"); i.addCategory(selectorCategory); return i;
-	}
-	public static Intent makeRestartActivityTask(ComponentName mainActivity) {
-		Intent i = makeMainActivity(mainActivity); i.addFlags(FLAG_ACTIVITY_NEW_TASK | FLAG_ACTIVITY_CLEAR_TOP); return i;
-	}
-	public static Intent parseUri(String uri, int flags) throws java.net.URISyntaxException {
-		if (uri == null) throw new java.net.URISyntaxException("null", "null uri");
-		return new Intent("android.intent.action.VIEW", android.net.Uri.parse(uri));
-	}
-	public String toUri(int flags) { return getDataString() != null ? getDataString() : ""; }
-	public void writeToParcel(android.os.Parcel out, int flags) {}
-	public int describeContents() { return 0; }
-	public static final android.os.Parcelable.Creator<Intent> CREATOR = new android.os.Parcelable.Creator<Intent>() {
-		public Intent createFromParcel(android.os.Parcel in) { return new Intent(); }
-		public Intent[] newArray(int size) { return new Intent[size]; }
-	};
 }

@@ -415,16 +415,4 @@ public class Drawable {
 	protected native void native_ref(long paintable);
 	protected native void native_unref(long paintable);
 
-	/* teslalinux-frag e4cbcef7862e */
-	/* teslalinux: Drawable additions */
-	public int getAlpha() { return 255; }
-	public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
-	public boolean isAutoMirrored() { return false; }
-	public Rect getDirtyBounds() { return getBounds(); }
-	public void getOutline(android.graphics.Outline outline) {}
-	public android.graphics.Insets getOpticalInsets() { return android.graphics.Insets.NONE; }
-	public void applyTheme(android.content.res.Resources.Theme t) {}
-	public boolean canApplyTheme() { return false; }
-	public android.graphics.Region getTransparentRegion() { return null; }
-	protected boolean onLevelChange(int level) { return false; }
 }
