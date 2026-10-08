@@ -546,6 +546,10 @@ public abstract class Context {
 		System.out.println("revokeUriPermission(" + uri + ", " + mode + ") called");
 	}
 
+	public android.content.AttributionSource getAttributionSource() {
+		return new android.content.AttributionSource(android.os.Process.myUid(), getPackageName(), getAttributionTag());
+	}
+
 	public String getAttributionTag() {
 		return null;
 	}

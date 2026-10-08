@@ -1,0 +1,16 @@
+package android.system;
+
+public final class StructStat {
+	public final long st_dev, st_ino;
+	public final int st_mode;
+	public final long st_nlink;
+	public final int st_uid, st_gid;
+	public final long st_rdev, st_size, st_atime, st_mtime, st_ctime, st_blksize, st_blocks;
+
+	public StructStat(long st_dev, long st_ino, int st_mode, long st_nlink, int st_uid, int st_gid, long st_rdev, long st_size,
+	                  long st_atime, long st_mtime, long st_ctime, long st_blksize, long st_blocks) {
+		this.st_dev = st_dev; this.st_ino = st_ino; this.st_mode = st_mode; this.st_nlink = st_nlink; this.st_uid = st_uid; this.st_gid = st_gid;
+		this.st_rdev = st_rdev; this.st_size = st_size; this.st_atime = st_atime; this.st_mtime = st_mtime; this.st_ctime = st_ctime;
+		this.st_blksize = st_blksize; this.st_blocks = st_blocks;
+	}
+}
