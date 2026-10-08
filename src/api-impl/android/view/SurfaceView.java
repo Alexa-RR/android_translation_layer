@@ -30,16 +30,32 @@ public class SurfaceView extends View {
 	}
 
 	private void surfaceChanged(int format, int width, int height) {
-		for (SurfaceHolder.Callback c : mCallbacks) {
+		android.util.Log.i("SurfaceView", "surfaceChanged " + this + " " + width + "x" + height + " callbacks=" + mCallbacks.size());
+		tlSurfaceWidth = width;
+		tlSurfaceHeight = height;
+		if (!tlSurfaceCreated)
+			return; // AOSP never reports a size change before surfaceCreated; the size is replayed then
+		for (SurfaceHolder.Callback c : new java.util.ArrayList<>(mCallbacks)) {
 			c.surfaceChanged(mSurfaceHolder, format, width, height);
 		}
 	}
 
 	private void surfaceCreated() {
-		for (SurfaceHolder.Callback c : mCallbacks) {
+		android.util.Log.i("SurfaceView", "surfaceCreated " + this + " callbacks=" + mCallbacks.size());
+		tlSurfaceCreated = true;
+		for (SurfaceHolder.Callback c : new java.util.ArrayList<>(mCallbacks)) {
 			c.surfaceCreated(mSurfaceHolder);
 		}
+		// AOSP: surfaceChanged(format, w, h) always follows surfaceCreated once the size is known; the
+		// native resize signal only fires on later size changes, so report the current size here.
+		if (tlSurfaceWidth > 0 && tlSurfaceHeight > 0)
+			surfaceChanged(1 /*RGBA_8888*/, tlSurfaceWidth, tlSurfaceHeight);
+		else if (getWidth() > 0 && getHeight() > 0)
+			surfaceChanged(1 /*RGBA_8888*/, getWidth(), getHeight());
 	}
+
+	private boolean tlSurfaceCreated;
+	private int tlSurfaceWidth, tlSurfaceHeight;
 
 	@Override
 	protected native long native_constructor(Context context, AttributeSet attrs);
@@ -73,9 +89,9 @@ public class SurfaceView extends View {
 
 		@Override
 		public void removeCallback(Callback callback) {
-			/*		synchronized (mCallbacks) {
-					mCallbacks.remove(callback);
-					}*/
+			synchronized (mCallbacks) {
+				mCallbacks.remove(callback);
+			}
 		}
 
 		@Override
@@ -218,9 +234,11 @@ public class SurfaceView extends View {
 		}
 
 		@Override
+		/** AOSP: the current size of the surface (the view's size until a fixed size is requested). */
 		public Rect getSurfaceFrame() {
-			//		return mSurfaceFrame;
-			return new Rect(0, 0, 400, 400);
+			int w = tlSurfaceWidth > 0 ? tlSurfaceWidth : getWidth();
+			int h = tlSurfaceHeight > 0 ? tlSurfaceHeight : getHeight();
+			return new Rect(0, 0, w, h);
 		}
 	};
 

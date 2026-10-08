@@ -456,6 +456,11 @@ static gboolean queue_texture(gpointer data)
 
 EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
+	if (getenv("ATL_DEBUG_SURFACE")) {
+		static int swaps = 0;
+		if ((++swaps % 50) == 1)
+			fprintf(stderr, "[surface] eglSwapBuffers #%d surface=%p\n", swaps, (void *)surface);
+	}
 	if (getenv("ATL_DIRECT_EGL"))
 		return eglSwapBuffers(display, surface);
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);

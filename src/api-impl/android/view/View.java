@@ -2154,6 +2154,8 @@ public class View implements Drawable.Callback {
 	}
 
 	protected void onAttachedToWindow() {
+		if (System.getenv("ATL_DEBUG_ATTACH") != null)
+			android.util.Log.i("View", "onAttachedToWindow " + getClass().getName() + " " + getWidth() + "x" + getHeight());
 		if (onAttachStateChangeListener != null) {
 			onAttachStateChangeListener.onViewAttachedToWindow(this);
 		}

@@ -327,6 +327,8 @@ ANativeWindow *ANativeWindow_fromSurface(JNIEnv *env, jobject surface)
 		wl_region_destroy(empty_region);
 
 		struct wl_egl_window *egl_window = wl_egl_window_create(wayland_surface, width, height);
+		if (getenv("ATL_DEBUG_SURFACE"))
+			fprintf(stderr, "[surface] ANativeWindow_fromSurface: subsurface %p egl_window %p %dx%d at %d,%d\n", (void *)subsurface, (void *)egl_window, width, height, (int)pos.x, (int)pos.y);
 		native_window->egl_window = (EGLNativeWindowType)egl_window;
 		native_window->wayland_display = wl_display;
 		native_window->wayland_surface = wayland_surface;

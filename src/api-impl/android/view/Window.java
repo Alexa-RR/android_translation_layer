@@ -159,9 +159,18 @@ public class Window {
 
 	public void takeSurface(SurfaceHolder.Callback2 callback) {}
 
-	public void setStatusBarColor(int color) {}
+	/* teslalinux: AOSP keeps the bar colours in the window attributes (default from the theme, black here
+	 * as there is no system bar to tint); the old placeholder answered a constant red that apps painted. */
+	private int tlStatusBarColor = 0xFF000000;
+	private int tlNavigationBarColor = 0xFF000000;
 
-	public void setNavigationBarColor(int color) {}
+	public void setStatusBarColor(int color) {
+		tlStatusBarColor = color;
+	}
+
+	public void setNavigationBarColor(int color) {
+		tlNavigationBarColor = color;
+	}
 
 	public void setFormat(int format) {}
 
@@ -178,14 +187,14 @@ public class Window {
 	public void setSoftInputMode(int dummy) {}
 
 	public int getNavigationBarColor() {
-		return 0xFF888888; // gray
+		return tlNavigationBarColor;
 	}
 
 	public void setBackgroundDrawableResource(int resId) {
 		setBackgroundDrawable(context.getDrawable(resId));
 	}
 
-	public int getStatusBarColor() { return 0xFFFF0000; }
+	public int getStatusBarColor() { return tlStatusBarColor; }
 
 	public Context getContext() {
 		return context;

@@ -151,6 +151,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 			fragment.onCreate(savedInstanceState);
 		}
 
+		dispatchActivityCreated(savedInstanceState); // AOSP: ActivityLifecycleCallbacks.onActivityCreated
 		return;
 	}
 
@@ -168,6 +169,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 			fragment.onStart();
 		}
 
+		dispatchActivityStarted();
 		return;
 	}
 
@@ -185,6 +187,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 		}
 
 		paused = false;
+		dispatchActivityResumed();
 		return;
 	}
 
@@ -194,6 +197,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	}
 
 	protected void onPause() {
+		dispatchActivityPaused(); // AOSP dispatches Paused first
 		Slog.i(TAG, "- onPause - yay!");
 
 		for (Fragment fragment : fragments) {
@@ -211,6 +215,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 			fragment.onStop();
 		}
 
+		dispatchActivityStopped();
 		return;
 	}
 
@@ -222,6 +227,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 		}
 
 		destroyed = true;
+		dispatchActivityDestroyed();
 		return;
 	}
 
@@ -681,6 +687,8 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	private final java.util.ArrayList<Application.ActivityLifecycleCallbacks> mActivityLifecycleCallbacks = new java.util.ArrayList<>();
 
 	public void registerActivityLifecycleCallbacks(Application.ActivityLifecycleCallbacks callback) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "Activity.registerActivityLifecycleCallbacks " + callback.getClass().getName() + " on " + getClass().getName());
 		synchronized (mActivityLifecycleCallbacks) { mActivityLifecycleCallbacks.add(callback); }
 	}
 	public void unregisterActivityLifecycleCallbacks(Application.ActivityLifecycleCallbacks callback) {

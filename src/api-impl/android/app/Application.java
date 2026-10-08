@@ -164,6 +164,8 @@ public class Application extends ContextWrapper {
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreCreated(activity, savedInstanceState);
 	}
 	public void dispatchActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "dispatchActivityCreated " + activity.getClass().getName() + " callbacks=" + mActivityLifecycleCallbacks.size());
 		Object[] callbacks = collectActivityLifecycleCallbacks();
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityCreated(activity, savedInstanceState);
 	}
@@ -176,6 +178,8 @@ public class Application extends ContextWrapper {
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreStarted(activity);
 	}
 	public void dispatchActivityStarted(@NonNull Activity activity) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "dispatchActivityStarted " + activity.getClass().getName() + " callbacks=" + mActivityLifecycleCallbacks.size());
 		Object[] callbacks = collectActivityLifecycleCallbacks();
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityStarted(activity);
 	}
@@ -188,6 +192,8 @@ public class Application extends ContextWrapper {
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreResumed(activity);
 	}
 	public void dispatchActivityResumed(@NonNull Activity activity) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "dispatchActivityResumed " + activity.getClass().getName() + " callbacks=" + mActivityLifecycleCallbacks.size());
 		Object[] callbacks = collectActivityLifecycleCallbacks();
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityResumed(activity);
 	}
@@ -200,6 +206,8 @@ public class Application extends ContextWrapper {
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPrePaused(activity);
 	}
 	public void dispatchActivityPaused(@NonNull Activity activity) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "dispatchActivityPaused " + activity.getClass().getName() + " callbacks=" + mActivityLifecycleCallbacks.size());
 		Object[] callbacks = collectActivityLifecycleCallbacks();
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPaused(activity);
 	}
@@ -212,6 +220,8 @@ public class Application extends ContextWrapper {
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreStopped(activity);
 	}
 	public void dispatchActivityStopped(@NonNull Activity activity) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "dispatchActivityStopped " + activity.getClass().getName() + " callbacks=" + mActivityLifecycleCallbacks.size());
 		Object[] callbacks = collectActivityLifecycleCallbacks();
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityStopped(activity);
 	}
@@ -236,6 +246,8 @@ public class Application extends ContextWrapper {
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreDestroyed(activity);
 	}
 	public void dispatchActivityDestroyed(@NonNull Activity activity) {
+		if (System.getenv("ATL_DEBUG_LIFECYCLE") != null)
+			android.util.Log.i("Lifecycle", "dispatchActivityDestroyed " + activity.getClass().getName() + " callbacks=" + mActivityLifecycleCallbacks.size());
 		Object[] callbacks = collectActivityLifecycleCallbacks();
 		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityDestroyed(activity);
 	}
