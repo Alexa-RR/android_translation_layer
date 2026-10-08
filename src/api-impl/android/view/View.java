@@ -1148,6 +1148,7 @@ public class View implements Drawable.Callback {
 			native_drawChildren(widget, ((GskCanvas)canvas).snapshot);
 	}
 	private static final String ATL_DEBUG_DRAW = System.getenv("ATL_DEBUG_DRAW");
+	private static final boolean ATL_DEBUG_TOUCH_JAVA = System.getenv("ATL_DEBUG_TOUCH") != null;
 	public void draw(Canvas canvas) {
 		if (ATL_DEBUG_DRAW != null && getClass().getName().contains(ATL_DEBUG_DRAW))
 			android.util.Log.i("View", "[draw] " + getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(this)) + " " + getWidth() + "x" + getHeight() + " canvas=" + canvas.getClass().getSimpleName() + " parent=" + (parent == null ? "null" : parent.getClass().getSimpleName()));
@@ -1243,6 +1244,8 @@ public class View implements Drawable.Callback {
 		final float y = event.getY();
 		final int action = event.getActionMasked();
 		final boolean clickable = isClickable() || isLongClickable() || isContextClickable();
+		if (ATL_DEBUG_TOUCH_JAVA)
+			android.util.Log.i("View", "[touch] onTouchEvent " + getClass().getName() + " action=" + action + " clickable=" + clickable + " enabled=" + isEnabled() + " pressed=" + pressed + " prepressed=" + mPrePressed + " synthetic=" + tlDispatchingSynthetic + " listener=" + (on_click_listener != null));
 		if (!isEnabled()) {
 			if (action == MotionEvent.ACTION_UP && pressed)
 				setPressed(false);
@@ -2360,7 +2363,15 @@ public class View implements Drawable.Callback {
 
 	public boolean onInterceptTouchEvent(MotionEvent event) { return false; }
 
-	public boolean dispatchTouchEvent(MotionEvent event) { return false; }
+	/**
+	 * AOSP View.dispatchTouchEvent: the touch listener first, then onTouchEvent. Reached for events that
+	 * Java code dispatches to a view (a group whose children declined, Compose interop); the native
+	 * side records whether the event is synthetic so the click is performed here rather than by the
+	 * GTK click gesture.
+	 */
+	public boolean dispatchTouchEvent(MotionEvent event) {
+		return onTouchEventInternal(event, tlNativeDispatchSynthetic);
+	}
 
 	public boolean canScrollHorizontally(int direction) { return false; }
 
@@ -3462,5 +3473,14 @@ public class View implements Drawable.Callback {
 		if (sTlMainHandler == null)
 			sTlMainHandler = new Handler(Looper.getMainLooper());
 		return sTlMainHandler;
+	}
+	/** Set by the native dispatcher before calling a custom dispatchTouchEvent: the event is synthetic (not from GTK). */
+	static boolean tlNativeDispatchSynthetic;
+
+	/** AOSP: forces the view's layer to be created and drawn. There is no cached layer here (GTK renders
+	 * the widget tree directly), so only the precondition remains. */
+	public void buildLayer() {
+		if (getLayerType() == LAYER_TYPE_NONE)
+			throw new IllegalStateException("Cannot build a layer if the layer type is set to LAYER_TYPE_NONE");
 	}
 }

@@ -70,6 +70,7 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChild(JNIEnv *env
 G_DECLARE_FINAL_TYPE(JavaWidget, java_widget, JAVA, WIDGET, GtkWidget)
 bool view_dispatch_motionevent(JNIEnv *env, WrapperWidget *wrapper, GtkPropagationPhase phase, jobject motion_event, gpointer event, int action);
 
+extern bool tl_force_plain_dispatch;
 static bool dispatch_motionevent_if_JavaWidget(GtkWidget *widget, GtkPropagationPhase phase, jobject motion_event, GtkWidget *toplevel)
 {
 	if (!JAVA_IS_WIDGET(widget))
@@ -77,12 +78,35 @@ static bool dispatch_motionevent_if_JavaWidget(GtkWidget *widget, GtkPropagation
 	JNIEnv *env = get_jni_env();
 
 	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(widget));
+	bool plain = false;
 	if (widget == toplevel && wrapper->custom_dispatch_touch) {
-		// don't self propagate if the widget already had its chance to handle the event
-		return false;
+		/* the group that is dispatching: its own onInterceptTouchEvent/onTouchEvent, never its
+		 * dispatchTouchEvent again (AOSP super.dispatchTouchEvent after the children declined) */
+		tl_force_plain_dispatch = true;
+		plain = true;
 	}
 	int action = _GET_INT_FIELD(motion_event, "action");
-	return view_dispatch_motionevent(env, wrapper, phase, motion_event, motion_event, action);
+	/* tl_relocate_event: the event is in the coordinates of `toplevel`; the view expects its own */
+	static jmethodID get_x, get_y, set_location;
+	if (!set_location) {
+		get_x = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getX", "()F");
+		get_y = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getY", "()F");
+		set_location = (*env)->GetMethodID(env, handle_cache.motion_event.class, "setLocation", "(FF)V");
+	}
+	jfloat orig_x = (*env)->CallFloatMethod(env, motion_event, get_x);
+	jfloat orig_y = (*env)->CallFloatMethod(env, motion_event, get_y);
+	graphene_point_t local;
+	bool relocated = false;
+	if (widget != toplevel && gtk_widget_compute_point(toplevel, widget, &GRAPHENE_POINT_INIT(orig_x, orig_y), &local)) {
+		(*env)->CallVoidMethod(env, motion_event, set_location, local.x, local.y);
+		relocated = true;
+	}
+	bool ret = view_dispatch_motionevent(env, wrapper, phase, motion_event, motion_event, action);
+	if (plain)
+		tl_force_plain_dispatch = false;
+	if (relocated)
+		(*env)->CallVoidMethod(env, motion_event, set_location, orig_x, orig_y);
+	return ret;
 }
 
 /* used by atl_propagate_synthetic_motionevent */

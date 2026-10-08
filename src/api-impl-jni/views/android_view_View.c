@@ -51,6 +51,7 @@ int canceled_action = 0;
 
 static struct pointer pointers[MAX_POINTERS] = {};
 
+bool tl_force_plain_dispatch = false; /* set by the synthetic propagation for the dispatching group itself */
 bool view_dispatch_motionevent(JNIEnv *env, WrapperWidget *wrapper, GtkPropagationPhase phase, jobject motion_event, gpointer event, int action)
 {
 	int ret;
@@ -77,7 +78,11 @@ bool view_dispatch_motionevent(JNIEnv *env, WrapperWidget *wrapper, GtkPropagati
 			_SET_INT_FIELD(motion_event, "action", canceled_action);
 	}
 
-	if (wrapper->custom_dispatch_touch) {
+	if (wrapper->custom_dispatch_touch && !tl_force_plain_dispatch) {
+		static jfieldID synthetic_field;
+		if (!synthetic_field)
+			synthetic_field = (*env)->GetStaticFieldID(env, (*env)->FindClass(env, "android/view/View"), "tlNativeDispatchSynthetic", "Z");
+		(*env)->SetStaticBooleanField(env, (*env)->FindClass(env, "android/view/View"), synthetic_field, is_synthetic);
 		ret = (*env)->CallBooleanMethod(env, this, handle_cache.view.dispatchTouchEvent, motion_event);
 		if (debug_touch)
 			fprintf(stderr, "[touch]   custom dispatchTouchEvent returned %d%c", ret, 10);
