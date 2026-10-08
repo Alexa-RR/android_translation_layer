@@ -507,7 +507,13 @@ public class Canvas {
 		return (bitmap == null) ? 0 : bitmap.getHeight();
 	}
 
+	public static int tlRedTraces;
+
 	public void drawColor(int color) {
+		if (System.getenv("ATL_DEBUG_RED") != null && color == 0xFFFF0000) {
+			if (tlRedTraces++ < 3)
+				new Throwable("[red] drawColor").printStackTrace(System.out);
+		}
 		Paint paint = new Paint();
 		paint.setColor(color);
 		drawRect(0, 0, Integer.MAX_VALUE, Integer.MAX_VALUE, paint);

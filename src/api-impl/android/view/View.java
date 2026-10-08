@@ -2623,8 +2623,9 @@ public class View implements Drawable.Callback {
 		matrix.preTranslate(getLeft(), getTop());
 		matrix.preConcat(getMatrix());
 	}
+	/** AOSP: the "Show layout bounds" developer option (debug.layout). ATL_SHOW_LAYOUT_BOUNDS=1 turns it on here. */
 	public boolean isShowingLayoutBounds() {
-		return true;
+		return System.getenv("ATL_SHOW_LAYOUT_BOUNDS") != null;
 	}
 
 	public boolean callOnClick() {

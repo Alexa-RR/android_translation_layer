@@ -106,7 +106,24 @@ public class GskCanvas extends DisplayListCanvas {
 
 	@Override
 	public void drawRect(float left, float top, float right, float bottom, Paint paint) {
-		native_drawRect(snapshot, left, top, right, bottom, paint != null ? paint.paint : default_paint.paint);
+		if (System.getenv("ATL_DEBUG_RED") != null && paint != null && paint.getColor() == 0xFFFF0000) {
+			if (android.graphics.Canvas.tlRedTraces++ < 3)
+				new Throwable("[red] drawRect " + left + "," + top + "-" + right + "," + bottom).printStackTrace(System.out);
+		}
+		// AOSP honours Paint.Style: STROKE outlines the rectangle (stroke centred on the edge, hairline
+		// when the width is 0), FILL_AND_STROKE does both. The native call only fills.
+		Paint.Style style = paint != null ? paint.getStyle() : Paint.Style.FILL;
+		long p = paint != null ? paint.paint : default_paint.paint;
+		if (style != Paint.Style.STROKE)
+			native_drawRect(snapshot, left, top, right, bottom, p);
+		if (style != Paint.Style.FILL) {
+			float w = paint != null ? paint.getStrokeWidth() : 0;
+			float h = w > 0 ? w / 2f : 0.5f;
+			native_drawRect(snapshot, left - h, top - h, right + h, top + h, p);
+			native_drawRect(snapshot, left - h, bottom - h, right + h, bottom + h, p);
+			native_drawRect(snapshot, left - h, top + h, left + h, bottom - h, p);
+			native_drawRect(snapshot, right - h, top + h, right + h, bottom - h, p);
+		}
 	}
 
 	@Override
