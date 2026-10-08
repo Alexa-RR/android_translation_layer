@@ -79,6 +79,8 @@ bool view_dispatch_motionevent(JNIEnv *env, WrapperWidget *wrapper, GtkPropagati
 
 	if (wrapper->custom_dispatch_touch) {
 		ret = (*env)->CallBooleanMethod(env, this, handle_cache.view.dispatchTouchEvent, motion_event);
+		if (debug_touch)
+			fprintf(stderr, "[touch]   custom dispatchTouchEvent returned %d%c", ret, 10);
 	} else if (phase == GTK_PHASE_CAPTURE && _GET_BOOL_FIELD(this, "disallowIntercept")) {
 		if (action == ACTION_UP || action == ACTION_CANCEL)
 			_SET_BOOL_FIELD(this, "disallowIntercept", false);

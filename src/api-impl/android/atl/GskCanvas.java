@@ -412,4 +412,75 @@ public class GskCanvas extends DisplayListCanvas {
 
 	private static native void native_clipPath(long snapshot, long path, int fillRule);
 	private static native void native_clipOutPath(long snapshot, long path, int fillRule);
+
+	/* ---- teslalinux: arcs and points through GskPath (fill and stroke follow the Paint) ---- */
+
+	/** AOSP drawArc: an arc of the oval, optionally closed through the centre as a wedge. */
+	@Override
+	public void drawArc(float left, float top, float right, float bottom, float startAngle, float sweepAngle, boolean useCenter, Paint paint) {
+		Path p = new Path();
+		if (useCenter) {
+			p.moveTo((left + right) / 2f, (top + bottom) / 2f);
+			p.arcTo(left, top, right, bottom, startAngle, sweepAngle, false);
+			p.close();
+		} else {
+			p.arcTo(left, top, right, bottom, startAngle, sweepAngle, true);
+		}
+		drawPath(p, paint);
+	}
+
+	@Override
+	public void drawArc(RectF oval, float startAngle, float sweepAngle, boolean useCenter, Paint paint) {
+		if (oval == null)
+			throw new NullPointerException();
+		drawArc(oval.left, oval.top, oval.right, oval.bottom, startAngle, sweepAngle, useCenter, paint);
+	}
+
+	/** AOSP drawPoint: a dot of the stroke width, round or square after the stroke cap (hairline: one pixel). */
+	@Override
+	public void drawPoint(float x, float y, Paint paint) {
+		Paint p = paint != null ? paint : default_paint;
+		float w = p.getStrokeWidth();
+		if (w <= 0)
+			w = 1f;
+		float h = w / 2f;
+		Paint fill = new Paint(p);
+		fill.setStyle(Paint.Style.FILL);
+		if (p.getStrokeCap() == Paint.Cap.ROUND)
+			drawRoundRect(x - h, y - h, x + h, y + h, h, h, fill);
+		else
+			drawRect(x - h, y - h, x + h, y + h, fill);
+	}
+
+	@Override
+	public void drawPoints(float[] pts, int offset, int count, Paint paint) {
+		for (int i = offset; i + 1 < offset + count; i += 2)
+			drawPoint(pts[i], pts[i + 1], paint);
+	}
+
+	@Override
+	public void drawPoints(float[] pts, Paint paint) {
+		drawPoints(pts, 0, pts.length, paint);
+	}
+
+	/* ---- teslalinux: colour filter groups for drawables (PorterDuff tints as GSK colour matrices) ---- */
+	private Paint tlFilterPaint;
+
+	/** Pushes a colour-matrix group for the filter; returns false (nothing pushed) for filters GSK cannot express. */
+	public boolean tlPushColorFilter(ColorFilter filter) {
+		if (!(filter instanceof PorterDuffColorFilter))
+			return false;
+		if (tlFilterPaint == null)
+			tlFilterPaint = new Paint();
+		tlFilterPaint.setColorFilter(filter);
+		native_pushColorMatrix(snapshot, tlFilterPaint.paint);
+		return true;
+	}
+
+	/** Closes the group opened by tlPushColorFilter. */
+	public void tlPopGroup() {
+		native_pop(snapshot, 1);
+	}
+
+	private static native void native_pushColorMatrix(long snapshot, long paint);
 }

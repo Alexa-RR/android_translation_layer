@@ -232,3 +232,11 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipOutPath(JNIEnv *en
 	gtk_snapshot_append_fill(snapshot, (GskPath *)_PTR(path_ptr), fill_rule ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING, &(GdkRGBA){0, 0, 0, 1});
 	gtk_snapshot_pop(snapshot);
 }
+
+/* teslalinux: a colour matrix group from a paint's colour filter; closed with native_pop */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushColorMatrix(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong paint_ptr)
+{
+	GdkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
+	struct AndroidPaint *paint = _PTR(paint_ptr);
+	gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
+}

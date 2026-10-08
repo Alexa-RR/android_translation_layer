@@ -89,4 +89,9 @@ public class ViewConfiguration {
 	public int getScaledHandwritingGestureLineMargin() { return 16; }
 	public static int getFocusTraversalThreshold() { return 0; }
 	public int getScaledMinimumScalingSpan() { return 27; }
+	/** AOSP: how long a pressed state is shown after a tap that was released before being shown (ms). */
+	private static final int PRESSED_STATE_DURATION = 64;
+	public static int getPressedStateDuration() {
+		return PRESSED_STATE_DURATION;
+	}
 }

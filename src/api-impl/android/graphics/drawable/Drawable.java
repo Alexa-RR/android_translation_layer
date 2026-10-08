@@ -115,19 +115,30 @@ public class Drawable {
 		return mBounds;
 	}
 
+	/**
+	 * Draws the paintable behind this drawable; the colour filter (or the tint filter derived from
+	 * the tint list and the current state, AOSP) is applied as a GSK colour matrix around it.
+	 */
 	public void draw(Canvas canvas) {
 		if (canvas instanceof GskCanvas) {
+			GskCanvas gsk = (GskCanvas) canvas;
+			ColorFilter filter = mColorFilter != null ? mColorFilter : mTintFilter;
+			boolean pushed = filter != null && gsk.tlPushColorFilter(filter);
 			if (mBounds.left != 0 || mBounds.top != 0)
 				canvas.translate(mBounds.left, mBounds.top);
-			native_draw(paintable, ((GskCanvas)canvas).snapshot, mBounds.width(), mBounds.height());
+			native_draw(paintable, gsk.snapshot, mBounds.width(), mBounds.height());
 			if (mBounds.left != 0 || mBounds.top != 0)
 				canvas.translate(-mBounds.left, -mBounds.top);
+			if (pushed)
+				gsk.tlPopGroup();
 		}
 	}
 
 	public boolean setState(int[] stateSet) {
 		if (!Arrays.equals(this.mStateSet, stateSet)) {
 			this.mStateSet = stateSet;
+			if (mTint != null)
+				mTintFilter = updateTintFilter(mTintFilter, mTint, mTintMode);
 			return onStateChange(stateSet);
 		}
 		return false;
@@ -189,7 +200,13 @@ public class Drawable {
 	public void setColorFilter(int color, PorterDuff.Mode mode) {
 		setColorFilter(new PorterDuffColorFilter(color, mode));
 	}
-	public void setColorFilter(ColorFilter filter) {}
+	/** AOSP: a colour filter applied when drawing; it takes precedence over the tint. */
+	public void setColorFilter(ColorFilter filter) {
+		if (mColorFilter != filter) {
+			mColorFilter = filter;
+			invalidateSelf();
+		}
+	}
 
 	public Drawable mutate() {
 		return this;
@@ -198,7 +215,12 @@ public class Drawable {
 	public int getIntrinsicWidth() { return -1; }
 	public int getIntrinsicHeight() { return -1; }
 
-	public void setTintList(ColorStateList tint) {}
+	/** AOSP: tint colour list, resolved against the drawable state into a PorterDuff filter. */
+	public void setTintList(ColorStateList tint) {
+		mTint = tint;
+		mTintFilter = updateTintFilter(mTintFilter, mTint, mTintMode);
+		invalidateSelf();
+	}
 
 	public void setTint(int tint) {
 		setTintList(ColorStateList.valueOf(tint));
@@ -224,7 +246,6 @@ public class Drawable {
 
 	/* Copyright (C) 2006 The Android Open Source Project */
 	PorterDuffColorFilter updateTintFilter(PorterDuffColorFilter tintFilter, ColorStateList tint, PorterDuff.Mode tintMode) {
-		System.out.println("updateTintFilter(" + tintFilter + ", " + tint + ", " + tintMode + ")");
 		if (tint == null || tintMode == null) {
 			return null;
 		}
@@ -239,7 +260,11 @@ public class Drawable {
 		return false;
 	}
 
-	public void setTintMode(PorterDuff.Mode tintMode) {}
+	public void setTintMode(PorterDuff.Mode tintMode) {
+		mTintMode = tintMode;
+		mTintFilter = updateTintFilter(mTintFilter, mTint, mTintMode);
+		invalidateSelf();
+	}
 
 	public boolean isProjected() { return false; }
 
@@ -442,7 +467,16 @@ public class Drawable {
 	/** AOSP Drawable base: no bitmap filtering unless a subclass says so. */
 	public boolean isFilterBitmap() { return false; }
 	/** AOSP Drawable base: no colour filter unless a subclass keeps one. */
-	public android.graphics.ColorFilter getColorFilter() { return null; }
+	/* ---- teslalinux: AOSP tint and colour filter state ---- */
+	private android.content.res.ColorStateList mTint;
+	private android.graphics.PorterDuff.Mode mTintMode = android.graphics.PorterDuff.Mode.SRC_IN;
+	private android.graphics.PorterDuffColorFilter mTintFilter;
+	private android.graphics.ColorFilter mColorFilter;
+	public android.graphics.ColorFilter getColorFilter() { return mColorFilter; }
+	/** The filter a subclass should paint with: the explicit colour filter, else the tint filter (AOSP). */
+	protected android.graphics.ColorFilter tlEffectiveColorFilter() { return mColorFilter != null ? mColorFilter : mTintFilter; }
+	public android.content.res.ColorStateList tlGetTintList() { return mTint; }
+	public android.graphics.PorterDuff.Mode tlGetTintMode() { return mTintMode; }
 	/** AOSP: the drawable currently showing (the drawable itself unless a container overrides). */
 	public Drawable getCurrent() { return this; }
 }

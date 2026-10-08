@@ -235,3 +235,22 @@ JNIEXPORT void JNICALL Java_android_graphics_Path_native_1add_1circle(JNIEnv *en
 		gsk_path_unref(path);
 	}
 }
+
+/* ---- teslalinux: Path.op ------------------------------------------------------------------------ */
+GskPath *atl_path_op(GskPath *path1, GskPath *path2, int op);
+
+/* returns a new GskPath (owned by the caller) with path1 <op> path2, or 0 */
+JNIEXPORT jlong JNICALL Java_android_graphics_Path_native_1op(JNIEnv *env, jclass this, jlong path1_ptr, jlong path2_ptr, jint op)
+{
+	GskPath *path1 = _PTR(path1_ptr), *path2 = _PTR(path2_ptr);
+	if (!path1 || !path2)
+		return 0;
+	return _INTPTR(atl_path_op(path1, path2, op));
+}
+
+/* AOSP Path.isEmpty: no lines or curves in the path */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1is_1empty(JNIEnv *env, jclass this, jlong path_ptr)
+{
+	GskPath *path = _PTR(path_ptr);
+	return path == NULL || gsk_path_is_empty(path);
+}

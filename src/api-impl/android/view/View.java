@@ -1147,7 +1147,10 @@ public class View implements Drawable.Callback {
 		if (canvas instanceof GskCanvas)
 			native_drawChildren(widget, ((GskCanvas)canvas).snapshot);
 	}
+	private static final String ATL_DEBUG_DRAW = System.getenv("ATL_DEBUG_DRAW");
 	public void draw(Canvas canvas) {
+		if (ATL_DEBUG_DRAW != null && getClass().getName().contains(ATL_DEBUG_DRAW))
+			android.util.Log.i("View", "[draw] " + getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(this)) + " " + getWidth() + "x" + getHeight() + " canvas=" + canvas.getClass().getSimpleName() + " parent=" + (parent == null ? "null" : parent.getClass().getSimpleName()));
 		if (canvas instanceof GskCanvas)
 			native_drawBackground(widget, ((GskCanvas)canvas).snapshot);
 		onDraw(canvas);
@@ -1217,6 +1220,7 @@ public class View implements Drawable.Callback {
 		if (on_touch_listener != null)
 			handled = on_touch_listener.onTouch(this, event);
 
+		tlDispatchingSynthetic = handle_gestures;
 		if (!handled)
 			handled = onTouchEvent(event);
 
@@ -1226,7 +1230,100 @@ public class View implements Drawable.Callback {
 		return handled;
 	}
 
+	/**
+	 * AOSP View.onTouchEvent: the touch-to-click state machine. A clickable view takes the gesture on
+	 * DOWN (pressed state, long-press timer, delayed press inside scrolling containers), performs the
+	 * click on UP while still pressed, and drops the gesture on CANCEL or when the pointer leaves the
+	 * view by more than the touch slop. Pointer events that come straight from GTK perform the click
+	 * through the native click gesture ATL attaches to the widget, so this only performs it for
+	 * events that Java code dispatched to the view (Compose interop, a parent group).
+	 */
 	public boolean onTouchEvent(MotionEvent event) {
+		final float x = event.getX();
+		final float y = event.getY();
+		final int action = event.getActionMasked();
+		final boolean clickable = isClickable() || isLongClickable() || isContextClickable();
+		if (!isEnabled()) {
+			if (action == MotionEvent.ACTION_UP && pressed)
+				setPressed(false);
+			// a disabled view that is clickable still consumes the touch events, it just does not respond
+			return clickable;
+		}
+		if (mTouchDelegate != null && mTouchDelegate.onTouchEvent(event))
+			return true;
+		if (clickable) {
+			switch (action) {
+				case MotionEvent.ACTION_UP:
+					mHasPerformedLongPress = false;
+					boolean prepressed = mPrePressed;
+					if (pressed || prepressed) {
+						if (prepressed) {
+							// released before the delayed pressed state was shown: show it now
+							setPressed(true, x, y);
+						}
+						if (!mHasPerformedLongPress && !mIgnoreNextUpEvent) {
+							removeLongPressCallback();
+							if (tlClickFromJavaDispatch || on_click_listener == null)
+								performClickInternal();
+						}
+						if (mUnsetPressedState == null)
+							mUnsetPressedState = new Runnable() {
+								@Override
+								public void run() {
+									setPressed(false);
+								}
+							};
+						if (prepressed) {
+							postDelayed(mUnsetPressedState, ViewConfiguration.getPressedStateDuration());
+						} else if (!post(mUnsetPressedState)) {
+							mUnsetPressedState.run();
+						}
+						removeTapCallback();
+					}
+					mIgnoreNextUpEvent = false;
+					break;
+				case MotionEvent.ACTION_DOWN:
+					mHasPerformedLongPress = false;
+					tlClickFromJavaDispatch = tlDispatchingSynthetic;
+					if (isInScrollingContainer()) {
+						mPrePressed = true;
+						if (mPendingCheckForTap == null)
+							mPendingCheckForTap = new Runnable() {
+								@Override
+								public void run() {
+									mPrePressed = false;
+									setPressed(true, tlTapX, tlTapY);
+									checkForLongClick(ViewConfiguration.getLongPressTimeout() - ViewConfiguration.getTapTimeout(), tlTapX, tlTapY);
+								}
+							};
+						tlTapX = x;
+						tlTapY = y;
+						postDelayed(mPendingCheckForTap, ViewConfiguration.getTapTimeout());
+					} else {
+						setPressed(true, x, y);
+						checkForLongClick(ViewConfiguration.getLongPressTimeout(), x, y);
+					}
+					break;
+				case MotionEvent.ACTION_CANCEL:
+					setPressed(false);
+					removeTapCallback();
+					removeLongPressCallback();
+					mPrePressed = false;
+					mHasPerformedLongPress = false;
+					mIgnoreNextUpEvent = false;
+					break;
+				case MotionEvent.ACTION_MOVE:
+					if (!pointInView(x, y, ViewConfiguration.get(getContext()).getScaledTouchSlop())) {
+						removeTapCallback();
+						removeLongPressCallback();
+						if (pressed)
+							setPressed(false);
+						mPrePressed = false;
+					}
+					break;
+			}
+			return true;
+		}
 		return false;
 	}
 
@@ -1237,6 +1334,8 @@ public class View implements Drawable.Callback {
 	protected native void nativeSetOnTouchListener(long widget);
 	private OnClickListener on_click_listener = null;
 	public void setOnClickListener(OnClickListener l) {
+		if (!isClickable())
+			setClickable(true);
 		nativeSetOnClickListener(widget);
 		on_click_listener = l;
 	}
@@ -1332,7 +1431,6 @@ public class View implements Drawable.Callback {
 	}
 
 	public void setPressed(boolean pressed) {
-		Slog.w(TAG, "calling setPressed on " + this + " with value: " + pressed);
 		if (this.pressed != pressed) {
 			this.pressed = pressed;
 			if (background != null && background.isStateful())
@@ -1561,7 +1659,9 @@ public class View implements Drawable.Callback {
 		return background;
 	}
 
-	public void setClickable(boolean clickable) {}
+	public void setClickable(boolean clickable) {
+		mClickable = clickable;
+	}
 
 	public void setEnabled(boolean enabled) {
 		atl_enabled = enabled;
@@ -1580,12 +1680,16 @@ public class View implements Drawable.Callback {
 		return false;
 	}
 	public void setOnLongClickListener(OnLongClickListener listener) {
+		if (!isLongClickable())
+			setLongClickable(true);
 		nativeSetOnLongClickListener(widget);
 		on_long_click_listener = listener;
 	}
 	protected native void nativeSetOnLongClickListener(long widget);
 
-	public void setLongClickable(boolean longClickable) {}
+	public void setLongClickable(boolean longClickable) {
+		mLongClickable = longClickable;
+	}
 
 	public void setOnHoverListener(OnHoverListener listener) {}
 
@@ -1733,7 +1837,12 @@ public class View implements Drawable.Callback {
 
 	public void setScrollContainer(boolean isScrollContainer) {}
 
-	public boolean removeCallbacks(Runnable action) { return false; }
+	/** AOSP: removes a pending post/postDelayed of this view (one shared main-thread handler). */
+	public boolean removeCallbacks(Runnable action) {
+		if (action != null)
+			tlMainHandler().removeCallbacks(action);
+		return true;
+	}
 
 	public void requestLayout() {
 		native_requestLayout(widget);
@@ -1775,13 +1884,11 @@ public class View implements Drawable.Callback {
 	}
 
 	public boolean postDelayed(Runnable action, long delayMillis) {
-		new Handler(Looper.getMainLooper()).postDelayed(action, delayMillis);
-		return true;
+		return tlMainHandler().postDelayed(action, delayMillis);
 	}
 
 	public boolean post(Runnable action) {
-		new Handler(Looper.getMainLooper()).post(action);
-		return true;
+		return tlMainHandler().post(action);
 	}
 
 	public void setSaveFromParentEnabled(boolean enabled) {}
@@ -2044,8 +2151,8 @@ public class View implements Drawable.Callback {
 	public void setOnApplyWindowInsetsListener(View.OnApplyWindowInsetsListener l) {}
 
 	public final boolean isFocusable() { return atl_focusable; }
-	public boolean isClickable() { return true; }
-	public boolean isLongClickable() { return true; }
+	public boolean isClickable() { return mClickable; }
+	public boolean isLongClickable() { return mLongClickable; }
 
 	public int getLayoutDirection() { return LAYOUT_DIRECTION_LTR; }
 
@@ -2292,7 +2399,7 @@ public class View implements Drawable.Callback {
 
 	public void requestFitSystemWindows() {}
 
-	public boolean isPressed() { return false; }
+	public boolean isPressed() { return pressed; }
 
 	public native void getWindowVisibleDisplayFrame(Rect rect);
 
@@ -2362,7 +2469,12 @@ public class View implements Drawable.Callback {
 		}
 	}
 
-	public void setTouchDelegate(TouchDelegate touchDelegate) {}
+	public void setTouchDelegate(TouchDelegate touchDelegate) {
+		mTouchDelegate = touchDelegate;
+	}
+	public TouchDelegate getTouchDelegate() {
+		return mTouchDelegate;
+	}
 
 	public void setOnDragListener(OnDragListener onDragListener) {}
 
@@ -3266,5 +3378,89 @@ public class View implements Drawable.Callback {
 		if (getMatrix().invert(inverse)) {
 			matrix.postConcat(inverse);
 		}
+	}
+
+	/* ---- teslalinux: AOSP touch-to-click state (View.onTouchEvent) ---- */
+	private boolean mClickable;
+	private boolean mLongClickable;
+	private boolean mPrePressed;
+	private boolean mHasPerformedLongPress;
+	private boolean mIgnoreNextUpEvent;
+	private Runnable mPendingCheckForTap;
+	private Runnable mPendingCheckForLongPress;
+	private Runnable mUnsetPressedState;
+	private float tlTapX, tlTapY;
+	/** The event being handled was dispatched by Java code (not by GTK), so no native click gesture will fire for it. */
+	private boolean tlDispatchingSynthetic;
+	private boolean tlClickFromJavaDispatch;
+	private TouchDelegate mTouchDelegate;
+
+	public boolean isContextClickable() {
+		return false;
+	}
+
+	/** AOSP: pressed with a hotspot for the background drawable. */
+	private void setPressed(boolean pressed, float x, float y) {
+		if (pressed && background != null)
+			background.setHotspot(x, y);
+		setPressed(pressed);
+	}
+
+	/** AOSP: the click, through the listener. */
+	private boolean performClickInternal() {
+		return performClick();
+	}
+
+	/** AOSP: whether an ancestor delays the pressed state (scrolling containers). */
+	public boolean isInScrollingContainer() {
+		ViewParent p = getParent();
+		while (p != null && p instanceof ViewGroup) {
+			if (((ViewGroup) p).shouldDelayChildPressedState())
+				return true;
+			p = p.getParent();
+		}
+		return false;
+	}
+
+	/** AOSP: whether the point (local coordinates) is inside the view, grown by slop. */
+	public boolean pointInView(float localX, float localY, float slop) {
+		return localX >= -slop && localY >= -slop && localX < ((getWidth()) + slop) && localY < ((getHeight()) + slop);
+	}
+
+	private void checkForLongClick(long delay, final float x, final float y) {
+		if (isLongClickable()) {
+			mHasPerformedLongPress = false;
+			if (mPendingCheckForLongPress == null)
+				mPendingCheckForLongPress = new Runnable() {
+					@Override
+					public void run() {
+						if (pressed && getParent() != null) {
+							if (performLongClick(x, y))
+								mHasPerformedLongPress = true;
+						}
+					}
+				};
+			postDelayed(mPendingCheckForLongPress, delay);
+		}
+	}
+
+	private void removeLongPressCallback() {
+		if (mPendingCheckForLongPress != null)
+			removeCallbacks(mPendingCheckForLongPress);
+	}
+
+	private void removeTapCallback() {
+		if (mPendingCheckForTap != null) {
+			mPrePressed = false;
+			removeCallbacks(mPendingCheckForTap);
+		}
+	}
+
+	/** The main-thread handler every View shares for post/postDelayed/removeCallbacks (ViewRootImpl's in AOSP). */
+	private static Handler sTlMainHandler;
+	private static Handler tlMainHandler() {
+		if (sTlMainHandler == null)
+			sTlMainHandler = new Handler(Looper.getMainLooper());
+		return sTlMainHandler;
 	}
 }

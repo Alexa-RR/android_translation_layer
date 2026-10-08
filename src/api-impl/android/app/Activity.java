@@ -188,6 +188,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 
 		paused = false;
 		dispatchActivityResumed();
+		android.atl.ViewDump.installPoller(this); // ATL_DEBUG_DUMPVIEWS only
 		return;
 	}
 

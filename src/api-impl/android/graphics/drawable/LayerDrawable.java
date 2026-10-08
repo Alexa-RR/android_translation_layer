@@ -766,4 +766,29 @@ public class LayerDrawable extends Drawable implements Drawable.Callback {
 			return mCanConstantState;
 		}*/
 	}
+
+
+	/* ---- teslalinux: AOSP LayerDrawable applies tint to every layer ---- */
+	@Override
+	public void setTintList(android.content.res.ColorStateList tint) {
+		super.setTintList(tint);
+		tlTintChildren(tint, null, false);
+	}
+	@Override
+	public void setTintMode(android.graphics.PorterDuff.Mode mode) {
+		super.setTintMode(mode);
+		tlTintChildren(null, mode, true);
+	}
+	private void tlTintChildren(android.content.res.ColorStateList tint, android.graphics.PorterDuff.Mode mode, boolean modeOnly) {
+		final ChildDrawable[] array = mLayerState.mChildren;
+		final int N = mLayerState.mNum;
+		for (int i = 0; i < N; i++) {
+			if (array[i].mDrawable == null)
+				continue;
+			if (modeOnly)
+				array[i].mDrawable.setTintMode(mode);
+			else
+				array[i].mDrawable.setTintList(tint);
+		}
+	}
 }

@@ -115,4 +115,27 @@ public class DrawableContainer extends Drawable {
 	public void setEnterFadeDuration(int duration) {}
 
 	public void setExitFadeDuration(int duration) {}
+
+	/* ---- teslalinux: AOSP DrawableContainer applies tint and colour filters to every child ---- */
+	@Override
+	public void setTintList(android.content.res.ColorStateList tint) {
+		super.setTintList(tint);
+		for (int i = 0; i < state.childCount; i++)
+			if (state.drawables[i] != null)
+				state.drawables[i].setTintList(tint);
+	}
+	@Override
+	public void setTintMode(android.graphics.PorterDuff.Mode mode) {
+		super.setTintMode(mode);
+		for (int i = 0; i < state.childCount; i++)
+			if (state.drawables[i] != null)
+				state.drawables[i].setTintMode(mode);
+	}
+	@Override
+	public void setColorFilter(android.graphics.ColorFilter filter) {
+		super.setColorFilter(filter);
+		for (int i = 0; i < state.childCount; i++)
+			if (state.drawables[i] != null)
+				state.drawables[i].setColorFilter(filter);
+	}
 }

@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <gtk/gtk.h>
 
 #include "../defines.h"
@@ -167,6 +169,10 @@ JNIEXPORT jboolean JNICALL Java_android_view_ViewGroup_native_1dispatchTouchEven
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
 	GtkWidget *picked_child = gtk_widget_pick(widget, x, y, GTK_PICK_DEFAULT);
+	if (getenv("ATL_DEBUG_TOUCH"))
+		fprintf(stderr, "[touch] native_dispatchTouchEvent on %s (%dx%d) at %.0f,%.0f picks %s%c", G_OBJECT_TYPE_NAME(widget), gtk_widget_get_width(widget), gtk_widget_get_height(widget), x, y, picked_child ? G_OBJECT_TYPE_NAME(picked_child) : "nothing", 10);
+	if (!picked_child)
+		return false;
 
 	return atl_propagate_synthetic_motionevent(picked_child, motion_event, widget);
 }

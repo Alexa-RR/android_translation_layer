@@ -131,6 +131,8 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	/* We never call this ourselves */
 	@Override
 	public boolean dispatchTouchEvent(MotionEvent event) {
+		if (System.getenv("ATL_DEBUG_TOUCH") != null)
+			android.util.Log.i("ViewGroup", "[touch] dispatchTouchEvent " + getClass().getName() + " action=" + event.getActionMasked() + " at " + event.getX() + "," + event.getY() + " size " + getWidth() + "x" + getHeight());
 		return native_dispatchTouchEvent(widget, event, event.getX(), event.getY());
 	}
 
