@@ -70,7 +70,13 @@ public class Paint {
 		native_set_text_size(paint, size);
 	}
 
+	/* teslalinux: AOSP Paint keeps the typeface it was given (null means the default); ATL used to
+	 * drop it and hand back a fresh default from getTypeface(). Pango still picks the actual font
+	 * by family/style, see Typeface. */
+	private Typeface mTypeface;
+
 	public Typeface setTypeface(Typeface typeface) {
+		mTypeface = typeface;
 		return typeface;
 	}
 	public void getTextBounds(String text, int start, int end, Rect bounds) {
@@ -303,7 +309,7 @@ public class Paint {
 	}
 
 	public Typeface getTypeface() {
-		return new Typeface();
+		return mTypeface;
 	}
 
 	public void setTextAlign(Align align) {
