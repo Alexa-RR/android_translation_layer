@@ -131,6 +131,14 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_destroyAsset(JNIEnv
 	Asset_delete(asset);
 }
 
+/* teslalinux: ATL_DENSITY_DPI, the ro.sf.lcd_density of this runtime */
+static int tl_density_dpi(void)
+{
+	const char *env = getenv("ATL_DENSITY_DPI");
+	int dpi = env ? atoi(env) : 0;
+	return dpi > 0 ? dpi : 160;
+}
+
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_init(JNIEnv *env, jobject this, jint sdk_version)
 {
 	struct AssetManager *asset_manager = AssetManager_new();
