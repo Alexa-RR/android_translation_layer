@@ -300,7 +300,20 @@ char *find_jar_or_die(char *builddir_path, char *installed_path, char *install_p
 	return path;
 }
 
-static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *hint, struct jni_callback_data *d)
+
+/* teslalinux: ATL_DEBUG_TOUCH window-level event trace (capture phase, never consumes) */
+static gboolean tl_trace_window_event(GtkEventControllerLegacy *controller, GdkEvent *event, gpointer user_data)
+{
+	GdkEventType t = gdk_event_get_event_type(event);
+	if (t == GDK_BUTTON_PRESS || t == GDK_BUTTON_RELEASE || t == GDK_TOUCH_BEGIN || t == GDK_TOUCH_END || t == GDK_ENTER_NOTIFY || t == GDK_LEAVE_NOTIFY) {
+		double x = 0, y = 0;
+		gdk_event_get_position(event, &x, &y);
+		GtkWidget *w = gtk_widget_pick(GTK_WIDGET(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller))), x, y, GTK_PICK_DEFAULT);
+		fprintf(stderr, "[touch] window event type=%d at %.0f,%.0f picks %s\n", t, x, y, w ? G_OBJECT_TYPE_NAME(w) : "(none)");
+	}
+	return FALSE;
+}
+\nstatic void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *hint, struct jni_callback_data *d)
 {
 	// TODO: pass all files to classpath
 	/*
@@ -447,6 +460,12 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 	/* -- misc -- */
 
 	window = gtk_application_window_new(app);
+	if (getenv("ATL_DEBUG_TOUCH")) {
+		GtkEventController *trace = GTK_EVENT_CONTROLLER(gtk_event_controller_legacy_new());
+		gtk_event_controller_set_propagation_phase(trace, GTK_PHASE_CAPTURE);
+		g_signal_connect(trace, "event", G_CALLBACK(tl_trace_window_event), NULL);
+		gtk_widget_add_controller(window, trace);
+	}
 
 	const char *disable_decoration_env = getenv("ATL_DISABLE_WINDOW_DECORATIONS");
 	gboolean decorated;

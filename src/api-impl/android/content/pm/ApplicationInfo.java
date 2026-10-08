@@ -679,11 +679,6 @@ public class ApplicationInfo extends PackageItemInfo {
 	public String[] splitPublicSourceDirs = new String[0];
 
 
-	/* teslalinux: ApplicationInfo additions */
-	public String deviceProtectedDataDir;
-	public String credentialProtectedDataDir;
-	public int category = -1;
-	public int compileSdkVersion = 34;
-	public String compileSdkVersionCodename;
-	public boolean isVirtualPreview() { return false; }
+	/** Names of the split APKs installed for this app (from each split manifest), parallel to {@link #splitSourceDirs}. */
+	public String[] splitNames;
 }

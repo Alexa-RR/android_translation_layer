@@ -4001,4 +4001,29 @@ public class PackageParser {
 			return null;
 		}
 	}
+
+	/** The {@code split} names of the given split APKs, read from their manifests (AOSP ApplicationInfo.splitNames). */
+	public static String[] readSplitNames(android.content.res.AssetManager assets, String[] splitPaths) {
+		String[] names = new String[splitPaths.length];
+		for (int i = 0; i < splitPaths.length; i++) {
+			android.content.res.XmlResourceParser parser = null;
+			try {
+				parser = assets.openXmlResourceParser(assets.findCookieForPath(splitPaths[i]), "AndroidManifest.xml");
+				int type;
+				while ((type = parser.next()) != org.xmlpull.v1.XmlPullParser.START_TAG && type != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+				}
+				names[i] = parser.getAttributeValue(null, "split");
+			} catch (Exception e) {
+				Slog.w(TAG, "could not read the split name of " + splitPaths[i] + ": " + e);
+			} finally {
+				if (parser != null)
+					parser.close();
+			}
+			if (names[i] == null) { // bundletool naming: split_<name>.apk
+				String f = new java.io.File(splitPaths[i]).getName();
+				names[i] = f.startsWith("split_") && f.endsWith(".apk") ? f.substring(6, f.length() - 4) : f;
+			}
+		}
+		return names;
+	}
 }

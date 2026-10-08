@@ -57,6 +57,18 @@ bool view_dispatch_motionevent(JNIEnv *env, WrapperWidget *wrapper, GtkPropagati
 
 	jobject this = wrapper->jobj;
 	bool is_synthetic = event == motion_event;
+	static int debug_touch = -1;
+	if (debug_touch < 0)
+		debug_touch = getenv("ATL_DEBUG_TOUCH") != NULL;
+	if (debug_touch) {
+		jclass cls = (*env)->GetObjectClass(env, this);
+		jstring name = (*env)->CallObjectMethod(env, cls, (*env)->GetMethodID(env, (*env)->GetObjectClass(env, cls), "getName", "()Ljava/lang/String;"));
+		const char *cname = (*env)->GetStringUTFChars(env, name, NULL);
+		fprintf(stderr, "[touch] %s phase=%s action=0x%x custom_dispatch=%d intercepting=%d synthetic=%d\n", cname,
+		        phase == GTK_PHASE_CAPTURE ? "capture" : phase == GTK_PHASE_BUBBLE ? "bubble" : "target",
+		        action, wrapper->custom_dispatch_touch, wrapper->intercepting_touch, is_synthetic);
+		(*env)->ReleaseStringUTFChars(env, name, cname);
+	}
 
 	if (cancel_triggerer == wrapper) { // cancel done
 		canceled_event = NULL;
@@ -193,6 +205,12 @@ static gboolean on_pointer_event(GtkEventControllerLegacy *event_controller, Gdk
 
 	int action;
 	GdkEventType event_type = gdk_event_get_event_type(event);
+	if (getenv("ATL_DEBUG_TOUCH")) {
+		double ex = 0, ey = 0;
+		gdk_event_get_position(event, &ex, &ey);
+		fprintf(stderr, "[touch] gdk event type=%d at %.0f,%.0f on %s\n", event_type, ex, ey,
+		        G_OBJECT_TYPE_NAME(gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(event_controller))));
+	}
 	switch (event_type) {
 		case GDK_BUTTON_PRESS:
 		case GDK_TOUCH_BEGIN:
@@ -389,6 +407,13 @@ void _setOnTouchListener(JNIEnv *env, jobject this, GtkWidget *widget)
 	if (!pointer_indices)
 		pointer_indices = g_ptr_array_new_full(20, NULL);
 
+	if (getenv("ATL_DEBUG_TOUCH")) {
+		jclass cls = (*env)->GetObjectClass(env, this);
+		jstring name = (*env)->CallObjectMethod(env, cls, (*env)->GetMethodID(env, (*env)->GetObjectClass(env, cls), "getName", "()Ljava/lang/String;"));
+		const char *cname = (*env)->GetStringUTFChars(env, name, NULL);
+		fprintf(stderr, "[touch] attaching touch controller to %s (widget %p)\n", cname, widget);
+		(*env)->ReleaseStringUTFChars(env, name, cname);
+	}
 	GtkEventController *controller = GTK_EVENT_CONTROLLER(gtk_event_controller_legacy_new());
 	gtk_event_controller_set_propagation_phase(controller, GTK_PHASE_BUBBLE);
 

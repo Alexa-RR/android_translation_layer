@@ -118,29 +118,22 @@ public abstract class Context {
 		ApplicationInfo application_info = primary_application.pkg.applicationInfo;
 		application_info.dataDir = Environment.getExternalStorageDirectory().getAbsolutePath();
 		application_info.nativeLibraryDir = (new File(Environment.getExternalStorageDirectory(), "lib")).getAbsolutePath();
-		application_info.sourceDir = native_get_apk_path();
+		// AOSP: sourceDir/publicSourceDir name the base APK; the split APKs that were given on the
+		// command line go to splitSourceDirs (ATL hands us the whole ':'-joined classpath).
+		String[] apkPaths = native_get_apk_path().split(":");
+		application_info.sourceDir = apkPaths[0];
+		application_info.publicSourceDir = apkPaths[0];
+		if (apkPaths.length > 1) {
+			application_info.splitSourceDirs = java.util.Arrays.copyOfRange(apkPaths, 1, apkPaths.length);
+			application_info.splitPublicSourceDirs = application_info.splitSourceDirs;
+			application_info.splitNames = android.content.pm.PackageParser.readSplitNames(primary_application.default_resources.getAssets(), application_info.splitSourceDirs);
+		}
 		package_manager = new PackageManager();
 
 		Provider provider = new Provider("AndroidKeyStore", 1.0, "Android KeyStore provider") {};
 		provider.put("KeyStore.AndroidKeyStore", "android.security.keystore.AndroidKeyStore");
 		provider.put("KeyGenerator.AES", "android.security.keystore.KeyGenerator$AES");
-		provider.put("KeyGenerator.HmacSHA256", "android.security.keystore.KeyGenerator$HmacSHA256");
 		provider.put("KeyGenerator.HmacSHA512", "android.security.keystore.KeyGenerator$HmacSHA512");
-		/* teslalinux: keystore keys are non-exportable, so the keystore provider must supply the
-		 * Cipher/Mac engines that can use them; JCA picks this provider via SupportedKeyClasses. */
-		String ksKey = "android.security.keystore.AndroidKeyStoreSecretKey";
-		provider.put("Cipher.AES/GCM/NoPadding", "android.security.keystore.AndroidKeyStoreCipherSpi$AesGcmNoPadding");
-		provider.put("Cipher.AES/GCM/NoPadding SupportedKeyClasses", ksKey);
-		provider.put("Cipher.AES/CBC/NoPadding", "android.security.keystore.AndroidKeyStoreCipherSpi$AesCbcNoPadding");
-		provider.put("Cipher.AES/CBC/NoPadding SupportedKeyClasses", ksKey);
-		provider.put("Cipher.AES/CBC/PKCS7Padding", "android.security.keystore.AndroidKeyStoreCipherSpi$AesCbcPkcs7Padding");
-		provider.put("Cipher.AES/CBC/PKCS7Padding SupportedKeyClasses", ksKey);
-		provider.put("Cipher.AES/CTR/NoPadding", "android.security.keystore.AndroidKeyStoreCipherSpi$AesCtrNoPadding");
-		provider.put("Cipher.AES/CTR/NoPadding SupportedKeyClasses", ksKey);
-		provider.put("Mac.HmacSHA256", "android.security.keystore.AndroidKeyStoreMacSpi$HmacSHA256");
-		provider.put("Mac.HmacSHA256 SupportedKeyClasses", ksKey);
-		provider.put("Mac.HmacSHA512", "android.security.keystore.AndroidKeyStoreMacSpi$HmacSHA512");
-		provider.put("Mac.HmacSHA512 SupportedKeyClasses", ksKey);
 		Security.addProvider(provider);
 
 		for (PackageParser.Activity receiver : primary_application.pkg.receivers) {
