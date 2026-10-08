@@ -619,4 +619,37 @@ public class Canvas {
 		return false;
 	}
 
+
+	/* teslalinux-frag 424c24dfd70a */
+	/* teslalinux: Canvas additions */
+	private int tlDensity = 0;
+	public int saveLayerAlpha(RectF bounds, int alpha) { return saveLayer(bounds, null); }
+	public int saveLayerAlpha(RectF bounds, int alpha, int saveFlags) { return saveLayer(bounds, null); }
+	public int saveLayerAlpha(float left, float top, float right, float bottom, int alpha) { return saveLayer(new RectF(left, top, right, bottom), null); }
+	public int saveLayerAlpha(float left, float top, float right, float bottom, int alpha, int saveFlags) { return saveLayer(new RectF(left, top, right, bottom), null); }
+	public boolean clipOutRect(Rect rect) { return true; }
+	public boolean clipOutRect(RectF rect) { return true; }
+	public boolean clipOutRect(float left, float top, float right, float bottom) { return true; }
+	public boolean clipOutRect(int left, int top, int right, int bottom) { return true; }
+	public boolean clipOutPath(Path path) { return true; }
+	public void drawRGB(int r, int g, int b) { drawColor(Color.rgb(r, g, b)); }
+	public int getDensity() { return tlDensity; }
+	public void setDensity(int density) { tlDensity = density; }
+	public boolean isOpaque() { return false; }
+	public void skew(float sx, float sy) {}
+	public void drawTextRun(CharSequence text, int start, int end, int contextStart, int contextEnd, float x, float y, boolean isRtl, Paint paint) { drawText(text, start, end, x, y, paint); }
+	public void drawTextRun(char[] text, int index, int count, int contextIndex, int contextCount, float x, float y, boolean isRtl, Paint paint) { drawText(text, index, count, x, y, paint); }
+	public void drawPosText(String text, float[] pos, Paint paint) {}
+	public void drawPosText(char[] text, int index, int count, float[] pos, Paint paint) {}
+	public int getMaximumBitmapWidth() { return 32768; }
+	public int getMaximumBitmapHeight() { return 32768; }
+	public DrawFilter getDrawFilter() { return null; }
+	public void setDrawFilter(DrawFilter filter) {}
+	public void enableZ() {}
+	public void disableZ() {}
+	public void drawDoubleRoundRect(RectF outer, float outerRx, float outerRy, RectF inner, float innerRx, float innerRy, Paint paint) { drawRoundRect(outer, outerRx, outerRy, paint); }
+	public void drawDoubleRoundRect(RectF outer, float[] outerRadii, RectF inner, float[] innerRadii, Paint paint) { drawRoundRect(outer, outerRadii[0], outerRadii[1], paint); }
+	public void drawVertices(VertexMode mode, int vertexCount, float[] verts, int vertOffset, float[] texs, int texOffset, int[] colors, int colorOffset, short[] indices, int indexOffset, int indexCount, Paint paint) {}
+	public void drawBitmapMesh(Bitmap bitmap, int meshWidth, int meshHeight, float[] verts, int vertOffset, int[] colors, int colorOffset, Paint paint) {}
+	public enum VertexMode { TRIANGLES, TRIANGLE_STRIP, TRIANGLE_FAN }
 }

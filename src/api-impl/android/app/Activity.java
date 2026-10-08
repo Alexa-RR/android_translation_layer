@@ -659,4 +659,18 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 		this.window = new Window(this, this);
 	}
 
+
+	/* teslalinux-frag e87de5a14153 */
+	/* teslalinux: Activity additions */
+	public android.window.OnBackInvokedDispatcher getOnBackInvokedDispatcher() { return android.window.OnBackInvokedDispatcher.STUB; }
+	public void addContentView(View view, ViewGroup.LayoutParams params) { setContentView(view, params); }
+	public boolean isLaunchedFromBubble() { return false; }
+	public void onUserInteraction() {}
+	public boolean navigateUpTo(Intent upIntent) { return false; }
+	public boolean shouldUpRecreateTask(Intent targetIntent) { return false; }
+	public void setEnterSharedElementCallback(SharedElementCallback callback) {}
+	public void setExitSharedElementCallback(SharedElementCallback callback) {}
+	public boolean dispatchKeyShortcutEvent(android.view.KeyEvent event) { return false; }
+	public void startIntentSenderForResult(android.content.IntentSender intent, int requestCode, Intent fillInIntent, int flagsMask, int flagsValues, int extraFlags) {}
+	public void startIntentSenderForResult(android.content.IntentSender intent, int requestCode, Intent fillInIntent, int flagsMask, int flagsValues, int extraFlags, android.os.Bundle options) {}
 }

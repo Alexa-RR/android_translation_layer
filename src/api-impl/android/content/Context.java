@@ -594,4 +594,31 @@ public abstract class Context {
 
 	public abstract ATLLoadedApp get_atl_loaded_app();
 
+
+	/* teslalinux-frag 529391287442 */
+	/* teslalinux: API 28-34 Context additions Waze touches during Application.onCreate */
+	public Executor getMainExecutor() {
+		final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+		return new Executor() {
+			public void execute(Runnable r) { h.post(r); }
+		};
+	}
+	public Context createAttributionContext(String attributionTag) { return this; }
+	public Context createWindowContext(int type, android.os.Bundle options) { return this; }
+	public Context createWindowContext(android.view.Display display, int type, android.os.Bundle options) { return this; }
+	public Context createDeviceContext(int deviceId) { return this; }
+	public int getDeviceId() { return 0; }
+	public boolean isUiContext() { return true; }
+	public String getOpPackageName() { return getPackageName(); }
+	public java.io.File getCodeCacheDir() { java.io.File f = new java.io.File(getCacheDir(), "code_cache"); f.mkdirs(); return f; }
+	public String getSystemServiceName(Class<?> serviceClass) { return serviceClass.getSimpleName(); }
+	public ComponentName startForegroundService(Intent service) { return startService(service); }
+	public void startActivities(Intent[] intents) { for (Intent i : intents) startActivity(i); }
+	public void startActivities(Intent[] intents, android.os.Bundle options) { startActivities(intents); }
+	public boolean deleteFile(String name) { return getFileStreamPath(name).delete(); }
+	public int checkCallingOrSelfUriPermission(android.net.Uri uri, int modeFlags) { return android.content.pm.PackageManager.PERMISSION_GRANTED; }
+	public boolean bindServiceAsUser(Intent service, ServiceConnection conn, int flags, android.os.UserHandle user) { return bindService(service, conn, flags); }
+	public android.view.Display getDisplay() { return ((android.view.WindowManager) getSystemService("window")).getDefaultDisplay(); }
+	public void registerDeviceIdChangeListener(Executor executor, java.util.function.IntConsumer listener) {}
+	public void unregisterDeviceIdChangeListener(java.util.function.IntConsumer listener) {}
 }

@@ -71,4 +71,31 @@ public class LocationManager {
 	public void unregisterGnssStatusCallback(GnssStatus.Callback callback) {
 	}
 
+
+	/* teslalinux-frag 00d0b731e56d */
+	/* teslalinux: LocationManager additions (API 28-34) */
+	public boolean isLocationEnabled() { return true; }
+	public boolean hasProvider(String provider) { return "gps".equals(provider) || "network".equals(provider) || "passive".equals(provider) || "fused".equals(provider); }
+	public LocationProvider getProvider(String name) { return hasProvider(name) ? new LocationProvider(name) : null; }
+	public void getCurrentLocation(String provider, CancellationSignal signal, Executor executor, final Consumer<Location> consumer) {
+		final Location l = getLastKnownLocation(provider);
+		executor.execute(new Runnable() { public void run() { consumer.accept(l); } });
+	}
+	public void getCurrentLocation(String provider, LocationRequest request, CancellationSignal signal, Executor executor, Consumer<Location> consumer) { getCurrentLocation(provider, signal, executor, consumer); }
+	public boolean registerGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback) { return false; }
+	public boolean registerGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback, android.os.Handler handler) { return false; }
+	public boolean registerGnssMeasurementsCallback(Executor executor, GnssMeasurementsEvent.Callback callback) { return false; }
+	public void unregisterGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback) {}
+	public boolean registerGnssStatusCallback(Executor executor, GnssStatus.Callback callback) { return registerGnssStatusCallback(callback, null); }
+	public String getGnssHardwareModelName() { return "atl"; }
+	public int getGnssYearOfHardware() { return 2020; }
+	public void requestLocationUpdates(String provider, LocationRequest request, Executor executor, LocationListener listener) { requestLocationUpdates(provider, request.getIntervalMillis(), request.getMinUpdateDistanceMeters(), listener); }
+	public void requestLocationUpdates(String provider, long minTimeMs, float minDistanceM, Executor executor, LocationListener listener) { requestLocationUpdates(provider, minTimeMs, minDistanceM, listener); }
+	public void requestLocationUpdates(String provider, long minTimeMs, float minDistanceM, LocationListener listener, android.os.Looper looper) { requestLocationUpdates(provider, minTimeMs, minDistanceM, listener); }
+	public void requestLocationUpdates(long minTimeMs, float minDistanceM, Criteria criteria, LocationListener listener, android.os.Looper looper) { requestLocationUpdates("gps", minTimeMs, minDistanceM, listener); }
+	public void requestLocationUpdates(long minTimeMs, float minDistanceM, Criteria criteria, Executor executor, LocationListener listener) { requestLocationUpdates("gps", minTimeMs, minDistanceM, listener); }
+	public void requestSingleUpdate(String provider, LocationListener listener, android.os.Looper looper) { requestLocationUpdates(provider, 0, 0, listener); }
+	public void removeUpdates(android.app.PendingIntent intent) {}
+	public boolean addNmeaListener(Executor executor, OnNmeaMessageListener listener) { return false; }
+	public void removeNmeaListener(OnNmeaMessageListener listener) {}
 }

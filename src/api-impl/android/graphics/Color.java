@@ -190,4 +190,24 @@ public class Color {
 		return (alpha << 24) | (HSVToColor(hsv) & 0xffffff);
 	}
 
+
+	/* teslalinux-frag be6a5d0728cc */
+	/* teslalinux: Color additions (API 26+ long colors, sRGB only) */
+	public static float luminance(int color) {
+		double r = ((color >> 16) & 0xff) / 255.0, g = ((color >> 8) & 0xff) / 255.0, b = (color & 0xff) / 255.0;
+		r = r < 0.03928 ? r / 12.92 : Math.pow((r + 0.055) / 1.055, 2.4);
+		g = g < 0.03928 ? g / 12.92 : Math.pow((g + 0.055) / 1.055, 2.4);
+		b = b < 0.03928 ? b / 12.92 : Math.pow((b + 0.055) / 1.055, 2.4);
+		return (float) (0.2126 * r + 0.7152 * g + 0.0722 * b);
+	}
+	public static long pack(int color) { return (color & 0xffffffffL) << 32; }
+	public static long pack(float red, float green, float blue) { return pack(red, green, blue, 1f); }
+	public static long pack(float red, float green, float blue, float alpha) {
+		int c = ((int) (alpha * 255.0f + 0.5f) << 24) | ((int) (red * 255.0f + 0.5f) << 16) | ((int) (green * 255.0f + 0.5f) << 8) | (int) (blue * 255.0f + 0.5f);
+		return pack(c);
+	}
+	public static boolean isSrgb(long color) { return true; }
+	public static boolean isWideGamut(long color) { return false; }
+	public static boolean isInColorSpace(long color, ColorSpace colorSpace) { return true; }
+	public static int getComponentCount(long color) { return 4; }
 }
