@@ -316,7 +316,9 @@ public final class ContextImpl extends Context {
 		if (targetApp == null) {
 			return false;
 		}
-		return targetApp.startOrBindService(intent, null) != null;
+		/* teslalinux: ATL started the service but never delivered the connection; bound services
+		 * (Waze's navigation service, Play Core) need onServiceConnected with the service's binder. */
+		return targetApp.startOrBindService(intent, serviceConnection) != null;
 	}
 
 	@Override

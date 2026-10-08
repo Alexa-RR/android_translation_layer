@@ -620,4 +620,16 @@ public abstract class Context {
 	public android.view.Display getDisplay() { return ((android.view.WindowManager) getSystemService("window")).getDefaultDisplay(); }
 	public void registerDeviceIdChangeListener(Executor executor, java.util.function.IntConsumer listener) {}
 	public void unregisterDeviceIdChangeListener(java.util.function.IntConsumer listener) {}
+	/* API 29/33 overloads: the executor variant dispatches the connection callbacks on that executor;
+	 * receiver export flags are meaningless in a single-process runtime and are ignored like options. */
+	public boolean bindService(Intent service, int flags, final java.util.concurrent.Executor executor, final ServiceConnection conn) {
+		ServiceConnection onExecutor = new ServiceConnection() {
+			public void onServiceConnected(final ComponentName name, final android.os.IBinder binder) { executor.execute(new Runnable() { public void run() { conn.onServiceConnected(name, binder); } }); }
+			public void onServiceDisconnected(final ComponentName name) { executor.execute(new Runnable() { public void run() { conn.onServiceDisconnected(name); } }); }
+		};
+		return bindService(service, onExecutor, flags);
+	}
+	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, int flags) { return registerReceiver(receiver, filter); }
+	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, String broadcastPermission, android.os.Handler scheduler, int flags) { return registerReceiver(receiver, filter, broadcastPermission, scheduler); }
+	public void sendBroadcast(Intent intent, String receiverPermission, android.os.Bundle options) { sendBroadcast(intent); }
 }

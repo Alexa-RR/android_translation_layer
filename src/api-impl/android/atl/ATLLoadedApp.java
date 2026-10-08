@@ -247,6 +247,7 @@ public final class ATLLoadedApp {
 			return null;
 		}
 		final String className = component.getClassName();
+		final ComponentName resolved = component;
 
 		new Handler(Looper.getMainLooper()).post(new Runnable() {
 			@Override
@@ -264,7 +265,7 @@ public final class ATLLoadedApp {
 					}
 
 					if (serviceConnection != null) {
-						serviceConnection.onServiceConnected(intent.getComponent(), service.onBind(intent));
+						serviceConnection.onServiceConnected(resolved, service.onBind(intent));
 					} else {
 						service.onStartCommand(intent, 0, 0);
 					}
