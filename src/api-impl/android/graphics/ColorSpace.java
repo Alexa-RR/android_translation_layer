@@ -2872,8 +2872,22 @@ public abstract class ColorSpace {
             mMax = max;
 
             DoubleUnaryOperator clamp = this::clamp;
-            mClampedOetf = oetf.andThen(clamp);
-            mClampedEotf = clamp.andThen(eotf);
+            /* teslalinux: DoubleUnaryOperator.andThen is implemented with a lambda inside libcore, and the
+             * invoke-custom call sites in this ART build cannot be bootstrapped (BootstrapMethodError), so
+             * compose the two operators by hand. Same function values as AOSP. */
+            final DoubleUnaryOperator fOetf = oetf, fEotf = eotf, fClamp = clamp;
+            mClampedOetf = new DoubleUnaryOperator() {
+                @Override
+                public double applyAsDouble(double x) {
+                    return fClamp.applyAsDouble(fOetf.applyAsDouble(x));
+                }
+            };
+            mClampedEotf = new DoubleUnaryOperator() {
+                @Override
+                public double applyAsDouble(double x) {
+                    return fEotf.applyAsDouble(fClamp.applyAsDouble(x));
+                }
+            };
 
             mTransferParameters = transferParameters;
 
