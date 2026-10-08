@@ -380,20 +380,27 @@ public class Parcel {
 		writeMap(value == null ? null : value.mMap);
 	}
 
-	public Bundle readBundle(ClassLoader loader) throws ReflectiveOperationException {
+	/* teslalinux: AOSP's readBundle has no checked exceptions; a class that cannot be instantiated
+	 * while unparcelling is a BadParcelableException (unchecked), as on Android. */
+	public Bundle readBundle(ClassLoader loader) {
 		int size = readInt();
 		if (size == -1)
 			return null;
 		Bundle bundle = new Bundle();
 		for (int i = 0; i < size; i++) {
 			String key = readString();
-			Object value = readValue(loader);
+			Object value;
+			try {
+				value = readValue(loader);
+			} catch (ReflectiveOperationException e) {
+				throw new BadParcelableException("Cannot unparcel value for key " + key + ": " + e);
+			}
 			bundle.mMap.put(key, value);
 		}
 		return bundle;
 	}
 
-	public Bundle readBundle() throws ReflectiveOperationException {
+	public Bundle readBundle() {
 		return readBundle(getClass().getClassLoader());
 	}
 

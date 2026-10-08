@@ -1153,4 +1153,27 @@ public final class Bundle extends BaseBundle implements Cloneable, Parcelable {
 	public synchronized String toString() {
 		return "Bundle[" + mMap.toString() + "]";
 	}
+
+	/* AOSP Bundle.deepCopy(): a copy whose nested bundles and arrays are copied too */
+	public Bundle deepCopy() {
+		Bundle copy = new Bundle();
+		for (String key : keySet()) {
+			Object v = get(key);
+			if (v instanceof Bundle) v = ((Bundle) v).deepCopy();
+			else if (v instanceof PersistableBundle) v = new PersistableBundle((PersistableBundle) v);
+			else if (v instanceof int[]) v = ((int[]) v).clone();
+			else if (v instanceof long[]) v = ((long[]) v).clone();
+			else if (v instanceof float[]) v = ((float[]) v).clone();
+			else if (v instanceof double[]) v = ((double[]) v).clone();
+			else if (v instanceof byte[]) v = ((byte[]) v).clone();
+			else if (v instanceof boolean[]) v = ((boolean[]) v).clone();
+			else if (v instanceof char[]) v = ((char[]) v).clone();
+			else if (v instanceof short[]) v = ((short[]) v).clone();
+			else if (v instanceof String[]) v = ((String[]) v).clone();
+			else if (v instanceof CharSequence[]) v = ((CharSequence[]) v).clone();
+			else if (v instanceof java.util.ArrayList) v = new java.util.ArrayList<>((java.util.ArrayList<?>) v);
+			copy.mMap.put(key, v);
+		}
+		return copy;
+	}
 }
