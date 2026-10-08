@@ -70,7 +70,9 @@ public class Dialog implements Window.Callback, DialogInterface {
 
 	public void setOwnerActivity(Activity activity) {}
 
-	public void setCancelable(boolean cancelable) {}
+	public void setCancelable(boolean cancelable) {
+		mCancelable = cancelable;
+	}
 
 	public void setOnCancelListener(OnCancelListener onCancelListener) {}
 
@@ -88,6 +90,7 @@ public class Dialog implements Window.Callback, DialogInterface {
 			@Override
 			public void run() {
 				onCreate(null);
+				onStart();
 				// Read the size of the main window. Floating dialogs should be smaller as specified in the windowMinWidth* attributes.
 				// Non-floating are typically constructed with MATCH_PARENT layout params and thus get the exact size of the main window.
 				// Most non-floating dialogs are technically dialogs, but are expected to behave more like full size activities.
@@ -139,6 +142,7 @@ public class Dialog implements Window.Callback, DialogInterface {
 			@Override
 			public void run() {
 				nativeClose(nativePtr);
+				onStop();
 				if (onDismissListener != null)
 					onDismissListener.onDismiss(Dialog.this);
 			}
@@ -219,4 +223,50 @@ public class Dialog implements Window.Callback, DialogInterface {
 	}
 
 	public void setOnKeyListener(OnKeyListener onKeyListener) {}
+
+	/* teslalinux: AOSP Dialog members (bodies from AOSP, minus the action bar which ATL does not have) */
+	private static final String DIALOG_SHOWING_TAG = "android:dialogShowing";
+	private boolean mCancelable = true;
+
+	public void addContentView(View view, android.view.ViewGroup.LayoutParams params) {
+		view.setLayoutParams(params);
+		((android.view.ViewGroup) getWindow().getDecorView()).addView(view);
+	}
+
+	public void setContentView(View view, android.view.ViewGroup.LayoutParams params) {
+		view.setLayoutParams(params);
+		getWindow().setContentView(view);
+	}
+
+	public final <T extends View> T requireViewById(int id) {
+		T view = (T) findViewById(id);
+		if (view == null) {
+			throw new IllegalArgumentException("ID does not reference a View inside this Dialog");
+		}
+		return view;
+	}
+
+	public void onBackPressed() {
+		if (mCancelable) {
+			cancel();
+		}
+	}
+
+	protected void onStart() {
+	}
+
+	protected void onStop() {
+	}
+
+	public android.os.Bundle onSaveInstanceState() {
+		android.os.Bundle bundle = new android.os.Bundle();
+		bundle.putBoolean(DIALOG_SHOWING_TAG, isShowing());
+		return bundle;
+	}
+
+	public void onRestoreInstanceState(android.os.Bundle savedInstanceState) {
+		if (savedInstanceState.getBoolean(DIALOG_SHOWING_TAG)) {
+			show();
+		}
+	}
 }

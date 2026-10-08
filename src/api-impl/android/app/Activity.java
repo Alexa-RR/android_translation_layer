@@ -719,4 +719,42 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	public final void performStop() { dispatchActivityPreStopped(); onStop(); dispatchActivityPostStopped(); }
 	public final void performDestroy() { dispatchActivityPreDestroyed(); onDestroy(); dispatchActivityPostDestroyed(); }
 	public final void performSaveInstanceState(android.os.Bundle outState) { dispatchActivityPreSaveInstanceState(outState); onSaveInstanceState(outState); dispatchActivitySaveInstanceState(outState); dispatchActivityPostSaveInstanceState(outState); }
+
+	/* ---- lock screen / caller / locus (AOSP Activity, API 27-30) ----
+	 * On Android these go to the activity task manager; the observable effect of the first three is
+	 * the FLAG_SHOW_WHEN_LOCKED / FLAG_TURN_SCREEN_ON window state, which is what is kept here. There
+	 * is no keyguard in this runtime, so an activity is always shown "when locked". */
+	private boolean mInheritShowWhenLocked;
+
+	public void setShowWhenLocked(boolean showWhenLocked) {
+		if (showWhenLocked)
+			getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+		else
+			getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED);
+	}
+
+	public void setInheritShowWhenLocked(boolean inheritShowWhenLocked) {
+		mInheritShowWhenLocked = inheritShowWhenLocked;
+	}
+
+	public void setTurnScreenOn(boolean turnScreenOn) {
+		if (turnScreenOn)
+			getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+		else
+			getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
+	}
+
+	/** AOSP: the component that started this activity with startActivityForResult, else null.
+	 * ATL does not attribute launches to a calling activity, so this is null, as for an activity
+	 * launched without a result request. */
+	public android.content.ComponentName getCallingActivity() {
+		return null;
+	}
+
+	/** AOSP forwards the locus to the activity task manager for content capture / shortcuts; neither
+	 * service exists here, so only the value is kept. */
+	private android.content.LocusId mLocusId;
+	public void setLocusContext(android.content.LocusId locusId, android.os.Bundle bundle) {
+		mLocusId = locusId;
+	}
 }

@@ -51,9 +51,32 @@ public class Window {
 		set_jobject(native_window, this);
 	}
 
-	public void addFlags(int flags) {}
-	public void setFlags(int flags, int mask) {}
-	public void clearFlags(int flags) {}
+	/* teslalinux: AOSP Window flag handling (the flags live in the window attributes). */
+	private int mForcedWindowFlags = 0;
+
+	public void addFlags(int flags) {
+		setFlags(flags, flags);
+	}
+
+	public void clearFlags(int flags) {
+		setFlags(0, flags);
+	}
+
+	public void setFlags(int flags, int mask) {
+		final WindowManager.LayoutParams attrs = getAttributes();
+		attrs.flags = (attrs.flags & ~mask) | (flags & mask);
+		mForcedWindowFlags |= mask;
+	}
+
+	/** @hide AOSP: flags the app set explicitly through setFlags/addFlags/clearFlags. */
+	public final int getForcedWindowFlags() {
+		return mForcedWindowFlags;
+	}
+
+	/** @hide AOSP */
+	public final boolean hasSoftInputMode() {
+		return getAttributes().softInputMode != 0;
+	}
 
 	public final Callback getCallback() {
 		return this.callback;
