@@ -482,7 +482,10 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		this.transition = transition;
 	}
 
+	private static int sDrawChildTrace;
 	public boolean drawChild(Canvas canvas, View child, long drawingTime) {
+		if (System.getenv("ATL_DEBUG_SURFACE") != null && child instanceof SurfaceView && (sDrawChildTrace++ % 100) == 0)
+			android.util.Log.i("ViewGroup", "[surface] drawChild #" + sDrawChildTrace + " " + getClass().getName() + " -> " + child.getClass().getName() + " canvas=" + canvas.getClass().getName());
 		if (canvas instanceof GskCanvas)
 			native_drawChild(widget, child.widget, ((GskCanvas)canvas).snapshot);
 		return false;
@@ -731,7 +734,6 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 	@Override
 	/** AOSP: a descendant's drawing changed; propagate up so every ancestor that caches drawings knows. */
-	private static int sDescendantTrace;
 	public void onDescendantInvalidated(View child, View target) {
 		if (System.getenv("ATL_DEBUG_SURFACE") != null && target instanceof SurfaceView && (sDescendantTrace++ % 100) == 0)
 			android.util.Log.i("ViewGroup", "[surface] onDescendantInvalidated #" + sDescendantTrace + " " + getClass().getName() + " parent=" + (parent == null ? "null" : parent.getClass().getName()));
@@ -947,4 +949,6 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	public final void invalidateChild(View child, final android.graphics.Rect dirty) {
 		onDescendantInvalidated(child, child);
 	}
+
+	private static int sDescendantTrace;
 }

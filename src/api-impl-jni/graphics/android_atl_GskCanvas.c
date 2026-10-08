@@ -212,3 +212,23 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRenderNode(JNIEnv 
 	GskRenderNode *node = _PTR(node_ptr);
 	gtk_snapshot_append_node(snapshot, node);
 }
+
+/* ---- teslalinux: path clipping ---------------------------------------------------------------- */
+
+/* clipPath: everything drawn until the matching pop is filled through the path (Canvas.clipPath with
+ * Region.Op.INTERSECT, the only intersecting op hardware canvases accept). fill_rule: 0 winding, 1 even-odd. */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipPath(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong path_ptr, jint fill_rule)
+{
+	GdkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
+	gtk_snapshot_push_fill(snapshot, (GskPath *)_PTR(path_ptr), fill_rule ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING);
+}
+
+/* clipOutPath (Region.Op.DIFFERENCE): the drawn content is masked by the inverse alpha of the filled
+ * path. The mask child is appended and closed here, so the caller still owes exactly one pop. */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipOutPath(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong path_ptr, jint fill_rule)
+{
+	GdkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
+	gtk_snapshot_push_mask(snapshot, GSK_MASK_MODE_INVERTED_ALPHA);
+	gtk_snapshot_append_fill(snapshot, (GskPath *)_PTR(path_ptr), fill_rule ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING, &(GdkRGBA){0, 0, 0, 1});
+	gtk_snapshot_pop(snapshot);
+}

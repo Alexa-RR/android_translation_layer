@@ -179,9 +179,11 @@ public class Path {
 		addOval(rect.left, rect.top, rect.right, rect.bottom, direction);
 	}
 
+	/** Add a closed circle contour to the path (AOSP: direction decides the contour's winding). */
 	public void addCircle(float x, float y, float radius, Direction direction) {
-		Log.w("Path", "STUB: addCircle");
+		native_add_circle(getBuilder(), x, y, radius, direction == Direction.CW);
 	}
+	private static native void native_add_circle(long builder, float x, float y, float radius, boolean clockwise);
 
 	public void transform(Matrix matrix) {
 		builder = native_transform(getGskPath(), matrix.ni());

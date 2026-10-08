@@ -439,4 +439,10 @@ public class Drawable {
 			setVisible(visible, false);
 		}
 	}
+	/** AOSP Drawable base: no bitmap filtering unless a subclass says so. */
+	public boolean isFilterBitmap() { return false; }
+	/** AOSP Drawable base: no colour filter unless a subclass keeps one. */
+	public android.graphics.ColorFilter getColorFilter() { return null; }
+	/** AOSP: the drawable currently showing (the drawable itself unless a container overrides). */
+	public Drawable getCurrent() { return this; }
 }

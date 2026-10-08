@@ -65,6 +65,10 @@ public class Paint {
 
 	public void setAntiAlias(boolean aa) {
 		tlAntiAlias = aa;
+		if (aa)
+			mFlags |= ANTI_ALIAS_FLAG;
+		else
+			mFlags &= ~ANTI_ALIAS_FLAG;
 	}
 
 	public boolean setFontVariationSettings(String fvs) {
@@ -100,11 +104,17 @@ public class Paint {
 		native_get_text_bounds(paint, text.substring(start, end), bounds);
 		return bounds.width();
 	}
-	public void setFilterBitmap(boolean filter) {}
+	/** AOSP: FILTER_BITMAP_FLAG selects bilinear sampling of scaled bitmaps. */
+	public void setFilterBitmap(boolean filter) {
+		if (filter)
+			mFlags |= FILTER_BITMAP_FLAG;
+		else
+			mFlags &= ~FILTER_BITMAP_FLAG;
+	}
 
 	public void setFlags(int flags) {
-		if ((flags & ANTI_ALIAS_FLAG) != 0)
-			setAntiAlias(true);
+		mFlags = flags;
+		setAntiAlias((flags & ANTI_ALIAS_FLAG) != 0);
 	}
 
 	public void setStyle(Style style) {
@@ -207,14 +217,25 @@ public class Paint {
 		}
 	}
 
-	public /*native*/ int getFlags() { return 0; }
+	public int getFlags() {
+		return mFlags;
+	}
 
-	public /*native*/ int getHinting() { return 0; }
-	public /*native*/ void setHinting(int mode) {}
+	public int getHinting() {
+		return mHinting;
+	}
+	public void setHinting(int mode) {
+		mHinting = mode;
+	}
 
-	public /*native*/ void setDither(boolean dither) {}
+	public void setDither(boolean dither) {
+		if (dither)
+			mFlags |= DITHER_FLAG;
+		else
+			mFlags &= ~DITHER_FLAG;
+	}
 	public boolean isDither() {
-		return false;
+		return (mFlags & DITHER_FLAG) != 0;
 	}
 
 	public /*native*/ void setLinearText(boolean linearText) {}
@@ -362,7 +383,9 @@ public class Paint {
 		this.paint = native_clone(paint.paint);
 	}
 
-	public boolean isFilterBitmap() { return false; }
+	public boolean isFilterBitmap() {
+		return (mFlags & FILTER_BITMAP_FLAG) != 0;
+	}
 
 	public Cap getStrokeCap() {
 		return Cap.values[native_get_stroke_cap(paint)];
@@ -470,4 +493,10 @@ public class Paint {
 			settings = null;
 		mFontFeatureSettings = settings;
 	}
+	/** AOSP flag word (ANTI_ALIAS_FLAG, FILTER_BITMAP_FLAG, DITHER_FLAG, ...) and hinting mode. */
+	private int mFlags;
+	private int mHinting = HINTING_ON;
+	/** Paint hinting modes (AOSP). */
+	public static final int HINTING_OFF = 0x0;
+	public static final int HINTING_ON = 0x1;
 }

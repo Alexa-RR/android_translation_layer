@@ -220,3 +220,18 @@ JNIEXPORT void JNICALL Java_android_graphics_Path_native_1get_1bounds(JNIEnv *en
 	_SET_FLOAT_FIELD(bounds, "right", rect.origin.x + rect.size.width);
 	_SET_FLOAT_FIELD(bounds, "bottom", rect.origin.y + rect.size.height);
 }
+
+/* ---- teslalinux: Path.addCircle ---------------------------------------------------------------- */
+JNIEXPORT void JNICALL Java_android_graphics_Path_native_1add_1circle(JNIEnv *env, jclass this, jlong builder_ptr, jfloat x, jfloat y, jfloat radius, jboolean clockwise)
+{
+	GskPathBuilder *builder = _PTR(builder_ptr);
+	if (clockwise) {
+		gsk_path_builder_add_circle(builder, &GRAPHENE_POINT_INIT(x, y), radius);
+	} else {
+		GskPathBuilder *circle = gsk_path_builder_new();
+		gsk_path_builder_add_circle(circle, &GRAPHENE_POINT_INIT(x, y), radius);
+		GskPath *path = gsk_path_builder_free_to_path(circle);
+		gsk_path_builder_add_reverse_path(builder, path);
+		gsk_path_unref(path);
+	}
+}

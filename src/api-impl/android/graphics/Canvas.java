@@ -697,4 +697,21 @@ public class Canvas {
 			return null; // a blend mode without a PorterDuff equivalent (e.g. the separable modes)
 		}
 	}
+
+	/* ---- teslalinux: AOSP quickReject family (a plain canvas cannot reject anything; GskCanvas tracks its clip) ---- */
+	public boolean quickReject(float left, float top, float right, float bottom) {
+		return false;
+	}
+	public boolean quickReject(RectF rect) {
+		return false;
+	}
+	public boolean quickReject(RectF rect, EdgeType type) {
+		return false;
+	}
+	public boolean quickReject(Path path) {
+		return false;
+	}
+	public boolean quickReject(Path path, EdgeType type) {
+		return false;
+	}
 }
