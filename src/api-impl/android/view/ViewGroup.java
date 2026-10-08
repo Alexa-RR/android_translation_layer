@@ -730,7 +730,16 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	public native boolean native_dispatchTouchEvent(long widget, MotionEvent event, double x, double y);
 
 	@Override
-	public void onDescendantInvalidated(View child, View target) {}
+	/** AOSP: a descendant's drawing changed; propagate up so every ancestor that caches drawings knows. */
+	private static int sDescendantTrace;
+	public void onDescendantInvalidated(View child, View target) {
+		if (System.getenv("ATL_DEBUG_SURFACE") != null && target instanceof SurfaceView && (sDescendantTrace++ % 100) == 0)
+			android.util.Log.i("ViewGroup", "[surface] onDescendantInvalidated #" + sDescendantTrace + " " + getClass().getName() + " parent=" + (parent == null ? "null" : parent.getClass().getName()));
+		final ViewParent p = parent;
+		if (p != null) {
+			p.onDescendantInvalidated(this, target);
+		}
+	}
 
 	public boolean getTouchscreenBlocksFocus() { return false; }
 
@@ -932,5 +941,10 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		if (descendantFocusability == FOCUS_AFTER_DESCENDANTS && focusableCount == views.size()) {
 			super.addFocusables(views, direction, focusableMode);
 		}
+	}
+
+	/** AOSP ViewGroup.invalidateChild (hardware-accelerated path): the dirty child is reported upwards. */
+	public final void invalidateChild(View child, final android.graphics.Rect dirty) {
+		onDescendantInvalidated(child, child);
 	}
 }

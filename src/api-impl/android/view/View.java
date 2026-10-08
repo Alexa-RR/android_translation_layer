@@ -1371,14 +1371,37 @@ public class View implements Drawable.Callback {
 
 	public void unscheduleDrawable(Drawable drawable) {}
 
+	private static final boolean ATL_DEBUG_SURFACE = System.getenv("ATL_DEBUG_SURFACE") != null;
 	public void invalidate(Rect dirty) {
-		nativeInvalidate(widget);
+		if (dirty == null) {
+			invalidate();
+			return;
+		}
+		invalidateInternal(dirty.left, dirty.top, dirty.right, dirty.bottom);
 	}
 	public void invalidate(int l, int t, int r, int b) {
-		nativeInvalidate(widget);
+		invalidateInternal(l, t, r, b);
 	}
 	public void invalidate() {
+		invalidateInternal(0, 0, getWidth(), getHeight());
+	}
+	/**
+	 * AOSP View.invalidateInternal: the view's own drawing is redone (the GTK widget is queued for a
+	 * redraw) and the parent chain is told through ViewParent.invalidateChild, which is how a parent
+	 * that records its children into a display list (Compose's AndroidViewHolder, hardware layers)
+	 * learns that the recording is stale. Invisible views skip the parent notification, as AOSP does.
+	 */
+	private static int sInvalidateTrace;
+	private void invalidateInternal(int l, int t, int r, int b) {
 		nativeInvalidate(widget);
+		if (ATL_DEBUG_SURFACE && this instanceof SurfaceView && (sInvalidateTrace++ % 100) == 0)
+			android.util.Log.i("View", "[surface] invalidate #" + sInvalidateTrace + " " + getClass().getName() + " visibility=" + getVisibility() + " parent=" + (parent == null ? "null" : parent.getClass().getName()));
+		if (getVisibility() != VISIBLE)
+			return;
+		final ViewParent p = parent;
+		if (p != null && l < r && t < b) {
+			p.invalidateChild(this, new Rect(l, t, r, b));
+		}
 	}
 	private static native void nativeInvalidate(long widget);
 

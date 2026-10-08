@@ -470,6 +470,17 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	ATLSurface *atl_surface = surface;
 
 	glFlush();
+	if (getenv("ATL_DEBUG_SURFACE")) { /* tl_frame_probe */
+		static int probes = 0;
+		if ((++probes % 100) == 1 && atl_surface->back_buffer) {
+			unsigned char c[4] = {0}, e[4] = {0};
+			int w = atl_surface->width, h = atl_surface->height;
+			glReadPixels(w / 2, h / 2, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+			glReadPixels(10, 10, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, e);
+			fprintf(stderr, "[surface] frame #%d %dx%d fbo=%u centre=%02x%02x%02x%02x edge=%02x%02x%02x%02x glerr=%x\n", probes, w, h,
+			        atl_surface->back_buffer->gl_framebuffer, c[0], c[1], c[2], c[3], e[0], e[1], e[2], e[3], glGetError());
+		}
+	}
 	if (atl_surface->back_buffer) {
 		g_async_queue_timeout_pop(atl_surface->vsync, 50000); // 50ms
 		atl_surface->front_buffer = atl_surface->back_buffer;

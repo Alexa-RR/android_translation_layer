@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include <gtk/gtk.h>
 
 #include "../defines.h"
@@ -47,6 +49,12 @@ static void surface_view_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapsho
 		return;
 	}
 #endif
+	if (getenv("ATL_DEBUG_SURFACE")) {
+		static int snaps = 0;
+		if ((++snaps % 100) == 1)
+			fprintf(stderr, "[surface] snapshot #%d widget %p texture=%p %dx%d\n", snaps, (void *)widget, (void *)surface_view_widget->texture,
+			        gtk_widget_get_width(widget), gtk_widget_get_height(widget));
+	}
 	if (surface_view_widget->texture) {
 		graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, gtk_widget_get_width(widget), gtk_widget_get_height(widget));
 		if (surface_view_widget->needs_flip) {
@@ -101,13 +109,56 @@ GtkWidget *surface_view_widget_new(void)
 	return g_object_new(surface_view_widget_get_type(), NULL);
 }
 
+/* teslalinux: SurfaceViewWidget sits inside a GtkGraphicsOffload inside the WrapperWidget that owns
+ * the Java view; call View.invalidate() on it so recorded parents (Compose layers) re-record. */
+static void tl_invalidate_java_view(GtkWidget *surface_view_widget)
+{
+	static jmethodID invalidate_method = NULL;
+	GtkWidget *offload = gtk_widget_get_parent(surface_view_widget);
+	GtkWidget *wrapper = offload ? gtk_widget_get_parent(offload) : NULL;
+	static int calls = 0;
+	int trace = getenv("ATL_DEBUG_SURFACE") && (calls++ % 100) == 0;
+	if (!wrapper || !WRAPPER_IS_WIDGET(wrapper)) {
+		if (trace)
+			fprintf(stderr, "[surface] invalidate_java_view #%d: no wrapper widget (offload %p, parent %p %s)%c", calls, (void *)offload, (void *)wrapper, wrapper ? G_OBJECT_TYPE_NAME(wrapper) : "-", 10);
+		return;
+	}
+	jobject jobj = WRAPPER_WIDGET(wrapper)->jobj;
+	if (!jobj) {
+		if (trace)
+			fprintf(stderr, "[surface] invalidate_java_view #%d: wrapper has no Java object%c", calls, 10);
+		return;
+	}
+	if (trace)
+		fprintf(stderr, "[surface] invalidate_java_view #%d: calling View.invalidate()%c", calls, 10);
+	JNIEnv *env = get_jni_env();
+	if ((*env)->IsSameObject(env, jobj, NULL))
+		return;
+	if (!invalidate_method) {
+		jclass view_class = (*env)->FindClass(env, "android/view/View");
+		invalidate_method = (*env)->GetMethodID(env, view_class, "invalidate", "()V");
+	}
+	(*env)->CallVoidMethod(env, jobj, invalidate_method);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
 void surface_view_widget_set_texture(SurfaceViewWidget *surface_view_widget, GdkTexture *texture, gboolean needs_flip)
 {
 	if (surface_view_widget->texture)
 		g_object_unref(surface_view_widget->texture);
 	surface_view_widget->texture = texture;
 	surface_view_widget->needs_flip = needs_flip;
+	if (getenv("ATL_DEBUG_SURFACE")) { /* tl_widget_probe */
+		static int sets = 0;
+		if ((++sets % 100) == 1)
+			fprintf(stderr, "[surface] set_texture #%d widget %p texture %dx%d flip=%d widget %dx%d mapped=%d visible=%d\n", sets, (void *)surface_view_widget,
+			        texture ? gdk_texture_get_width(texture) : -1, texture ? gdk_texture_get_height(texture) : -1, needs_flip,
+			        gtk_widget_get_width(GTK_WIDGET(surface_view_widget)), gtk_widget_get_height(GTK_WIDGET(surface_view_widget)),
+			        gtk_widget_get_mapped(GTK_WIDGET(surface_view_widget)), gtk_widget_get_visible(GTK_WIDGET(surface_view_widget)));
+	}
 	gtk_widget_queue_draw(GTK_WIDGET(surface_view_widget));
+	tl_invalidate_java_view(GTK_WIDGET(surface_view_widget));
 }
 
 // ---

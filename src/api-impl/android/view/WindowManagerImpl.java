@@ -7,6 +7,12 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 
 	private static final String TAG = "WindowManagerImpl";
 
+	/**
+	 * The parent of a window's root view: what ViewRootImpl is on Android. Layout, drawing and
+	 * traversals are the GTK widget tree's job here, so the root parent only has to give the AOSP
+	 * answers at the top of the chain (nested scrolling stops at the root, invalidation needs no
+	 * further scheduling because every widget below already queued its own redraw).
+	 */
 	private static class WindowViewParent implements ViewParent {
 
 		@Override
@@ -14,64 +20,64 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 			return null;
 		}
 
+		/** ViewRootImpl: whether a traversal with layout is pending; GTK lays out on its own frame clock. */
 		@Override
 		public boolean isLayoutRequested() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'isLayoutRequested'");
+			return false;
 		}
 
+		/** ViewRootImpl: nothing to intercept above the root. */
 		@Override
 		public void requestDisallowInterceptTouchEvent(boolean disallowIntercept) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'requestDisallowInterceptTouchEvent'");
 		}
 
+		/** ViewRootImpl: the root never takes part in nested scrolling. */
 		@Override
 		public boolean onStartNestedScroll(View child, View target, int nestedScrollAxes) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onStartNestedScroll'");
+			return false;
 		}
 
 		@Override
 		public boolean onNestedPreFling(View target, float velocityX, float velocityY) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onNestedPreFling'");
+			return false;
 		}
 
 		@Override
 		public boolean onNestedFling(View target, float velocityX, float velocityY, boolean consumed) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onNestedFling'");
+			return false;
 		}
 
 		@Override
 		public void onNestedScrollAccepted(View child, View target, int nestedScrollAxes) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onNestedScrollAccepted'");
 		}
 
 		@Override
 		public void onNestedPreScroll(View target, int dx, int dy, int[] consumed) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onNestedPreScroll'");
 		}
 
 		@Override
 		public void onNestedScroll(View target, int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onNestedScroll'");
 		}
 
 		@Override
 		public void onStopNestedScroll(View target) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onStopNestedScroll'");
 		}
 
+		/** ViewRootImpl: a descendant is dirty; the next frame redraws it (the widget queued its draw). */
 		@Override
 		public void onDescendantInvalidated(View child, View target) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'onDescendantInvalidated'");
+		}
+
+		/** ViewRootImpl.invalidateChild: ends in invalidateChildInParent. */
+		@Override
+		public void invalidateChild(View child, android.graphics.Rect dirty) {
+			invalidateChildInParent(null, dirty);
+		}
+
+		/** ViewRootImpl.invalidateChildInParent: schedules the frame (GTK already did) and ends the chain. */
+		@Override
+		public ViewParent invalidateChildInParent(int[] location, android.graphics.Rect dirty) {
+			return null;
 		}
 	}
 
