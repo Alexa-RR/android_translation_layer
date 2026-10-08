@@ -585,7 +585,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	public void registerForContextMenu(View view) {}
 	public native boolean isInMultiWindowMode();
 
-	public void registerActivityLifecycleCallbacks(Application.ActivityLifecycleCallbacks callback) {}
+	/* registerActivityLifecycleCallbacks: see the lifecycle block appended below (ATL's was a no-op) */
 
 	public void setDisablePreviewScreenshots(boolean disable) {}
 	public final View requireViewById(int id) {
@@ -673,4 +673,50 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	public void startIntentSenderForResult(android.content.IntentSender intent, int requestCode, Intent fillInIntent, int flagsMask, int flagsValues, int extraFlags) {}
 	public void startIntentSenderForResult(android.content.IntentSender intent, int requestCode, Intent fillInIntent, int flagsMask, int flagsValues, int extraFlags, android.os.Bundle options) {}
 	public void onTrimMemory(int level) {}
+
+	/* ---- AOSP activity-level lifecycle callbacks (API 29) and the perform*() entry points ----
+	 * ATL's native side calls performCreate/Start/Resume/Pause/Stop/Destroy (handle_cache.c, patched by
+	 * native-lifecycle.sh); each wraps the virtual on*() with the Pre/Post dispatch exactly as AOSP's
+	 * Activity does. The plain Created/Started/... dispatch sits in the base on*() methods, as in AOSP. */
+	private final java.util.ArrayList<Application.ActivityLifecycleCallbacks> mActivityLifecycleCallbacks = new java.util.ArrayList<>();
+
+	public void registerActivityLifecycleCallbacks(Application.ActivityLifecycleCallbacks callback) {
+		synchronized (mActivityLifecycleCallbacks) { mActivityLifecycleCallbacks.add(callback); }
+	}
+	public void unregisterActivityLifecycleCallbacks(Application.ActivityLifecycleCallbacks callback) {
+		synchronized (mActivityLifecycleCallbacks) { mActivityLifecycleCallbacks.remove(callback); }
+	}
+	private Object[] collectActivityLifecycleCallbacks() {
+		synchronized (mActivityLifecycleCallbacks) { return mActivityLifecycleCallbacks.isEmpty() ? null : mActivityLifecycleCallbacks.toArray(); }
+	}
+	private void dispatchActivityPreCreated(android.os.Bundle s) { getApplication().dispatchActivityPreCreated(this, s); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPreCreated(this, s); }
+	private void dispatchActivityCreated(android.os.Bundle s) { getApplication().dispatchActivityCreated(this, s); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityCreated(this, s); }
+	private void dispatchActivityPostCreated(android.os.Bundle s) { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostCreated(this, s); getApplication().dispatchActivityPostCreated(this, s); }
+	private void dispatchActivityPreStarted() { getApplication().dispatchActivityPreStarted(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPreStarted(this); }
+	private void dispatchActivityStarted() { getApplication().dispatchActivityStarted(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityStarted(this); }
+	private void dispatchActivityPostStarted() { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostStarted(this); getApplication().dispatchActivityPostStarted(this); }
+	private void dispatchActivityPreResumed() { getApplication().dispatchActivityPreResumed(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPreResumed(this); }
+	private void dispatchActivityResumed() { getApplication().dispatchActivityResumed(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityResumed(this); }
+	private void dispatchActivityPostResumed() { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostResumed(this); getApplication().dispatchActivityPostResumed(this); }
+	private void dispatchActivityPrePaused() { getApplication().dispatchActivityPrePaused(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPrePaused(this); }
+	private void dispatchActivityPaused() { getApplication().dispatchActivityPaused(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPaused(this); }
+	private void dispatchActivityPostPaused() { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostPaused(this); getApplication().dispatchActivityPostPaused(this); }
+	private void dispatchActivityPreStopped() { getApplication().dispatchActivityPreStopped(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPreStopped(this); }
+	private void dispatchActivityStopped() { getApplication().dispatchActivityStopped(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityStopped(this); }
+	private void dispatchActivityPostStopped() { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostStopped(this); getApplication().dispatchActivityPostStopped(this); }
+	private void dispatchActivityPreSaveInstanceState(android.os.Bundle out) { getApplication().dispatchActivityPreSaveInstanceState(this, out); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPreSaveInstanceState(this, out); }
+	private void dispatchActivitySaveInstanceState(android.os.Bundle out) { getApplication().dispatchActivitySaveInstanceState(this, out); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivitySaveInstanceState(this, out); }
+	private void dispatchActivityPostSaveInstanceState(android.os.Bundle out) { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostSaveInstanceState(this, out); getApplication().dispatchActivityPostSaveInstanceState(this, out); }
+	private void dispatchActivityPreDestroyed() { getApplication().dispatchActivityPreDestroyed(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPreDestroyed(this); }
+	private void dispatchActivityDestroyed() { getApplication().dispatchActivityDestroyed(this); Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityDestroyed(this); }
+	private void dispatchActivityPostDestroyed() { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostDestroyed(this); getApplication().dispatchActivityPostDestroyed(this); }
+
+	/** Native entry points: AOSP's perform*() ordering. */
+	public final void performCreate(android.os.Bundle savedInstanceState) { dispatchActivityPreCreated(savedInstanceState); onCreate(savedInstanceState); dispatchActivityPostCreated(savedInstanceState); }
+	public final void performStart() { dispatchActivityPreStarted(); onStart(); dispatchActivityPostStarted(); }
+	public final void performResume() { dispatchActivityPreResumed(); onResume(); dispatchActivityPostResumed(); }
+	public final void performPause() { dispatchActivityPrePaused(); onPause(); dispatchActivityPostPaused(); }
+	public final void performStop() { dispatchActivityPreStopped(); onStop(); dispatchActivityPostStopped(); }
+	public final void performDestroy() { dispatchActivityPreDestroyed(); onDestroy(); dispatchActivityPostDestroyed(); }
+	public final void performSaveInstanceState(android.os.Bundle outState) { dispatchActivityPreSaveInstanceState(outState); onSaveInstanceState(outState); dispatchActivitySaveInstanceState(outState); dispatchActivityPostSaveInstanceState(outState); }
 }

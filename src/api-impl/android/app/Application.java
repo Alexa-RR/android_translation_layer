@@ -1,6 +1,8 @@
 package android.app;
 
 import android.R;
+import android.annotation.NonNull;
+import android.annotation.Nullable;
 import android.atl.ATLLoadedApp;
 import android.content.Context;
 import android.content.ContextWrapper;
@@ -8,6 +10,11 @@ import android.content.pm.PackageParser;
 import android.content.res.Configuration;
 import android.os.Bundle;
 
+import java.util.ArrayList;
+
+/* teslalinux: ATL's Application plus the AOSP ActivityLifecycleCallbacks contract (Pre/Post
+ * variants included) and the dispatch methods Activity.perform*() call. AndroidX's lifecycle,
+ * ProcessLifecycleOwner and Compose's window recomposer all hang off these callbacks. */
 public class Application extends ContextWrapper {
 	public long native_window;
 
@@ -51,72 +58,193 @@ public class Application extends ContextWrapper {
 		return (mimeTypes.length() == 0) ? null : mimeTypes.toString();
 	}
 
+	/** AOSP interface; the Pre/Post methods were added in API 29 as defaults. */
 	public interface ActivityLifecycleCallbacks {
-		void onActivityCreated(Activity activity, Bundle savedInstanceState);
-		void onActivityStarted(Activity activity);
-		void onActivityResumed(Activity activity);
-		void onActivityPaused(Activity activity);
-		void onActivityStopped(Activity activity);
-		void onActivitySaveInstanceState(Activity activity, Bundle outState);
-		void onActivityDestroyed(Activity activity);
+		default void onActivityPreCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {}
+		void onActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState);
+		default void onActivityPostCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {}
+		default void onActivityPreStarted(@NonNull Activity activity) {}
+		void onActivityStarted(@NonNull Activity activity);
+		default void onActivityPostStarted(@NonNull Activity activity) {}
+		default void onActivityPreResumed(@NonNull Activity activity) {}
+		void onActivityResumed(@NonNull Activity activity);
+		default void onActivityPostResumed(@NonNull Activity activity) {}
+		default void onActivityPrePaused(@NonNull Activity activity) {}
+		void onActivityPaused(@NonNull Activity activity);
+		default void onActivityPostPaused(@NonNull Activity activity) {}
+		default void onActivityPreStopped(@NonNull Activity activity) {}
+		void onActivityStopped(@NonNull Activity activity);
+		default void onActivityPostStopped(@NonNull Activity activity) {}
+		default void onActivityPreSaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {}
+		void onActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState);
+		default void onActivityPostSaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {}
+		default void onActivityPreDestroyed(@NonNull Activity activity) {}
+		void onActivityDestroyed(@NonNull Activity activity);
+		default void onActivityPostDestroyed(@NonNull Activity activity) {}
+		default void onActivityConfigurationChanged(@NonNull Activity activity) {}
 	}
+
 	/**
 	 * Callback interface for use with {@link Application#registerOnProvideAssistDataListener}
 	 * and {@link Application#unregisterOnProvideAssistDataListener}.
 	 */
 	public interface OnProvideAssistDataListener {
-		/**
-		 * This is called when the user is requesting an assist, to build a full
-		 * {@link Intent#ACTION_ASSIST} Intent with all of the context of the current
-		 * application.  You can override this method to place into the bundle anything
-		 * you would like to appear in the {@link Intent#EXTRA_ASSIST_CONTEXT} part
-		 * of the assist Intent.
-		 */
 		public void onProvideAssistData(Activity activity, Bundle data);
 	}
+
+	private final ArrayList<ActivityLifecycleCallbacks> mActivityLifecycleCallbacks = new ArrayList<>();
+	private final ArrayList<OnProvideAssistDataListener> mAssistCallbacks = new ArrayList<>();
 
 	public Application() {
 		super(null);
 	}
-	/**
-	 * Called when the application is starting, before any activity, service,
-	 * or receiver objects (excluding content providers) have been created.
-	 * Implementations should be as quick as possible (for example using
-	 * lazy initialization of state) since the time spent in this function
-	 * directly impacts the performance of starting the first activity,
-	 * service, or receiver in a process.
-	 * If you override this method, be sure to call super.onCreate().
-	 */
+
 	public void onCreate() {
 	}
-	/**
-	 * This method is for use in emulated process environments.  It will
-	 * never be called on a production Android device, where processes are
-	 * removed by simply killing them; no user code (including this callback)
-	 * is executed when doing so.
-	 */
+
 	public void onTerminate() {
 	}
+
 	public void onConfigurationChanged(Configuration newConfig) {
 	}
+
 	public void onLowMemory() {
 	}
+
 	public void onTrimMemory(int level) {
 	}
-	/*public void registerComponentCallbacks(ComponentCallbacks callback) {
+
+	public void registerComponentCallbacks(android.content.ComponentCallbacks callback) {
 	}
-	public void unregisterComponentCallbacks(ComponentCallbacks callback) {
-	}*/
-	public void registerActivityLifecycleCallbacks(ActivityLifecycleCallbacks callback) {
+
+	public void unregisterComponentCallbacks(android.content.ComponentCallbacks callback) {
 	}
-	public void unregisterActivityLifecycleCallbacks(ActivityLifecycleCallbacks callback) {
+
+	public void registerActivityLifecycleCallbacks(@NonNull ActivityLifecycleCallbacks callback) {
+		synchronized (mActivityLifecycleCallbacks) {
+			mActivityLifecycleCallbacks.add(callback);
+		}
 	}
+
+	public void unregisterActivityLifecycleCallbacks(@NonNull ActivityLifecycleCallbacks callback) {
+		synchronized (mActivityLifecycleCallbacks) {
+			mActivityLifecycleCallbacks.remove(callback);
+		}
+	}
+
 	public void registerOnProvideAssistDataListener(OnProvideAssistDataListener callback) {
+		synchronized (mAssistCallbacks) {
+			mAssistCallbacks.add(callback);
+		}
 	}
+
 	public void unregisterOnProvideAssistDataListener(OnProvideAssistDataListener callback) {
+		synchronized (mAssistCallbacks) {
+			mAssistCallbacks.remove(callback);
+		}
 	}
+
 	public static String getProcessName() {
-		// note: we currently don't set the process name
 		return ATLLoadedApp.getPrimaryApplication().pkg.packageName;
+	}
+
+	private Object[] collectActivityLifecycleCallbacks() {
+		Object[] callbacks = null;
+		synchronized (mActivityLifecycleCallbacks) {
+			if (mActivityLifecycleCallbacks.size() > 0) {
+				callbacks = mActivityLifecycleCallbacks.toArray();
+			}
+		}
+		return callbacks;
+	}
+
+	/* The dispatch methods below mirror AOSP's; Activity.perform*() calls them in AOSP's order. */
+	public void dispatchActivityPreCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreCreated(activity, savedInstanceState);
+	}
+	public void dispatchActivityCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityCreated(activity, savedInstanceState);
+	}
+	public void dispatchActivityPostCreated(@NonNull Activity activity, @Nullable Bundle savedInstanceState) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostCreated(activity, savedInstanceState);
+	}
+	public void dispatchActivityPreStarted(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreStarted(activity);
+	}
+	public void dispatchActivityStarted(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityStarted(activity);
+	}
+	public void dispatchActivityPostStarted(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostStarted(activity);
+	}
+	public void dispatchActivityPreResumed(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreResumed(activity);
+	}
+	public void dispatchActivityResumed(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityResumed(activity);
+	}
+	public void dispatchActivityPostResumed(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostResumed(activity);
+	}
+	public void dispatchActivityPrePaused(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPrePaused(activity);
+	}
+	public void dispatchActivityPaused(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPaused(activity);
+	}
+	public void dispatchActivityPostPaused(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostPaused(activity);
+	}
+	public void dispatchActivityPreStopped(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreStopped(activity);
+	}
+	public void dispatchActivityStopped(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityStopped(activity);
+	}
+	public void dispatchActivityPostStopped(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostStopped(activity);
+	}
+	public void dispatchActivityPreSaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreSaveInstanceState(activity, outState);
+	}
+	public void dispatchActivitySaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivitySaveInstanceState(activity, outState);
+	}
+	public void dispatchActivityPostSaveInstanceState(@NonNull Activity activity, @NonNull Bundle outState) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostSaveInstanceState(activity, outState);
+	}
+	public void dispatchActivityPreDestroyed(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPreDestroyed(activity);
+	}
+	public void dispatchActivityDestroyed(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityDestroyed(activity);
+	}
+	public void dispatchActivityPostDestroyed(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityPostDestroyed(activity);
+	}
+	public void dispatchActivityConfigurationChanged(@NonNull Activity activity) {
+		Object[] callbacks = collectActivityLifecycleCallbacks();
+		if (callbacks != null) for (Object cb : callbacks) ((ActivityLifecycleCallbacks) cb).onActivityConfigurationChanged(activity);
 	}
 }
