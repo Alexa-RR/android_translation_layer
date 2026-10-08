@@ -165,4 +165,11 @@ public class ContentResolver {
 	}
 
 	private static native void native_query_file_info(String path, String[] attributes, Object[] result);
+
+	/* teslalinux: provider-client accessors. Returning null means "no such provider", which callers
+	 * (GMS Phenotype, Play Core, Firebase) are written to handle. */
+	public ContentProviderClient acquireContentProviderClient(Uri uri) { return null; }
+	public ContentProviderClient acquireContentProviderClient(String name) { return null; }
+	public ContentProviderClient acquireUnstableContentProviderClient(Uri uri) { return null; }
+	public ContentProviderClient acquireUnstableContentProviderClient(String name) { return null; }
 }

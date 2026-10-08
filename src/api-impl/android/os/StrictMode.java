@@ -130,7 +130,22 @@ public final class StrictMode {
 			public VmPolicy build() {
 				return new VmPolicy();
 			}
-		}
+		
+			public Builder(VmPolicy policy) {}
+			public Builder permitUnsafeIntentLaunch() { return this; }
+			public Builder detectUnsafeIntentLaunch() { return this; }
+			public Builder detectIncorrectContextUse() { return this; }
+			public Builder detectCredentialProtectedWhileLocked() { return this; }
+			public Builder detectImplicitDirectBoot() { return this; }
+			public Builder detectNonSdkApiUsage() { return this; }
+			public Builder permitNonSdkApiUsage() { return this; }
+			public Builder detectContentUriWithoutPermission() { return this; }
+			public Builder detectUntaggedSockets() { return this; }
+			public Builder detectCleartextNetwork() { return this; }
+			public Builder penaltyDeathOnCleartextNetwork() { return this; }
+			public Builder penaltyDeathOnFileUriExposure() { return this; }
+			public Builder penaltyListener(java.util.concurrent.Executor executor, Object listener) { return this; }
+}
 
 		static {
 			LAX = (new Builder()).build();

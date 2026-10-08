@@ -2,6 +2,7 @@ srcs = [
 	'android/app/AppComponentFactory.java',
 	'android/app/ForegroundServiceStartNotAllowedException.java',
 	'android/app/ServiceStartNotAllowedException.java',
+	'android/content/ContentProviderClient.java',
 	'android/media/AudioDeviceCallback.java',
 	'android/media/AudioDeviceInfo.java',
 	'android/media/AudioFocusRequest.java',

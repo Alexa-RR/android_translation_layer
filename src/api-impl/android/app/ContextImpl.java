@@ -216,7 +216,60 @@ public final class ContextImpl extends Context {
 			return layout_inflater;
 		if (serviceClass == JobScheduler.class)
 			return job_scheduler;
-		return serviceClass.getConstructors()[0].newInstance();
+		/* teslalinux: interfaces (WindowManager) and managers without a public constructor used to throw
+		 * ArrayIndexOutOfBounds here. Route through the name-based lookup first, then any no-arg ctor. */
+		String tlName = tlSystemServiceName(serviceClass);
+		if (tlName != null) {
+			Object o = getSystemService(tlName);
+			if (o != null)
+				return o;
+		}
+		try {
+			java.lang.reflect.Constructor<?> c = serviceClass.getDeclaredConstructor();
+			c.setAccessible(true);
+			return c.newInstance();
+		} catch (NoSuchMethodException e) {
+			Slog.e(TAG, "getSystemService(" + serviceClass.getName() + "): no mapping and no no-arg constructor");
+			return null;
+		}
+	}
+
+	static String tlSystemServiceName(Class<?> c) {
+		switch (c.getName()) {
+			case "android.view.WindowManager": return "window";
+			case "android.view.LayoutInflater": return "layout_inflater";
+			case "android.app.ActivityManager": return "activity";
+			case "android.os.PowerManager": return "power";
+			case "android.app.AlarmManager": return "alarm";
+			case "android.app.NotificationManager": return "notification";
+			case "android.app.KeyguardManager": return "keyguard";
+			case "android.location.LocationManager": return "location";
+			case "android.app.SearchManager": return "search";
+			case "android.hardware.SensorManager": return "sensor";
+			case "android.os.storage.StorageManager": return "storage";
+			case "android.os.Vibrator": return "vibrator";
+			case "android.net.ConnectivityManager": return "connectivity";
+			case "android.net.wifi.WifiManager": return "wifi";
+			case "android.media.AudioManager": return "audio";
+			case "android.media.MediaRouter": return "media_router";
+			case "android.telephony.TelephonyManager": return "phone";
+			case "android.content.ClipboardManager": return "clipboard";
+			case "android.view.inputmethod.InputMethodManager": return "input_method";
+			case "android.app.UiModeManager": return "uimode";
+			case "android.hardware.usb.UsbManager": return "usb";
+			case "android.hardware.input.InputManager": return "input";
+			case "android.hardware.display.DisplayManager": return "display";
+			case "android.os.UserManager": return "user";
+			case "android.app.AppOpsManager": return "appops";
+			case "android.hardware.camera2.CameraManager": return "camera";
+			case "android.view.accessibility.AccessibilityManager": return "accessibility";
+			case "android.bluetooth.BluetoothManager": return "bluetooth";
+			case "android.app.job.JobScheduler": return "jobscheduler";
+			case "android.view.accessibility.CaptioningManager": return "captioning";
+			case "android.app.StatusBarManager": return "statusbar";
+			case "android.hardware.display.ColorDisplayManager": return "color_display";
+			default: return null;
+		}
 	}
 
 	@Override

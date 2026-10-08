@@ -412,4 +412,6 @@ public class Paint {
 	/* teslalinux: Paint additions */
 	public long getColorLong() { return Color.pack(getColor()); }
 	public String getFontVariationSettings() { return null; }
+	public void setColor(long color) { setColor((int) (color >> 32)); }
+	public long getColorLongCompat() { return getColorLong(); }
 }

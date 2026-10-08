@@ -2449,7 +2449,9 @@ public class View implements Drawable.Callback {
 	public void announceForAccessibility(CharSequence text) {}
 
 	public WindowInsetsController getWindowInsetsController() {
-		return native_get_window(widget).getInsetsController();
+		/* teslalinux: the decor view has no native window yet when AndroidX's EdgeToEdge asks during onCreate */
+		Window tlw = native_get_window(widget);
+		return tlw != null ? tlw.getInsetsController() : new InsetsController();
 	}
 
 	public final boolean isKeyboardNavigationCluster() { return false; }

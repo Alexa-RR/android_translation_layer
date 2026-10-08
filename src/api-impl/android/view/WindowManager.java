@@ -38,7 +38,25 @@ public interface WindowManager {
 		public LayoutParams() {}
 
 		public void setTitle(CharSequence title) {}
-	}
+	
+		/* teslalinux: WindowManager.LayoutParams additions */
+		public int preferredDisplayModeId;
+		public float preferredRefreshRate;
+		public int blurBehindRadius;
+		public float dimAmount = 1.0f;
+		public int gravity;
+		public void setBlurBehindRadius(int r) { blurBehindRadius = r; }
+		public int getBlurBehindRadius() { return blurBehindRadius; }
+		public void setFitInsetsSides(int sides) {}
+		public void setFitInsetsTypes(int types) {}
+		public void setFitInsetsIgnoringVisibility(boolean ignore) {}
+		public int getFitInsetsSides() { return 15; }
+		public int getFitInsetsTypes() { return 7; }
+		public boolean isFitInsetsIgnoringVisibility() { return false; }
+		public int copyFrom(LayoutParams o) { width = o.width; height = o.height; preferredDisplayModeId = o.preferredDisplayModeId; return 0; }
+		public void setColorMode(int colorMode) {}
+		public int getColorMode() { return 0; }
+}
 
 	/* teslalinux: WindowManager additions (default methods: WindowManagerImpl keeps compiling) */
 	default WindowMetrics getCurrentWindowMetrics() {
