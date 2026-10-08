@@ -104,4 +104,6 @@ public final class Display {
 	public int getFlags() { return 0; }
 	public String getName() { return "atl"; }
 	public boolean isValid() { return true; }
+	/** Invalid display id (AOSP). */
+	public static final int INVALID_DISPLAY = -1;
 }

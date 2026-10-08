@@ -648,4 +648,6 @@ public abstract class Context {
 	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, int flags) { return registerReceiver(receiver, filter); }
 	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, String broadcastPermission, android.os.Handler scheduler, int flags) { return registerReceiver(receiver, filter, broadcastPermission, scheduler); }
 	public void sendBroadcast(Intent intent, String receiverPermission, android.os.Bundle options) { sendBroadcast(intent); }
+	/** AOSP: name of the content capture service; absent in this runtime, so getSystemService returns null. */
+	public static final String CONTENT_CAPTURE_MANAGER_SERVICE = "content_capture";
 }

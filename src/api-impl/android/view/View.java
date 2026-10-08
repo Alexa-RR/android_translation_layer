@@ -2630,4 +2630,42 @@ public class View implements Drawable.Callback {
 	public void setRenderEffect(Object renderEffect) {}
 	public boolean isPivotSet() { return false; }
 	public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider() { return null; }
+
+	/* ---- content capture (AOSP View.java, API 29). The content capture system service does not
+	 * exist in this runtime, so the context has no ContentCaptureManager and the default session is
+	 * null, exactly as on a device where content capture is unavailable. ---- */
+	private android.view.contentcapture.ContentCaptureSession mContentCaptureSession;
+	private boolean mContentCaptureSessionCached;
+
+	public void setContentCaptureSession(android.view.contentcapture.ContentCaptureSession contentCaptureSession) {
+		mContentCaptureSession = contentCaptureSession;
+	}
+
+	public final android.view.contentcapture.ContentCaptureSession getContentCaptureSession() {
+		if (mContentCaptureSessionCached) {
+			return mContentCaptureSession;
+		}
+		mContentCaptureSession = getAndCacheContentCaptureSession();
+		mContentCaptureSessionCached = true;
+		return mContentCaptureSession;
+	}
+
+	private android.view.contentcapture.ContentCaptureSession getAndCacheContentCaptureSession() {
+		// First try the session explicitly set by setContentCaptureSession()
+		if (mContentCaptureSession != null) {
+			return mContentCaptureSession;
+		}
+		// Then the session explicitly set in an ancestor
+		android.view.contentcapture.ContentCaptureSession session = null;
+		if (parent instanceof View) {
+			session = ((View) parent).getContentCaptureSession();
+		}
+		// Finally, if no session was explicitly set, use the context default session (none here:
+		// Context.CONTENT_CAPTURE_MANAGER_SERVICE resolves to no service).
+		if (session == null) {
+			Object ccm = getContext().getSystemService(android.content.Context.CONTENT_CAPTURE_MANAGER_SERVICE);
+			return ccm == null ? null : session;
+		}
+		return session;
+	}
 }
