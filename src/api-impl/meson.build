@@ -1,9 +1,4 @@
 srcs = [
-	'android/system/ErrnoException.java',
-	'android/system/Os.java',
-	'android/system/OsConstants.java',
-	'android/system/StructStat.java',
-	'android/system/StructUtsname.java',
 	'android/window/OnBackInvokedDispatcher.java',
 	'android/window/OnBackInvokedCallback.java',
 	'android/window/OnBackAnimationCallback.java',
