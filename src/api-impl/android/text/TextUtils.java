@@ -453,4 +453,13 @@ public class TextUtils {
 			throw new UnsupportedOperationException();
 		}
 	}
+
+	/** AOSP: returns the text without its NoCopySpan spans (SpannableStringBuilder drops them on copy). */
+	public static CharSequence trimNoCopySpans(CharSequence text) {
+		if (text != null && text instanceof Spanned) {
+			// prune NoCopySpans
+			return new SpannableStringBuilder(text);
+		}
+		return text;
+	}
 }

@@ -60,6 +60,7 @@ srcs = [
 	'android/view/animation/GridLayoutAnimationController.java',
 	'android/view/animation/LayoutAnimationController.java',
 	'android/view/animation/RotateAnimation.java',
+	'android/view/autofill/AutofillValue.java',
 	'android/view/contentcapture/ContentCaptureContext.java',
 	'android/view/contentcapture/ContentCaptureSession.java',
 	'android/view/contentcapture/ContentCaptureSessionId.java',

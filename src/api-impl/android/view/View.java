@@ -2510,7 +2510,9 @@ public class View implements Drawable.Callback {
 	public void announceForAccessibility(CharSequence text) {}
 
 	public WindowInsetsController getWindowInsetsController() {
-		return native_get_window(widget).getInsetsController();
+		/* teslalinux: the decor view has no native window yet when AndroidX's EdgeToEdge asks during onCreate */
+		Window tlw = native_get_window(widget);
+		return tlw != null ? tlw.getInsetsController() : new InsetsController();
 	}
 
 	public final boolean isKeyboardNavigationCluster() { return false; }
@@ -2518,6 +2520,10 @@ public class View implements Drawable.Callback {
 	public void setKeyboardNavigationCluster(boolean isCluster) {}
 
 	public AutofillId getAutofillId() {
+		if (mAutofillId == null) {
+			// AOSP: created on demand; the value only has to be unique within the process
+			mAutofillId = new AutofillId(getAutofillViewId());
+		}
 		return mAutofillId;
 	}
 
@@ -2761,6 +2767,17 @@ public class View implements Drawable.Callback {
 	public static final float REQUESTED_FRAME_RATE_CATEGORY_LOW = -2;
 	public static final float REQUESTED_FRAME_RATE_CATEGORY_NORMAL = -3;
 	public static final float REQUESTED_FRAME_RATE_CATEGORY_HIGH = -4;
+	public static final int AUTOFILL_TYPE_NONE = 0;
+	public static final int AUTOFILL_TYPE_TEXT = 1;
+	public static final int AUTOFILL_TYPE_TOGGLE = 2;
+	public static final int AUTOFILL_TYPE_LIST = 3;
+	public static final int AUTOFILL_TYPE_DATE = 4;
+	public static final int IMPORTANT_FOR_AUTOFILL_AUTO = 0x0;
+	public static final int IMPORTANT_FOR_AUTOFILL_YES = 0x1;
+	public static final int IMPORTANT_FOR_AUTOFILL_NO = 0x2;
+	public static final int IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS = 0x4;
+	public static final int IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS = 0x8;
+	public static final int LAST_APP_AUTOFILL_ID = Integer.MAX_VALUE / 2;
 	public static final int CONTENT_SENSITIVITY_AUTO = 0;
 	public static final int CONTENT_SENSITIVITY_SENSITIVE = 1;
 	public static final int CONTENT_SENSITIVITY_NOT_SENSITIVE = 2;
@@ -3021,8 +3038,41 @@ public class View implements Drawable.Callback {
 		return mAutofillHints;
 	}
 
+	/** AOSP: autofill ids are unique per process; the counter wraps at LAST_APP_AUTOFILL_ID like ContextImpl.getNextAutofillId. */
+	private static final java.util.concurrent.atomic.AtomicInteger sNextAutofillId = new java.util.concurrent.atomic.AtomicInteger(NO_ID);
+	private int mAutofillViewId = NO_ID;
+	private boolean mAutofillIdExplicitlySet;
+
+	public int getAutofillViewId() {
+		if (mAutofillViewId == NO_ID) {
+			int id = sNextAutofillId.incrementAndGet();
+			if (id >= LAST_APP_AUTOFILL_ID) {
+				sNextAutofillId.set(NO_ID);
+				id = sNextAutofillId.incrementAndGet();
+			}
+			mAutofillViewId = id;
+		}
+		return mAutofillViewId;
+	}
+
 	public void setAutofillId(android.view.autofill.AutofillId id) {
+		if (isAttachedToWindow()) {
+			throw new IllegalStateException("Cannot set autofill id when view is attached");
+		}
+		if (id != null && !id.isNonVirtual()) {
+			throw new IllegalStateException("Cannot set autofill id assigned to virtual views");
+		}
+		if (id == null && !mAutofillIdExplicitlySet) {
+			return;
+		}
 		mAutofillId = id;
+		if (id != null) {
+			mAutofillViewId = id.getViewId();
+			mAutofillIdExplicitlySet = true;
+		} else {
+			mAutofillViewId = NO_ID;
+			mAutofillIdExplicitlySet = false;
+		}
 	}
 
 

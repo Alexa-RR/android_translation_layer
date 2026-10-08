@@ -19,6 +19,7 @@
 extern GtkWindow *window; // TODO: how do we get rid of this? the app won't pass anything useful to eglGetDisplay
 
 static GHashTable *egl_surface_hashtable;
+#define tl_table_lookup(table, key) ((table) ? g_hash_table_lookup((table), (key)) : NULL)
 
 // temporary for debugging
 static void PrintConfigAttributes(EGLDisplay display, EGLConfig config)
@@ -311,7 +312,7 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 
 EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 {
-	struct ANativeWindow *native_window = g_hash_table_lookup(egl_surface_hashtable, surface);
+	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
 
 	if (!native_window)
 		return eglDestroySurface(display, surface);
@@ -348,7 +349,7 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 {
 	if (getenv("ATL_DIRECT_EGL"))
 		return eglMakeCurrent(display, draw, read, context);
-	struct ANativeWindow *native_window = g_hash_table_lookup(egl_surface_hashtable, draw);
+	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, draw);
 	if (!native_window) {
 		return eglMakeCurrent(display, draw, read, context);
 	}
@@ -457,7 +458,7 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
 	if (getenv("ATL_DIRECT_EGL"))
 		return eglSwapBuffers(display, surface);
-	struct ANativeWindow *native_window = g_hash_table_lookup(egl_surface_hashtable, surface);
+	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
 	if (!native_window) {
 		return eglSwapBuffers(display, surface);
 	}
@@ -483,7 +484,7 @@ EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint
 {
 	if (getenv("ATL_DIRECT_EGL"))
 		return eglQuerySurface(display, surface, attribute, value);
-	struct ANativeWindow *native_window = g_hash_table_lookup(egl_surface_hashtable, surface);
+	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
 	if (!native_window)
 		return eglQuerySurface(display, surface, attribute, value);
 	if (attribute == EGL_WIDTH) {
@@ -503,9 +504,9 @@ EGLSurface bionic_eglGetCurrentSurface(EGLint readdraw)
 		return eglGetCurrentSurface(readdraw);
 	EGLContext current_context = eglGetCurrentContext();
 	if (readdraw == EGL_READ)
-		return g_hash_table_lookup(read_surface_hashtable, current_context);
+		return tl_table_lookup(read_surface_hashtable, current_context);
 	else if (readdraw == EGL_DRAW)
-		return g_hash_table_lookup(draw_surface_hashtable, current_context);
+		return tl_table_lookup(draw_surface_hashtable, current_context);
 
 	return NULL;
 }
@@ -514,6 +515,6 @@ void bionic_glBindFramebuffer(GLenum target, GLuint framebuffer)
 {
 	if (getenv("ATL_DIRECT_EGL") || framebuffer != 0)
 		return glBindFramebuffer(target, framebuffer);
-	ATLSurface *atl_surface = g_hash_table_lookup(draw_surface_hashtable, eglGetCurrentContext());
+	ATLSurface *atl_surface = tl_table_lookup(draw_surface_hashtable, eglGetCurrentContext());
 	return glBindFramebuffer(target, atl_surface ? atl_surface->back_buffer->gl_framebuffer : 0);
 }
