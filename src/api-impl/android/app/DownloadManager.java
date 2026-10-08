@@ -134,10 +134,13 @@ public class DownloadManager {
 	private static final Object sLock = new Object();
 	private static final Map<Long, Download> sDownloads = new LinkedHashMap<>();
 	private static long sNextId = 1;
-	private static final ExecutorService sExecutor = Executors.newFixedThreadPool(3, r -> {
-		Thread t = new Thread(r, "DownloadManager");
-		t.setDaemon(true);
-		return t;
+	private static final ExecutorService sExecutor = Executors.newFixedThreadPool(3, new java.util.concurrent.ThreadFactory() {
+		@Override
+		public Thread newThread(Runnable r) {
+			Thread t = new Thread(r, "DownloadManager");
+			t.setDaemon(true);
+			return t;
+		}
 	});
 
 	private final Context mContext;
@@ -390,7 +393,12 @@ public class DownloadManager {
 			d = new Download(sNextId++, request);
 			sDownloads.put(d.id, d);
 		}
-		sExecutor.execute(() -> run(d));
+		sExecutor.execute(new Runnable() {
+			@Override
+			public void run() {
+				DownloadManager.this.run(d);
+			}
+		});
 		return d.id;
 	}
 
@@ -432,7 +440,12 @@ public class DownloadManager {
 		}
 		final boolean bySize = COLUMN_TOTAL_SIZE_BYTES.equals(query.mOrderByColumn);
 		final int dir = query.mOrderDirection == Query.ORDER_ASCENDING ? 1 : -1;
-		rows.sort((a, b) -> dir * Long.compare(bySize ? a.totalSize : a.lastModified, bySize ? b.totalSize : b.lastModified));
+		rows.sort(new java.util.Comparator<Download>() {
+			@Override
+			public int compare(Download a, Download b) {
+				return dir * Long.compare(bySize ? a.totalSize : a.lastModified, bySize ? b.totalSize : b.lastModified);
+			}
+		});
 		MatrixCursor cursor = new MatrixCursor(projection, rows.size());
 		for (Download d : rows) {
 			Object[] row = new Object[projection.length];
@@ -514,7 +527,12 @@ public class DownloadManager {
 			}
 		}
 		for (Download d : restart)
-			sExecutor.execute(() -> run(d));
+			sExecutor.execute(new Runnable() {
+			@Override
+			public void run() {
+				DownloadManager.this.run(d);
+			}
+		});
 	}
 
 	/** Downloads here always run as soon as enqueued; nothing is waiting on conditions. */
@@ -648,6 +666,11 @@ public class DownloadManager {
 		final Intent intent = new Intent(ACTION_DOWNLOAD_COMPLETE);
 		intent.setPackage(mContext.getPackageName());
 		intent.putExtra(EXTRA_DOWNLOAD_ID, d.id);
-		new Handler(Looper.getMainLooper()).post(() -> mContext.sendBroadcast(intent));
+		new Handler(Looper.getMainLooper()).post(new Runnable() {
+			@Override
+			public void run() {
+				mContext.sendBroadcast(intent);
+			}
+		});
 	}
 }

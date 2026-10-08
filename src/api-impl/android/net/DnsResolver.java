@@ -92,34 +92,43 @@ public final class DnsResolver {
 	}
 
 	/** Send a raw DNS query (a complete DNS message) and deliver the raw answer. */
-	public void rawQuery(Network network, byte[] query, int flags, Executor executor,
-	                     CancellationSignal cancellationSignal, Callback<? super byte[]> callback) {
+	public void rawQuery(Network network, final byte[] query, int flags, Executor executor,
+	                     final CancellationSignal cancellationSignal, final Callback<? super byte[]> callback) {
 		if (cancellationSignal != null && cancellationSignal.isCanceled())
 			return;
-		executor.execute(() -> {
-			if (cancellationSignal != null && cancellationSignal.isCanceled())
-				return;
-			try {
-				byte[] answer = exchange(query, (flags & FLAG_NO_RETRY) == 0);
+		final boolean retry = (flags & FLAG_NO_RETRY) == 0;
+		executor.execute(new Runnable() {
+			@Override
+			public void run() {
 				if (cancellationSignal != null && cancellationSignal.isCanceled())
 					return;
-				callback.onAnswer(answer, rcode(answer));
-			} catch (IOException e) {
-				if (cancellationSignal != null && cancellationSignal.isCanceled())
-					return;
-				callback.onError(new DnsException(ERROR_SYSTEM, e));
+				try {
+					byte[] answer = exchange(query, retry);
+					if (cancellationSignal != null && cancellationSignal.isCanceled())
+						return;
+					callback.onAnswer(answer, rcode(answer));
+				} catch (IOException e) {
+					if (cancellationSignal != null && cancellationSignal.isCanceled())
+						return;
+					callback.onError(new DnsException(ERROR_SYSTEM, e));
+				}
 			}
 		});
 	}
 
 	/** Send a raw DNS query for the given name, class and type; deliver the raw answer. */
 	public void rawQuery(Network network, String domain, int nsClass, int nsType, int flags, Executor executor,
-	                     CancellationSignal cancellationSignal, Callback<? super byte[]> callback) {
+	                     CancellationSignal cancellationSignal, final Callback<? super byte[]> callback) {
 		byte[] query;
 		try {
 			query = buildQuery(domain, nsClass, nsType);
-		} catch (IllegalArgumentException e) {
-			executor.execute(() -> callback.onError(new DnsException(ERROR_PARSE, e)));
+		} catch (final IllegalArgumentException e) {
+			executor.execute(new Runnable() {
+				@Override
+				public void run() {
+					callback.onError(new DnsException(ERROR_PARSE, e));
+				}
+			});
 			return;
 		}
 		rawQuery(network, query, flags, executor, cancellationSignal, callback);
@@ -139,27 +148,30 @@ public final class DnsResolver {
 		resolve(domain, nsType, executor, cancellationSignal, callback);
 	}
 
-	private void resolve(String domain, int nsType, Executor executor, CancellationSignal cancellationSignal,
-	                     Callback<? super List<InetAddress>> callback) {
+	private void resolve(final String domain, final int nsType, Executor executor, final CancellationSignal cancellationSignal,
+	                     final Callback<? super List<InetAddress>> callback) {
 		if (cancellationSignal != null && cancellationSignal.isCanceled())
 			return;
-		executor.execute(() -> {
-			if (cancellationSignal != null && cancellationSignal.isCanceled())
-				return;
-			try {
-				InetAddress[] all = InetAddress.getAllByName(domain);
-				List<InetAddress> result = new ArrayList<>();
-				for (InetAddress a : all) {
-					if (nsType == 0 || (nsType == TYPE_A && a instanceof Inet4Address) || (nsType == TYPE_AAAA && a instanceof Inet6Address))
-						result.add(a);
+		executor.execute(new Runnable() {
+			@Override
+			public void run() {
+				if (cancellationSignal != null && cancellationSignal.isCanceled())
+					return;
+				try {
+					InetAddress[] all = InetAddress.getAllByName(domain);
+					List<InetAddress> result = new ArrayList<>();
+					for (InetAddress a : all) {
+						if (nsType == 0 || (nsType == TYPE_A && a instanceof Inet4Address) || (nsType == TYPE_AAAA && a instanceof Inet6Address))
+							result.add(a);
+					}
+					if (cancellationSignal != null && cancellationSignal.isCanceled())
+						return;
+					callback.onAnswer(result, 0);
+				} catch (UnknownHostException e) {
+					if (cancellationSignal != null && cancellationSignal.isCanceled())
+						return;
+					callback.onError(new DnsException(ERROR_SYSTEM, e));
 				}
-				if (cancellationSignal != null && cancellationSignal.isCanceled())
-					return;
-				callback.onAnswer(result, 0);
-			} catch (UnknownHostException e) {
-				if (cancellationSignal != null && cancellationSignal.isCanceled())
-					return;
-				callback.onError(new DnsException(ERROR_SYSTEM, e));
 			}
 		});
 	}

@@ -103,7 +103,12 @@ public class PendingIntent implements Parcelable {
 	public void send(final Context context, final int code, final Intent intent, final OnFinished onFinished, android.os.Handler handler, String requiredPermission, Bundle options) throws CanceledException {
 		send(context, code, intent);
 		if (onFinished != null) {
-			Runnable done = () -> onFinished.onSendFinished(PendingIntent.this, intent, code, null, null);
+			Runnable done = new Runnable() {
+				@Override
+				public void run() {
+					onFinished.onSendFinished(PendingIntent.this, intent, code, null, null);
+				}
+			};
 			if (handler != null)
 				handler.post(done);
 			else
