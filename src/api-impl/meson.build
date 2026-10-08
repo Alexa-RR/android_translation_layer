@@ -1,11 +1,6 @@
 srcs = [
 	'android/util/Range.java',
 	'android/util/CloseGuard.java',
-	'android/system/StructUtsname.java',
-	'android/system/StructStat.java',
-	'android/system/OsConstants.java',
-	'android/system/Os.java',
-	'android/system/ErrnoException.java',
 	'android/os/TransactionTooLargeException.java',
 	'android/os/ParcelUuid.java',
 	'android/os/NetworkOnMainThreadException.java',
