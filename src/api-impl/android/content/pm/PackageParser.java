@@ -627,11 +627,14 @@ public class PackageParser {
 		}
 
 		try {
+			final boolean validate = (flags & PARSE_IS_SYSTEM) == 0 && System.getenv("ATL_VALIDATE_CERTS") != null;
+			// AOSP ApkSignatureVerifier order: APK Signature Scheme v3, then v2 (v4 needs fs-verity), then the JAR signature (v1).
+			Certificate[] certs = collectApkSigningBlockCertificates(pkg, validate);
 			JarFile jarFile = new JarFile(mArchiveSourcePath);
 
-			Certificate[] certs = null;
-
-			if ((flags & PARSE_IS_SYSTEM) != 0 || System.getenv("ATL_VALIDATE_CERTS") == null) {
+			if (certs != null) {
+				// signed with the APK Signing Block: a v1 (JAR) signature is not required and usually absent
+			} else if (!validate) {
 				// If this package comes from the system image, then we
 				// can trust it...  we'll just use the AndroidManifest.xml
 				// to retrieve its signatures, not validating all of the
@@ -3961,5 +3964,41 @@ public class PackageParser {
 	 */
 	public static void setCompatibilityModeEnabled(boolean compatibilityModeEnabled) {
 		sCompatibilityModeEnabled = compatibilityModeEnabled;
+	}
+
+	/**
+	 * Certificates from the APK Signing Block (APK Signature Scheme v3, else v2), or null when the APK
+	 * has neither. With validate the signatures and content digests are verified as the platform
+	 * does at install time; otherwise the signer certificates are only parsed (ATL default, same as
+	 * its handling of v1). Like AOSP, the signing certificate is the first one of each signer chain.
+	 */
+	private Certificate[] collectApkSigningBlockCertificates(Package pkg, boolean validate) {
+		try {
+			android.util.apk.ApkSignatureSchemeV3Verifier.VerifiedSigner v3 = validate
+				? android.util.apk.ApkSignatureSchemeV3Verifier.verify(mArchiveSourcePath)
+				: android.util.apk.ApkSignatureSchemeV3Verifier.unsafeGetCertsWithoutVerification(mArchiveSourcePath);
+			Slog.i(TAG, "Package " + pkg.packageName + ": APK Signature Scheme v3" + (validate ? " (verified)" : ""));
+			return new Certificate[] { v3.certs[0] };
+		} catch (android.util.apk.SignatureNotFoundException e) {
+			// no v3 block: try v2
+		} catch (Exception e) {
+			Slog.w(TAG, "APK Signature Scheme v3 failed for " + mArchiveSourcePath, e);
+			return null;
+		}
+		try {
+			java.security.cert.X509Certificate[][] signers = validate
+				? android.util.apk.ApkSignatureSchemeV2Verifier.verify(mArchiveSourcePath)
+				: android.util.apk.ApkSignatureSchemeV2Verifier.unsafeGetCertsWithoutVerification(mArchiveSourcePath);
+			Certificate[] certs = new Certificate[signers.length];
+			for (int i = 0; i < signers.length; i++)
+				certs[i] = signers[i][0];
+			Slog.i(TAG, "Package " + pkg.packageName + ": APK Signature Scheme v2" + (validate ? " (verified)" : ""));
+			return certs;
+		} catch (android.util.apk.SignatureNotFoundException e) {
+			return null;
+		} catch (Exception e) {
+			Slog.w(TAG, "APK Signature Scheme v2 failed for " + mArchiveSourcePath, e);
+			return null;
+		}
 	}
 }

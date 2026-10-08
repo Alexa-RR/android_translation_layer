@@ -86,6 +86,8 @@ public class Dialog implements Window.Callback, DialogInterface {
 
 	public void show() {
 		System.out.println("showing the Dialog " + this);
+		if (System.getenv("ATL_DEBUG_DIALOG_STACK") != null)
+			new Throwable("Dialog.show() called from").printStackTrace(System.out);
 		Runnable action = new Runnable() {
 			@Override
 			public void run() {

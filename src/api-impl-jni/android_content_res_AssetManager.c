@@ -672,3 +672,15 @@ JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_getLocales(
 	free(locales);
 	return array;
 }
+
+/* teslalinux: build an XML block from an in-memory copy of a compiled XML (used when the cookie
+ * selects a specific APK, see AssetManager.openXmlBlockAsset) */
+JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_openXmlAssetFromBufferNative(JNIEnv *env, jobject this, jbyteArray data)
+{
+	jsize len = (*env)->GetArrayLength(env, data);
+	jbyte *bytes = (*env)->GetByteArrayElements(env, data, NULL);
+	struct ResXMLTree *res_xml = ResXMLTree_new();
+	ResXMLTree_setTo(res_xml, bytes, len, true); // copyData: the tree owns its copy
+	(*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
+	return _INTPTR(res_xml);
+}

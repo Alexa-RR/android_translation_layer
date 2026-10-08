@@ -501,7 +501,18 @@ public final class AssetManager {
 			if (!mOpen) {
 				throw new RuntimeException("Assetmanager has been closed");
 			}
-			xmlBlock = openXmlAssetNative(cookie, fileName);
+			// A cookie selects one APK (AOSP OpenNonAsset(filename, cookie)). The C libandroidfw
+			// open has no cookie and resolves by name across all asset paths, which is fine while a
+			// name is unique; for names that several APKs carry (AndroidManifest.xml of a base APK
+			// and its splits) read the entry from the APK the cookie names.
+			xmlBlock = 0;
+			if (cookie > 0 && sharedEntries().contains(fileName)) {
+				byte[] data = readXmlFromCookie(cookie, fileName);
+				if (data != null)
+					xmlBlock = openXmlAssetFromBufferNative(data);
+			}
+			if (xmlBlock == 0)
+				xmlBlock = openXmlAssetNative(cookie, fileName);
 			if (xmlBlock != 0) {
 				XmlBlock res = new XmlBlock(this, xmlBlock);
 				incRefsLocked(res.hashCode());
@@ -841,4 +852,82 @@ public final class AssetManager {
 	}
 
 	private native final void native_setApkAssets(/*String*/ Object[] paths, int num_assets);
+
+	/**
+	 * Returns the cookie of the asset path (APK) with the given file system path, or 0 when it is not
+	 * one of this manager's asset paths (AOSP {@code findCookieForPath}). Cookies are 1-based in the
+	 * order the paths were added.
+	 */
+	public int findCookieForPath(String path) {
+		if (path == null)
+			return 0;
+		synchronized (this) {
+			int idx = asset_paths.indexOf(path);
+			if (idx < 0) {
+				String abs = new java.io.File(path).getAbsolutePath();
+				for (int i = 0; i < asset_paths.size(); i++) {
+					if (new java.io.File(asset_paths.get(i)).getAbsolutePath().equals(abs)) {
+						idx = i;
+						break;
+					}
+				}
+			}
+			return idx < 0 ? 0 : idx + 1;
+		}
+	}
+
+	/** Entry names present in more than one APK asset path (e.g. AndroidManifest.xml of a base APK and its splits). */
+	private java.util.Set<String> mSharedEntries;
+
+	private java.util.Set<String> sharedEntries() {
+		synchronized (this) {
+			if (mSharedEntries == null) {
+				java.util.Set<String> seen = new java.util.HashSet<>();
+				java.util.Set<String> shared = new java.util.HashSet<>();
+				for (String p : asset_paths) {
+					if (p.endsWith("/"))
+						continue;
+					try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(p)) {
+						java.util.Enumeration<? extends java.util.zip.ZipEntry> e = zip.entries();
+						while (e.hasMoreElements()) {
+							String name = e.nextElement().getName();
+							if (!seen.add(name))
+								shared.add(name);
+						}
+					} catch (IOException e) {
+						Log.w(TAG, "could not index " + p + ": " + e);
+					}
+				}
+				mSharedEntries = shared;
+			}
+			return mSharedEntries;
+		}
+	}
+
+	/** Reads a compiled XML entry from the APK a cookie names; null when that APK has no such entry. */
+	private byte[] readXmlFromCookie(int cookie, String fileName) throws IOException {
+		String path;
+		synchronized (this) {
+			if (cookie < 1 || cookie > asset_paths.size())
+				return null;
+			path = asset_paths.get(cookie - 1);
+		}
+		if (path.endsWith("/"))
+			return null;
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(path)) {
+			java.util.zip.ZipEntry entry = zip.getEntry(fileName);
+			if (entry == null)
+				return null;
+			try (InputStream in = zip.getInputStream(entry)) {
+				java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream((int) Math.max(entry.getSize(), 1024));
+				byte[] buf = new byte[65536];
+				int n;
+				while ((n = in.read(buf)) > 0)
+					out.write(buf, 0, n);
+				return out.toByteArray();
+			}
+		}
+	}
+
+	private native final long openXmlAssetFromBufferNative(byte[] data);
 }

@@ -108,7 +108,7 @@ public final class ATLLoadedApp {
 		PackageParser.Package pkg;
 		try {
 			pkg = packageParser.parsePackage(resources,
-			                                 assetManager.openXmlResourceParser(1, "AndroidManifest.xml"), 0, outError);
+			                                 assetManager.openXmlResourceParser(assetManager.findCookieForPath(mainApk), "AndroidManifest.xml"), 0, outError);
 		} catch (XmlPullParserException e) {
 			throw new IOException(outError[0], e);
 		}
