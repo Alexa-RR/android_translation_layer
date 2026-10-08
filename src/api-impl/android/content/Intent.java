@@ -945,4 +945,8 @@ public class Intent implements Parcelable {
 		public Intent createFromParcel(android.os.Parcel in) { return new Intent(); }
 		public Intent[] newArray(int size) { return new Intent[size]; }
 	};
+	/** AOSP toUri flags */
+	public static final int URI_INTENT_SCHEME = 1 << 0;
+	public static final int URI_ANDROID_APP_SCHEME = 1 << 1;
+	public static final int URI_ALLOW_UNSAFE = 1 << 2;
 }

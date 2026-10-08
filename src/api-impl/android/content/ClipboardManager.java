@@ -76,28 +76,45 @@ public class ClipboardManager extends android.text.ClipboardManager {
 	 *
 	 * @param clip The clipped data item to set.
 	 */
+	private ClipData mPrimaryClip;
+
 	public void setPrimaryClip(ClipData clip) {
-		// this is not the primary clipboard in UNIX sense (not middle click paste)
-		native_set_clipboard(clip.text);
+		if (clip == null) {
+			throw new NullPointerException("clip is null");
+		}
+		mPrimaryClip = clip;
+		// push the text form to the GTK clipboard (not the X11 primary selection)
+		ClipData.Item item = clip.getItemCount() > 0 ? clip.getItemAt(0) : null;
+		CharSequence text = item == null ? null : item.getText();
+		if (text == null && item != null && item.getUri() != null) {
+			text = item.getUri().toString();
+		}
+		native_set_clipboard(text == null ? "" : text.toString());
+	}
+
+	/** AOSP clearPrimaryClip (API 28) */
+	public void clearPrimaryClip() {
+		mPrimaryClip = null;
+		native_set_clipboard("");
 	}
 	/**
 	 * Returns the current primary clip on the clipboard.
 	 */
 	public ClipData getPrimaryClip() {
-		return null;
+		return mPrimaryClip;
 	}
 	/**
 	 * Returns a description of the current primary clip on the clipboard
 	 * but not a copy of its data.
 	 */
 	public ClipDescription getPrimaryClipDescription() {
-		return null;
+		return mPrimaryClip == null ? null : mPrimaryClip.getDescription();
 	}
 	/**
 	 * Returns true if there is currently a primary clip on the clipboard.
 	 */
 	public boolean hasPrimaryClip() {
-		return false;
+		return mPrimaryClip != null;
 	}
 	public void addPrimaryClipChangedListener(OnPrimaryClipChangedListener what) {
 	}

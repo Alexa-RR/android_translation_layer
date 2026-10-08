@@ -727,7 +727,8 @@ public class View implements Drawable.Callback {
 	}
 
 	public interface OnFocusChangeListener {
-		// TODO
+		/** Called when the focus state of a view has changed. */
+		void onFocusChange(View v, boolean hasFocus);
 	}
 
 	public interface OnCreateContextMenuListener {
@@ -1282,7 +1283,9 @@ public class View implements Drawable.Callback {
 		this.id = id;
 	}
 
-	public void setOnKeyListener(OnKeyListener l) {}
+	public void setOnKeyListener(OnKeyListener l) {
+		mOnKeyListener = l;
+	}
 
 	public void setFocusable(boolean focusable) {
 		atl_focusable = focusable;
@@ -1916,7 +1919,36 @@ public class View implements Drawable.Callback {
 		return result;
 	}
 
+	/** Base class for derived classes that want to save and restore their own state in {@link #onSaveInstanceState()}. (AOSP) */
 	public static class BaseSavedState extends AbsSavedState {
+		public BaseSavedState(android.os.Parcel source) {
+			this(source, null);
+		}
+
+		public BaseSavedState(android.os.Parcel source, ClassLoader loader) {
+			super(source, loader);
+		}
+
+		public BaseSavedState(android.os.Parcelable superState) {
+			super(superState);
+		}
+
+		public static final android.os.Parcelable.Creator<BaseSavedState> CREATOR = new android.os.Parcelable.ClassLoaderCreator<BaseSavedState>() {
+			@Override
+			public BaseSavedState createFromParcel(android.os.Parcel in) {
+				return new BaseSavedState(in);
+			}
+
+			@Override
+			public BaseSavedState createFromParcel(android.os.Parcel in, ClassLoader loader) {
+				return new BaseSavedState(in, loader);
+			}
+
+			@Override
+			public BaseSavedState[] newArray(int size) {
+				return new BaseSavedState[size];
+			}
+		};
 	}
 
 	public void clearFocus() {}
@@ -1940,7 +1972,9 @@ public class View implements Drawable.Callback {
 
 	public void jumpDrawablesToCurrentState() {}
 
-	public void setOnFocusChangeListener(View.OnFocusChangeListener l) {}
+	public void setOnFocusChangeListener(View.OnFocusChangeListener l) {
+		mOnFocusChangeListener = l;
+	}
 
 	public boolean hasWindowFocus() { return true; }
 
@@ -2099,7 +2133,12 @@ public class View implements Drawable.Callback {
 
 	public boolean isInTouchMode() { return false; }
 
-	public void stopNestedScroll() {}
+	public void stopNestedScroll() {
+		if (mNestedScrollingParent != null) {
+			mNestedScrollingParent.onStopNestedScroll(this);
+			mNestedScrollingParent = null;
+		}
+	}
 
 	public long getDrawingTime() {
 		return System.currentTimeMillis();
@@ -2135,7 +2174,7 @@ public class View implements Drawable.Callback {
 	public void setLayerType(int layerType, Paint paint) {}
 
 	public float getZ() {
-		return elevation;
+		return getElevation() + getTranslationZ();
 	}
 
 	protected void onSizeChanged(int w, int h, int oldw, int oldh) {}
@@ -2250,9 +2289,13 @@ public class View implements Drawable.Callback {
 	public float getPivotX() { return 0.f; }
 	public float getPivotY() { return 0.f; }
 
-	public float getTranslationZ() { return 0.f; }
+	public float getTranslationZ() {
+		return mTranslationZ;
+	}
 
-	public void setTranslationZ(float translationZ) {}
+	public void setTranslationZ(float translationZ) {
+		mTranslationZ = translationZ;
+	}
 
 	public int getWindowSystemUiVisibility() {
 		return 0;
@@ -2284,7 +2327,14 @@ public class View implements Drawable.Callback {
 
 	public void setVerticalScrollbarPosition(int position) {}
 
-	public void setNestedScrollingEnabled(boolean enabled) {}
+	public void setNestedScrollingEnabled(boolean enabled) {
+		if (enabled) {
+			mNestedScrollingEnabled = true;
+		} else {
+			stopNestedScroll();
+			mNestedScrollingEnabled = false;
+		}
+	}
 
 	public void setTouchDelegate(TouchDelegate touchDelegate) {}
 
@@ -2358,17 +2408,28 @@ public class View implements Drawable.Callback {
 	}
 
 	public boolean dispatchKeyEvent(KeyEvent event) {
-		if (event.getAction() == KeyEvent.ACTION_DOWN)
-			return onKeyDown(event.getKeyCode(), event);
-		else
-			return false;
+		if (mOnKeyListener != null && mOnKeyListener.onKey(this, event.getKeyCode(), event))
+			return true;
+		switch (event.getAction()) {
+			case KeyEvent.ACTION_DOWN:
+				return onKeyDown(event.getKeyCode(), event);
+			case KeyEvent.ACTION_UP:
+				return onKeyUp(event.getKeyCode(), event);
+			case KeyEvent.ACTION_MULTIPLE:
+				return onKeyMultiple(event.getKeyCode(), event.getRepeatCount(), event);
+		}
+		return false;
 	}
 
 	public WindowInsets getRootWindowInsets() { return null; }
 
-	public PointerIcon getPointerIcon() { return null; }
+	public PointerIcon getPointerIcon() {
+		return mPointerIcon;
+	}
 
-	public void setPointerIcon(PointerIcon pointerIcon) {}
+	public void setPointerIcon(PointerIcon pointerIcon) {
+		mPointerIcon = pointerIcon;
+	}
 
 	public IBinder getApplicationWindowToken() { return null; }
 
@@ -2384,7 +2445,7 @@ public class View implements Drawable.Callback {
 		return view;
 	}
 	public float getTransitionAlpha() {
-		return 1.0f;
+		return mTransitionAlpha;
 	}
 
 	public void onWindowFocusChanged(boolean hasFocus) {}
@@ -2449,16 +2510,16 @@ public class View implements Drawable.Callback {
 	public void announceForAccessibility(CharSequence text) {}
 
 	public WindowInsetsController getWindowInsetsController() {
-		/* teslalinux: the decor view has no native window yet when AndroidX's EdgeToEdge asks during onCreate */
-		Window tlw = native_get_window(widget);
-		return tlw != null ? tlw.getInsetsController() : new InsetsController();
+		return native_get_window(widget).getInsetsController();
 	}
 
 	public final boolean isKeyboardNavigationCluster() { return false; }
 
 	public void setKeyboardNavigationCluster(boolean isCluster) {}
 
-	public AutofillId getAutofillId() { return new AutofillId(); }
+	public AutofillId getAutofillId() {
+		return mAutofillId;
+	}
 
 	public AccessibilityDelegate getAccessibilityDelegate() { return null; }
 
@@ -2543,7 +2604,16 @@ public class View implements Drawable.Callback {
 	public void setWindowInsetsAnimationCallback(WindowInsetsAnimation.Callback callback) {}
 	public void setViewTranslationCallback(ViewTranslationCallback callback) {}
 	public void clearViewTranslationCallback() {}
-	public void transformMatrixToGlobal(Matrix matrix) {}
+	public void transformMatrixToGlobal(Matrix matrix) {
+		final ViewParent p = getParent();
+		if (p instanceof View) {
+			final View vp = (View) p;
+			vp.transformMatrixToGlobal(matrix);
+			matrix.preTranslate(-vp.getScrollX(), -vp.getScrollY());
+		}
+		matrix.preTranslate(getLeft(), getTop());
+		matrix.preConcat(getMatrix());
+	}
 	public boolean isShowingLayoutBounds() {
 		return true;
 	}
@@ -2599,14 +2669,8 @@ public class View implements Drawable.Callback {
 	public boolean hasExplicitFocusable() { return isFocusable(); }
 	public boolean isFocusedByDefault() { return false; }
 	public void setFocusedByDefault(boolean isFocusedByDefault) {}
-	public boolean isScreenReaderFocusable() { return false; }
 	public boolean isAccessibilityHeading() { return false; }
 	public boolean isAccessibilityFocused() { return false; }
-	public boolean hasNestedScrollingParent() { return false; }
-	public boolean dispatchNestedPreScroll(int dx, int dy, int[] consumed, int[] offsetInWindow) { return false; }
-	public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, int[] offsetInWindow) { return false; }
-	public boolean dispatchNestedFling(float velocityX, float velocityY, boolean consumed) { return false; }
-	public boolean dispatchNestedPreFling(float velocityX, float velocityY) { return false; }
 	public java.util.List<android.graphics.Rect> getSystemGestureExclusionRects() { return new java.util.ArrayList<>(); }
 	public void setSystemGestureExclusionRects(java.util.List<android.graphics.Rect> rects) {}
 	public java.util.List<android.graphics.Rect> getPreferKeepClearRects() { return new java.util.ArrayList<>(); }
@@ -2614,20 +2678,17 @@ public class View implements Drawable.Callback {
 	public int getScrollIndicators() { return 0; }
 	public void setScrollIndicators(int indicators) {}
 	public int getLabelFor() { return -1; }
-	public int getNextClusterForwardId() { return -1; }
 	public void dispatchStartTemporaryDetach() {}
 	public void dispatchFinishTemporaryDetach() {}
 	public void dispatchConfigurationChanged(android.content.res.Configuration newConfig) {}
 	public void drawableHotspotChanged(float x, float y) {}
 	public boolean restoreDefaultFocus() { return requestFocus(); }
 	public void cancelDragAndDrop() {}
-	public String[] getReceiveContentMimeTypes() { return null; }
 	public void addKeyboardNavigationClusters(java.util.Collection<View> views, int direction) {}
 	public void addTouchables(java.util.ArrayList<View> views) {}
 	public View keyboardNavigationClusterSearch(View currentCluster, int direction) { return null; }
 	public ViewParent getParentForAccessibility() { return getParent(); }
 	public void setAllowClickWhenDisabled(boolean clickableWhenDisabled) {}
-	public void setRenderEffect(Object renderEffect) {}
 	public boolean isPivotSet() { return false; }
 	public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider() { return null; }
 
@@ -2667,5 +2728,466 @@ public class View implements Drawable.Callback {
 			return ccm == null ? null : session;
 		}
 		return session;
+	}
+
+	/* ---- teslalinux: View members from AOSP that ATL lacked (focus, keys, nested scrolling, state,
+	 * transitions, drawable state, pointer icon, autofill ids, misc property setters) ---- */
+	private boolean mNestedScrollingEnabled;
+	private ViewParent mNestedScrollingParent;
+	private int[] mTempNestedScrollConsumed;
+	private OnKeyListener mOnKeyListener;
+	private OnFocusChangeListener mOnFocusChangeListener;
+	private KeyEvent.DispatcherState mKeyDispatchState;
+	private android.graphics.Matrix mAnimationMatrix;
+	private String[] mAutofillHints;
+	private android.view.autofill.AutofillId mAutofillId;
+	private int mContentSensitivity;
+	private float mFrameContentVelocity = -1f;
+	private android.graphics.Paint mLayerPaint;
+	private int mNextClusterForwardId = NO_ID;
+	private int mOutlineAmbientShadowColor = 0xFF000000;
+	private int mOutlineSpotShadowColor = 0xFF000000;
+	private android.graphics.RenderEffect mRenderEffect;
+	private float mRequestedFrameRate = REQUESTED_FRAME_RATE_CATEGORY_DEFAULT;
+	private boolean mScreenReaderFocusable;
+	private float mTransitionAlpha = 1f;
+	private float mTranslationZ;
+	private PointerIcon mPointerIcon;
+	private OnReceiveContentListener mReceiveContentListener;
+	private String[] mReceiveContentMimeTypes;
+
+	public static final float REQUESTED_FRAME_RATE_CATEGORY_DEFAULT = Float.NaN;
+	public static final float REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE = -1;
+	public static final float REQUESTED_FRAME_RATE_CATEGORY_LOW = -2;
+	public static final float REQUESTED_FRAME_RATE_CATEGORY_NORMAL = -3;
+	public static final float REQUESTED_FRAME_RATE_CATEGORY_HIGH = -4;
+	public static final int CONTENT_SENSITIVITY_AUTO = 0;
+	public static final int CONTENT_SENSITIVITY_SENSITIVE = 1;
+	public static final int CONTENT_SENSITIVITY_NOT_SENSITIVE = 2;
+
+	// --- nested scrolling child protocol (AOSP) ---
+
+	public boolean startNestedScroll(int axes) {
+		if (hasNestedScrollingParent()) {
+			// Already in progress
+			return true;
+		}
+		if (isNestedScrollingEnabled()) {
+			ViewParent p = getParent();
+			View child = this;
+			while (p != null) {
+				if (p.onStartNestedScroll(child, this, axes)) {
+					mNestedScrollingParent = p;
+					p.onNestedScrollAccepted(child, this, axes);
+					return true;
+				}
+				if (p instanceof View) {
+					child = (View) p;
+				}
+				p = p.getParent();
+			}
+		}
+		return false;
+	}
+
+	public boolean hasNestedScrollingParent() {
+		return mNestedScrollingParent != null;
+	}
+
+	public boolean dispatchNestedPreScroll(int dx, int dy, int[] consumed, int[] offsetInWindow) {
+		if (isNestedScrollingEnabled() && mNestedScrollingParent != null) {
+			if (dx != 0 || dy != 0) {
+				int startX = 0;
+				int startY = 0;
+				if (offsetInWindow != null) {
+					getLocationInWindow(offsetInWindow);
+					startX = offsetInWindow[0];
+					startY = offsetInWindow[1];
+				}
+				if (consumed == null) {
+					if (mTempNestedScrollConsumed == null) {
+						mTempNestedScrollConsumed = new int[2];
+					}
+					consumed = mTempNestedScrollConsumed;
+				}
+				consumed[0] = 0;
+				consumed[1] = 0;
+				mNestedScrollingParent.onNestedPreScroll(this, dx, dy, consumed);
+				if (offsetInWindow != null) {
+					getLocationInWindow(offsetInWindow);
+					offsetInWindow[0] -= startX;
+					offsetInWindow[1] -= startY;
+				}
+				return consumed[0] != 0 || consumed[1] != 0;
+			} else if (offsetInWindow != null) {
+				offsetInWindow[0] = 0;
+				offsetInWindow[1] = 0;
+			}
+		}
+		return false;
+	}
+
+	public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, int[] offsetInWindow) {
+		if (isNestedScrollingEnabled() && mNestedScrollingParent != null) {
+			if (dxConsumed != 0 || dyConsumed != 0 || dxUnconsumed != 0 || dyUnconsumed != 0) {
+				int startX = 0;
+				int startY = 0;
+				if (offsetInWindow != null) {
+					getLocationInWindow(offsetInWindow);
+					startX = offsetInWindow[0];
+					startY = offsetInWindow[1];
+				}
+				mNestedScrollingParent.onNestedScroll(this, dxConsumed, dyConsumed, dxUnconsumed, dyUnconsumed);
+				if (offsetInWindow != null) {
+					getLocationInWindow(offsetInWindow);
+					offsetInWindow[0] -= startX;
+					offsetInWindow[1] -= startY;
+				}
+				return true;
+			} else if (offsetInWindow != null) {
+				offsetInWindow[0] = 0;
+				offsetInWindow[1] = 0;
+			}
+		}
+		return false;
+	}
+
+	public boolean dispatchNestedFling(float velocityX, float velocityY, boolean consumed) {
+		if (isNestedScrollingEnabled() && mNestedScrollingParent != null) {
+			return mNestedScrollingParent.onNestedFling(this, velocityX, velocityY, consumed);
+		}
+		return false;
+	}
+
+	public boolean dispatchNestedPreFling(float velocityX, float velocityY) {
+		if (isNestedScrollingEnabled() && mNestedScrollingParent != null) {
+			return mNestedScrollingParent.onNestedPreFling(this, velocityX, velocityY);
+		}
+		return false;
+	}
+
+	// --- keys ---
+	public boolean onKeyUp(int keyCode, KeyEvent event) {
+		if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER || keyCode == KeyEvent.KEYCODE_SPACE) {
+			if (!isClickable()) {
+				return false;
+			}
+			if (isPressed()) {
+				setPressed(false);
+				performClick();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public boolean onKeyMultiple(int keyCode, int repeatCount, KeyEvent event) {
+		return false;
+	}
+
+	public boolean onKeyPreIme(int keyCode, KeyEvent event) {
+		return false;
+	}
+
+	public boolean dispatchKeyEventPreIme(KeyEvent event) {
+		return onKeyPreIme(event.getKeyCode(), event);
+	}
+
+	/** AOSP keeps one DispatcherState per window (attach info); here it lives on the root view. */
+	public KeyEvent.DispatcherState getKeyDispatcherState() {
+		View root = getRootView();
+		if (root == null) {
+			return null;
+		}
+		if (root.mKeyDispatchState == null) {
+			root.mKeyDispatchState = new KeyEvent.DispatcherState();
+		}
+		return root.mKeyDispatchState;
+	}
+
+	// --- focus ---
+	public void addFocusables(java.util.ArrayList<View> views, int direction) {
+		addFocusables(views, direction, isInTouchMode() ? FOCUSABLES_TOUCH_MODE : FOCUSABLES_ALL);
+	}
+
+	public void addFocusables(java.util.ArrayList<View> views, int direction, int focusableMode) {
+		if (views == null) {
+			return;
+		}
+		if (!isFocusable() || getVisibility() != VISIBLE || !isEnabled()) {
+			return;
+		}
+		if ((focusableMode & FOCUSABLES_TOUCH_MODE) == FOCUSABLES_TOUCH_MODE && !isFocusableInTouchMode()) {
+			return;
+		}
+		views.add(this);
+	}
+
+	public boolean isFocusableInTouchMode() {
+		return isFocusable();
+	}
+
+	/** Called by the view system when the focus state of this view changes (AOSP: notifies the listener and drops the pressed state). */
+	protected void onFocusChanged(boolean gainFocus, int direction, android.graphics.Rect previouslyFocusedRect) {
+		if (!gainFocus) {
+			if (isPressed()) {
+				setPressed(false);
+			}
+		}
+		if (mOnFocusChangeListener != null) {
+			mOnFocusChangeListener.onFocusChange(this, gainFocus);
+		}
+		refreshDrawableState();
+	}
+
+	// --- hover / pointer ---
+	public boolean onHoverEvent(MotionEvent event) {
+		// AOSP: hoverable views (clickable or long-clickable) consume hover events to track the hovered state
+		if (isClickable() || isLongClickable()) {
+			return true;
+		}
+		return false;
+	}
+
+	public PointerIcon onResolvePointerIcon(MotionEvent event, int pointerIndex) {
+		return mPointerIcon;
+	}
+
+	// --- saved state (AOSP) ---
+	protected android.os.Parcelable onSaveInstanceState() {
+		return BaseSavedState.EMPTY_STATE;
+	}
+
+	protected void onRestoreInstanceState(android.os.Parcelable state) {
+		if (state != null && !(state instanceof AbsSavedState)) {
+			throw new IllegalArgumentException("Wrong state class, expecting View State but received " + state.getClass().toString()
+					+ " instead. This usually happens when two views of different type have the same id in the same hierarchy."
+					+ " The id of this view is " + getId() + ". Make sure other views do not use the same id.");
+		}
+	}
+
+	// --- layout direction / window state callbacks (AOSP defaults) ---
+	public void onRtlPropertiesChanged(int layoutDirection) {
+	}
+
+	public void onWindowSystemUiVisibilityChanged(int visible) {
+	}
+
+	protected void onWindowVisibilityChanged(int visibility) {
+	}
+
+	// --- drawable state (AOSP) ---
+	protected boolean verifyDrawable(android.graphics.drawable.Drawable who) {
+		return who == getBackground() || who == getForeground();
+	}
+
+	protected void drawableStateChanged() {
+		final int[] state = getDrawableState();
+		final android.graphics.drawable.Drawable bg = getBackground();
+		if (bg != null && bg.isStateful() && bg.setState(state)) {
+			invalidateDrawable(bg);
+		}
+		final android.graphics.drawable.Drawable fg = getForeground();
+		if (fg != null && fg.isStateful() && fg.setState(state)) {
+			invalidateDrawable(fg);
+		}
+	}
+
+
+	// --- invalidation / animation matrix ---
+	public void postInvalidateOnAnimation(int left, int top, int right, int bottom) {
+		postInvalidate(left, top, right, bottom);
+	}
+
+	public void setAnimationMatrix(android.graphics.Matrix matrix) {
+		mAnimationMatrix = matrix == null ? null : new android.graphics.Matrix(matrix);
+		invalidate();
+	}
+
+	public android.graphics.Matrix getAnimationMatrix() {
+		return mAnimationMatrix;
+	}
+
+	// --- autofill ids / hints ---
+	public void setAutofillHints(String... autofillHints) {
+		if (autofillHints == null || autofillHints.length == 0) {
+			mAutofillHints = null;
+		} else {
+			mAutofillHints = autofillHints;
+		}
+	}
+
+	public String[] getAutofillHints() {
+		return mAutofillHints;
+	}
+
+	public void setAutofillId(android.view.autofill.AutofillId id) {
+		mAutofillId = id;
+	}
+
+
+	// --- API 35 content sensitivity / frame rate hints (recorded; no screen-capture protection or frame pacing here) ---
+	public void setContentSensitivity(int mode) {
+		mContentSensitivity = mode;
+	}
+
+	public int getContentSensitivity() {
+		return mContentSensitivity;
+	}
+
+	public void setFrameContentVelocity(float pixelsPerSecond) {
+		mFrameContentVelocity = Math.abs(pixelsPerSecond);
+	}
+
+	public float getFrameContentVelocity() {
+		return mFrameContentVelocity;
+	}
+
+	public void setRequestedFrameRate(float frameRate) {
+		mRequestedFrameRate = frameRate;
+	}
+
+	public float getRequestedFrameRate() {
+		return mRequestedFrameRate;
+	}
+
+	// --- layers / outline / render effect ---
+	public void setLayerPaint(android.graphics.Paint paint) {
+		if (getLayerType() != LAYER_TYPE_NONE) {
+			mLayerPaint = paint;
+			invalidate();
+		}
+	}
+
+	public android.graphics.Paint getLayerPaint() {
+		return mLayerPaint;
+	}
+
+	public void setOutlineAmbientShadowColor(int color) {
+		mOutlineAmbientShadowColor = color;
+		invalidate();
+	}
+
+	public int getOutlineAmbientShadowColor() {
+		return mOutlineAmbientShadowColor;
+	}
+
+	public void setOutlineSpotShadowColor(int color) {
+		mOutlineSpotShadowColor = color;
+		invalidate();
+	}
+
+	public int getOutlineSpotShadowColor() {
+		return mOutlineSpotShadowColor;
+	}
+
+	/** The effect is kept on the view; the GSK renderer does not apply it yet (TODO-real.md). */
+	public void setRenderEffect(android.graphics.RenderEffect renderEffect) {
+		mRenderEffect = renderEffect;
+		invalidate();
+	}
+
+	public android.graphics.RenderEffect getRenderEffect() {
+		return mRenderEffect;
+	}
+
+	// --- geometry (AOSP setFrame through the individual edge setters) ---
+	public final void setLeftTopRightBottom(int left, int top, int right, int bottom) {
+		setLeft(left);
+		setTop(top);
+		setRight(right);
+		setBottom(bottom);
+	}
+
+	public void setNextClusterForwardId(int nextClusterForwardId) {
+		mNextClusterForwardId = nextClusterForwardId;
+	}
+
+	public int getNextClusterForwardId() {
+		return mNextClusterForwardId;
+	}
+
+	public void setScreenReaderFocusable(boolean screenReaderFocusable) {
+		mScreenReaderFocusable = screenReaderFocusable;
+	}
+
+	public boolean isScreenReaderFocusable() {
+		return mScreenReaderFocusable;
+	}
+
+	/** Transition alpha multiplies the view alpha while a Transition runs (AOSP); here it is applied to the GTK opacity. */
+	public void setTransitionAlpha(float alpha) {
+		mTransitionAlpha = alpha;
+		native_setVisibility(widget, visibility, getAlpha() * mTransitionAlpha, atl_enabled);
+	}
+
+
+	/** Changes the visibility without the usual change notifications (used by Transitions). */
+	public void setTransitionVisibility(int visibility) {
+		setVisibility(visibility);
+	}
+
+	public void setZ(float z) {
+		setTranslationZ(z - getElevation());
+	}
+
+
+	// --- drag and drop: no drag session service in this runtime; AOSP returns false when a drag cannot start ---
+	public final boolean startDragAndDrop(android.content.ClipData data, DragShadowBuilder shadowBuilder, Object myLocalState, int flags) {
+		android.util.Log.w("View", "startDragAndDrop: drag and drop is not available in this runtime");
+		return false;
+	}
+
+	public final boolean updateDragShadow(DragShadowBuilder shadowBuilder) {
+		return false;
+	}
+
+	// --- receive content (AOSP: the listener, else the default handling which inserts nothing for a plain View) ---
+	public void setOnReceiveContentListener(String[] mimeTypes, OnReceiveContentListener listener) {
+		if (listener != null) {
+			if (mimeTypes == null || mimeTypes.length == 0) {
+				throw new IllegalArgumentException("When the listener is set, MIME types must also be set");
+			}
+		}
+		if (mimeTypes != null) {
+			for (String mimeType : mimeTypes) {
+				if (mimeType.startsWith("*/")) {
+					throw new IllegalArgumentException("A MIME type set here must not start with */: " + mimeType);
+				}
+			}
+		}
+		mReceiveContentMimeTypes = mimeTypes != null && mimeTypes.length > 0 ? mimeTypes.clone() : null;
+		mReceiveContentListener = listener;
+	}
+
+	public String[] getReceiveContentMimeTypes() {
+		return mReceiveContentMimeTypes;
+	}
+
+	public ContentInfo performReceiveContent(ContentInfo payload) {
+		if (mReceiveContentListener != null) {
+			return mReceiveContentListener.onReceiveContent(this, payload);
+		}
+		return onReceiveContent(payload);
+	}
+
+	public ContentInfo onReceiveContent(ContentInfo payload) {
+		return payload;
+	}
+
+	// --- matrix transforms (AOSP hidden API used by transition and tooltip code) ---
+
+	public void transformMatrixToLocal(android.graphics.Matrix matrix) {
+		final ViewParent parent = getParent();
+		if (parent instanceof View) {
+			final View vp = (View) parent;
+			vp.transformMatrixToLocal(matrix);
+			matrix.postTranslate(vp.getScrollX(), vp.getScrollY());
+		}
+		matrix.postTranslate(-getLeft(), -getTop());
+		android.graphics.Matrix inverse = new android.graphics.Matrix();
+		if (getMatrix().invert(inverse)) {
+			matrix.postConcat(inverse);
+		}
 	}
 }

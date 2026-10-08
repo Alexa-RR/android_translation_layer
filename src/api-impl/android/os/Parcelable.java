@@ -7,7 +7,10 @@ public interface Parcelable {
 		public T[] newArray(int size);
 	}
 
-	public static interface ClassLoaderCreator<T> extends Creator<T> {}
+	public static interface ClassLoaderCreator<T> extends Creator<T> {
+		/** Create a new instance of the Parcelable class, instantiating it from the given Parcel using the given ClassLoader. */
+		public T createFromParcel(Parcel source, ClassLoader loader);
+	}
 
 	public default int describeContents() {
 		System.out.println("Parcelable.describeContents()");
