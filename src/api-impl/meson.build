@@ -11,6 +11,8 @@ srcs = [
 	'android/graphics/SurfaceTexture.java',
 	'android/graphics/fonts/Font.java',
 	'android/graphics/fonts/FontFamily.java',
+	'android/hardware/TriggerEvent.java',
+	'android/hardware/TriggerEventListener.java',
 	'android/location/ProviderProperties.java',
 	'android/media/AudioDeviceCallback.java',
 	'android/media/AudioDeviceInfo.java',
