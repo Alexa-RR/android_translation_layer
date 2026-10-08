@@ -257,7 +257,6 @@ public final class Bitmap {
 	private static native void native_set_pixels(long snapshot, int[] pixels, int offset, int stride, int x, int y, int width, int height);
 
 
-	/* teslalinux-frag f8c32c8efab9 */
 	/* teslalinux: Bitmap additions */
 	private boolean tlMipMap;
 	public int getPixel(int x, int y) { int[] p = new int[1]; getPixels(p, 0, 1, x, y, 1, 1); return p[0]; }

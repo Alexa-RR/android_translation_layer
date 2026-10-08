@@ -3618,4 +3618,9 @@ public final class MotionEvent extends InputEvent {
 			return id | (toolType << 8);
 		}
 	}
+
+	/* teslalinux: MotionEvent additions */
+	public static final int CLASSIFICATION_NONE = 0, CLASSIFICATION_AMBIGUOUS_GESTURE = 1, CLASSIFICATION_DEEP_PRESS = 2, CLASSIFICATION_TWO_FINGER_SWIPE = 3, CLASSIFICATION_MULTI_FINGER_SWIPE = 4, CLASSIFICATION_PINCH = 5;
+	public int getClassification() { return CLASSIFICATION_NONE; }
+	public boolean isFromSource(int source) { return (getSource() & source) == source; }
 }

@@ -595,7 +595,6 @@ public abstract class Context {
 	public abstract ATLLoadedApp get_atl_loaded_app();
 
 
-	/* teslalinux-frag 529391287442 */
 	/* teslalinux: API 28-34 Context additions Waze touches during Application.onCreate */
 	public Executor getMainExecutor() {
 		final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());

@@ -416,7 +416,6 @@ public class Drawable {
 	protected native void native_unref(long paintable);
 
 
-	/* teslalinux-frag e4cbcef7862e */
 	/* teslalinux: Drawable additions */
 	public int getAlpha() { return 255; }
 	public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }

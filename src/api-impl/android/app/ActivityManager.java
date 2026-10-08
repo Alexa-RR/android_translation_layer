@@ -103,7 +103,6 @@ public class ActivityManager {
 	}
 
 
-	/* teslalinux-frag 0818ea008f19 */
 	/* teslalinux: ActivityManager additions */
 	public boolean isRunningInTestHarness() { return false; }
 	public static boolean isRunningInUserTestHarness() { return false; }

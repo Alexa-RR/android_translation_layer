@@ -620,7 +620,6 @@ public class Canvas {
 	}
 
 
-	/* teslalinux-frag 424c24dfd70a */
 	/* teslalinux: Canvas additions */
 	private int tlDensity = 0;
 	public int saveLayerAlpha(RectF bounds, int alpha) { return saveLayer(bounds, null); }

@@ -191,7 +191,6 @@ public class Color {
 	}
 
 
-	/* teslalinux-frag be6a5d0728cc */
 	/* teslalinux: Color additions (API 26+ long colors, sRGB only) */
 	public static float luminance(int color) {
 		double r = ((color >> 16) & 0xff) / 255.0, g = ((color >> 8) & 0xff) / 255.0, b = (color & 0xff) / 255.0;

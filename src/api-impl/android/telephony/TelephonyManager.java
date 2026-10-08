@@ -1,4 +1,5 @@
 package android.telephony;
+import java.util.concurrent.Executor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -69,4 +70,9 @@ public class TelephonyManager {
 	public String getDeviceId() {
 		return "";
 	}
+
+	/* teslalinux: TelephonyManager additions (API 31) */
+	public void registerTelephonyCallback(Executor executor, TelephonyCallback callback) {}
+	public void registerTelephonyCallback(int includeLocationData, Executor executor, TelephonyCallback callback) {}
+	public void unregisterTelephonyCallback(TelephonyCallback callback) {}
 }

@@ -660,7 +660,6 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	}
 
 
-	/* teslalinux-frag e87de5a14153 */
 	/* teslalinux: Activity additions */
 	public android.window.OnBackInvokedDispatcher getOnBackInvokedDispatcher() { return android.window.OnBackInvokedDispatcher.STUB; }
 	public void addContentView(View view, ViewGroup.LayoutParams params) { setContentView(view, params); }

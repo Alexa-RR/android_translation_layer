@@ -3623,7 +3623,6 @@ public class PackageManager {
 	}
 
 
-	/* teslalinux-frag 75f1f402f082 */
 	/* teslalinux: PackageManager additions (API 29-34) */
 	public static final class Property {
 		private final String name, packageName, className; private final Object value;

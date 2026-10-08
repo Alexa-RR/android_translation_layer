@@ -840,4 +840,10 @@ public class Process {
 	public static long getStartElapsedRealtime() {
 		return 1000;
 	};
+
+	/* teslalinux: Process additions */
+	public static boolean isApplicationUid(int uid) { return uid >= 10000; }
+	public static boolean isSdkSandbox() { return false; }
+	public static String myProcessName() { return "com.waze"; }
+	public static boolean isSdkSandboxUid(int uid) { return false; }
 }

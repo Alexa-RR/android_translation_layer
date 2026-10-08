@@ -1,4 +1,5 @@
 package android.media;
+import java.util.concurrent.Executor;
 
 import java.nio.ByteBuffer;
 
@@ -218,5 +219,49 @@ public class AudioTrack {
 		public Builder setPerformanceMode(int performanceMode) {
 			return this;
 		}
+	
+		public Builder setContext(android.content.Context context) { return this; }
+		public Builder setOffloadedPlayback(boolean offload) { return this; }
+		public Builder setSessionId(int sessionId) { return this; }
+		public Builder setEncapsulationMode(int mode) { return this; }
+}
+
+	/* teslalinux: AudioTrack additions */
+	public static abstract class StreamEventCallback {
+		public void onTearDown(AudioTrack track) {}
+		public void onPresentationEnded(AudioTrack track) {}
+		public void onDataRequest(AudioTrack track, int sizeInFrames) {}
 	}
+	public static final int ERROR_DEAD_OBJECT = -6, ERROR_INVALID_OPERATION = -3, ERROR = -1, SUCCESS = 0;
+	public static final int WRITE_BLOCKING = 0, WRITE_NON_BLOCKING = 1;
+	public static final int PERFORMANCE_MODE_NONE = 0, PERFORMANCE_MODE_LOW_LATENCY = 1, PERFORMANCE_MODE_POWER_SAVING = 2;
+	public int getBufferSizeInFrames() { return 4096; }
+	public int setBufferSizeInFrames(int bufferSizeInFrames) { return bufferSizeInFrames; }
+	public int getBufferCapacityInFrames() { return 4096; }
+	public int getUnderrunCount() { return 0; }
+	public int getPerformanceMode() { return PERFORMANCE_MODE_NONE; }
+	public boolean setPreferredDevice(AudioDeviceInfo deviceInfo) { return true; }
+	public AudioDeviceInfo getPreferredDevice() { return null; }
+	public AudioDeviceInfo getRoutedDevice() { return null; }
+	public void addOnRoutingChangedListener(AudioRouting.OnRoutingChangedListener listener, android.os.Handler handler) {}
+	public void removeOnRoutingChangedListener(AudioRouting.OnRoutingChangedListener listener) {}
+	public void registerStreamEventCallback(Executor executor, StreamEventCallback eventCallback) {}
+	public void unregisterStreamEventCallback(StreamEventCallback eventCallback) {}
+	public int attachAuxEffect(int effectId) { return SUCCESS; }
+	public int setAuxEffectSendLevel(float level) { return SUCCESS; }
+	public boolean isOffloadedPlayback() { return false; }
+	public void setOffloadDelayPadding(int delayInFrames, int paddingInFrames) {}
+	public void setOffloadEndOfStream() {}
+	public PlaybackParams getPlaybackParams() { return new PlaybackParams(); }
+	public void setPlaybackParams(PlaybackParams params) {}
+	public void setLogSessionId(android.media.metrics.LogSessionId id) {}
+	public android.media.metrics.LogSessionId getLogSessionId() { return android.media.metrics.LogSessionId.LOG_SESSION_ID_NONE; }
+	public static boolean isDirectPlaybackSupported(AudioFormat format, AudioAttributes attributes) { return false; }
+	public int getChannelCount() { return 2; }
+	public int getPlaybackRate() { return getSampleRate(); }
+	public int setPlaybackRate(int sampleRateInHz) { return SUCCESS; }
+	public int getAudioFormat() { return 2; }
+	public int getStreamType() { return 3; }
+	public int getChannelConfiguration() { return 12; }
+	public int getLatency() { return 40; }
 }

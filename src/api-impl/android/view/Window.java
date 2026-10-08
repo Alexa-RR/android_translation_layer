@@ -200,4 +200,30 @@ public class Window {
 	private static native void set_jobject(long ptr, Window obj);
 	private native void remove_gtk_background(long native_window);
 	private native void set_screen_brightness(float brightness);
+
+	/* teslalinux: Window additions */
+	public void addOnFrameMetricsAvailableListener(OnFrameMetricsAvailableListener listener, android.os.Handler handler) {}
+	public void removeOnFrameMetricsAvailableListener(OnFrameMetricsAvailableListener listener) {}
+	@SuppressWarnings("unchecked")
+	public <T extends View> T requireViewById(int id) {
+		View v = findViewById(id);
+		if (v == null) throw new IllegalArgumentException("ID does not reference a View inside this Window");
+		return (T) v;
+	}
+	public void setBackgroundBlurRadius(int blurRadius) {}
+	public void setDimAmount(float amount) {}
+	public void setWindowAnimations(int resId) {}
+	public boolean superDispatchKeyEvent(KeyEvent event) { return false; }
+	public boolean superDispatchKeyShortcutEvent(KeyEvent event) { return false; }
+	public boolean superDispatchTouchEvent(MotionEvent event) { return false; }
+	public boolean superDispatchTrackballEvent(MotionEvent event) { return false; }
+	public boolean superDispatchGenericMotionEvent(MotionEvent event) { return false; }
+	public void setHideOverlayWindows(boolean hide) {}
+	public boolean isNavigationBarContrastEnforced() { return false; }
+	public boolean isStatusBarContrastEnforced() { return false; }
+	public int getColorMode() { return 0; }
+	public void setColorMode(int colorMode) {}
+	public boolean isWideColorGamut() { return false; }
+	public void setPreferMinimalPostProcessing(boolean isPreferred) {}
+	public void setSustainedPerformanceMode(boolean enable) {}
 }

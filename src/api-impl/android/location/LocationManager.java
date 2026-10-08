@@ -72,7 +72,6 @@ public class LocationManager {
 	}
 
 
-	/* teslalinux-frag 00d0b731e56d */
 	/* teslalinux: LocationManager additions (API 28-34) */
 	public boolean isLocationEnabled() { return true; }
 	public boolean hasProvider(String provider) { return "gps".equals(provider) || "network".equals(provider) || "passive".equals(provider) || "fused".equals(provider); }

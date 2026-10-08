@@ -917,7 +917,6 @@ public class Intent implements Parcelable {
 	}
 
 
-	/* teslalinux-frag ee39f844c46d */
 	/* teslalinux: Intent additions */
 	private String tlIdentifier;
 	public boolean hasCategory(String category) { java.util.Set<String> c = getCategories(); return c != null && c.contains(category); }

@@ -52,7 +52,6 @@ public class SensorManager {
 	}
 
 
-	/* teslalinux-frag 6e8b9dae6961 */
 	/* teslalinux: orientation math from AOSP SensorManager (pure Java) */
 	public static final int AXIS_X = 1, AXIS_Y = 2, AXIS_Z = 3, AXIS_MINUS_X = AXIS_X | 0x80, AXIS_MINUS_Y = AXIS_Y | 0x80, AXIS_MINUS_Z = AXIS_Z | 0x80;
 

@@ -2568,4 +2568,64 @@ public class View implements Drawable.Callback {
 	public void setLabelFor(int id) {}
 
 	public ArrayList<View> getFocusables(int direction) { return new ArrayList<View>(); }
+
+	/* teslalinux: View additions used by Compose / AppCompat at first layout */
+	public static final int LAYER_TYPE_NONE = 0, LAYER_TYPE_SOFTWARE = 1, LAYER_TYPE_HARDWARE = 2;
+	private int tlLayerType = LAYER_TYPE_NONE;
+	public WindowInsets dispatchApplyWindowInsets(WindowInsets insets) { return onApplyWindowInsets(insets); }
+	public WindowInsets onApplyWindowInsets(WindowInsets insets) { return insets; }
+	public int getLayerType() { return tlLayerType; }
+	public boolean isOpaque() { return false; }
+	public boolean hasOverlappingRendering() { return true; }
+	public long getUniqueDrawingId() { return System.identityHashCode(this); }
+	public void resetPivot() {}
+	public void addOnUnhandledKeyEventListener(OnUnhandledKeyEventListener listener) {}
+	public void removeOnUnhandledKeyEventListener(OnUnhandledKeyEventListener listener) {}
+	public android.graphics.Rect getClipBounds() { return null; }
+	public boolean getClipBounds(android.graphics.Rect outRect) { return false; }
+	public int getMeasuredHeightAndState() { return getMeasuredHeight(); }
+	public boolean isImportantForAccessibility() { return true; }
+	public boolean isImportantForAutofill() { return false; }
+	public boolean isImportantForContentCapture() { return false; }
+	public int getImportantForContentCapture() { return 0; }
+	public void setImportantForContentCapture(int mode) {}
+	public CharSequence getAccessibilityClassName() { return View.class.getName(); }
+	public CharSequence getAccessibilityPaneTitle() { return null; }
+	public CharSequence getStateDescription() { return null; }
+	public void setStateDescription(CharSequence stateDescription) {}
+	public android.window.OnBackInvokedDispatcher findOnBackInvokedDispatcher() { return null; }
+	public boolean hasExplicitFocusable() { return isFocusable(); }
+	public boolean isFocusedByDefault() { return false; }
+	public void setFocusedByDefault(boolean isFocusedByDefault) {}
+	public boolean isScreenReaderFocusable() { return false; }
+	public boolean isAccessibilityHeading() { return false; }
+	public boolean isAccessibilityFocused() { return false; }
+	public boolean hasNestedScrollingParent() { return false; }
+	public boolean dispatchNestedPreScroll(int dx, int dy, int[] consumed, int[] offsetInWindow) { return false; }
+	public boolean dispatchNestedScroll(int dxConsumed, int dyConsumed, int dxUnconsumed, int dyUnconsumed, int[] offsetInWindow) { return false; }
+	public boolean dispatchNestedFling(float velocityX, float velocityY, boolean consumed) { return false; }
+	public boolean dispatchNestedPreFling(float velocityX, float velocityY) { return false; }
+	public java.util.List<android.graphics.Rect> getSystemGestureExclusionRects() { return new java.util.ArrayList<>(); }
+	public void setSystemGestureExclusionRects(java.util.List<android.graphics.Rect> rects) {}
+	public java.util.List<android.graphics.Rect> getPreferKeepClearRects() { return new java.util.ArrayList<>(); }
+	public void setPreferKeepClearRects(java.util.List<android.graphics.Rect> rects) {}
+	public int getScrollIndicators() { return 0; }
+	public void setScrollIndicators(int indicators) {}
+	public int getLabelFor() { return -1; }
+	public int getNextClusterForwardId() { return -1; }
+	public void dispatchStartTemporaryDetach() {}
+	public void dispatchFinishTemporaryDetach() {}
+	public void dispatchConfigurationChanged(android.content.res.Configuration newConfig) {}
+	public void drawableHotspotChanged(float x, float y) {}
+	public boolean restoreDefaultFocus() { return requestFocus(); }
+	public void cancelDragAndDrop() {}
+	public String[] getReceiveContentMimeTypes() { return null; }
+	public void addKeyboardNavigationClusters(java.util.Collection<View> views, int direction) {}
+	public void addTouchables(java.util.ArrayList<View> views) {}
+	public View keyboardNavigationClusterSearch(View currentCluster, int direction) { return null; }
+	public ViewParent getParentForAccessibility() { return getParent(); }
+	public void setAllowClickWhenDisabled(boolean clickableWhenDisabled) {}
+	public void setRenderEffect(Object renderEffect) {}
+	public boolean isPivotSet() { return false; }
+	public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider() { return null; }
 }

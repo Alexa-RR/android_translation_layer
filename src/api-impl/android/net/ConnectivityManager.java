@@ -48,4 +48,10 @@ public class ConnectivityManager {
 	public void registerDefaultNetworkCallback(NetworkCallback cb) {}
 
 	public ProxyInfo getDefaultProxy() { return null; }
+
+	/* teslalinux: ConnectivityManager additions */
+	public static final int RESTRICT_BACKGROUND_STATUS_DISABLED = 1, RESTRICT_BACKGROUND_STATUS_WHITELISTED = 2, RESTRICT_BACKGROUND_STATUS_ENABLED = 3;
+	public LinkProperties getLinkProperties(Network network) { return new LinkProperties(); }
+	public int getRestrictBackgroundStatus() { return RESTRICT_BACKGROUND_STATUS_DISABLED; }
+	public int getConnectionOwnerUid(int protocol, java.net.InetSocketAddress local, java.net.InetSocketAddress remote) { return -1; }
 }

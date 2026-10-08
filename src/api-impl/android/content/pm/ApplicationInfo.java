@@ -679,7 +679,6 @@ public class ApplicationInfo extends PackageItemInfo {
 	public String[] splitPublicSourceDirs = new String[0];
 
 
-	/* teslalinux-frag 56492a6d5235 */
 	/* teslalinux: ApplicationInfo additions */
 	public String deviceProtectedDataDir;
 	public String credentialProtectedDataDir;

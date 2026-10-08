@@ -87,7 +87,6 @@ public class Location {
 	}
 
 
-	/* teslalinux-frag bf32f4215d8d */
 	/* teslalinux: the rest of android.location.Location (API 26-34) as used by Waze */
 	private float tlVerticalAccuracy, tlSpeedAccuracy, tlBearingAccuracy;
 	private boolean tlHasVerticalAccuracy, tlHasSpeedAccuracy, tlHasBearingAccuracy, tlMock;

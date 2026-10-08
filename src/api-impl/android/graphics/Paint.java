@@ -409,7 +409,6 @@ public class Paint {
 	private static native void native_set_text_align(long paint, int align);
 
 
-	/* teslalinux-frag 8b942656da00 */
 	/* teslalinux: Paint additions */
 	public long getColorLong() { return Color.pack(getColor()); }
 	public String getFontVariationSettings() { return null; }

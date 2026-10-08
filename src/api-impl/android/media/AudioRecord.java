@@ -1,4 +1,5 @@
 package android.media;
+import java.util.concurrent.Executor;
 
 public class AudioRecord {
 
@@ -82,5 +83,21 @@ public class AudioRecord {
 		public AudioRecord build() {
 			return new AudioRecord(audioSource, audioFormat.sampleRate, audioFormat.channelMask, audioFormat.encoding, 32768);
 		}
-	}
+	
+		public Builder setBufferSizeInBytes(int bufferSizeInBytes) { return this; }
+		public Builder setContext(android.content.Context context) { return this; }
+		public Builder setPrivacySensitive(boolean privacySensitive) { return this; }
+}
+
+	/* teslalinux: AudioRecord additions */
+	public int getAudioSessionId() { return 0; }
+	public int getTimestamp(AudioTimestamp outTimestamp, int timebase) { return -3; }
+	public void registerAudioRecordingCallback(Executor executor, AudioManager.AudioRecordingCallback cb) {}
+	public void unregisterAudioRecordingCallback(AudioManager.AudioRecordingCallback cb) {}
+	public AudioRecordingConfiguration getActiveRecordingConfiguration() { return null; }
+	public boolean setPreferredDevice(AudioDeviceInfo deviceInfo) { return true; }
+	public AudioDeviceInfo getRoutedDevice() { return null; }
+	public int getChannelCount() { return 1; }
+	public int getAudioFormat() { return 2; }
+	public int getBufferSizeInFrames() { return 4096; }
 }

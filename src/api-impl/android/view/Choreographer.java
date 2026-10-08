@@ -644,4 +644,32 @@ public final class Choreographer {
 			}
 		}
 	}
+
+	/* teslalinux: Choreographer vsync callbacks (API 33), mapped onto the frame callback */
+	public interface VsyncCallback { void onVsync(FrameData data); }
+	public static final class FrameTimeline {
+		private final long vsync, deadline, present;
+		FrameTimeline(long vsync, long deadline, long present) { this.vsync = vsync; this.deadline = deadline; this.present = present; }
+		public long getVsyncId() { return vsync; }
+		public long getDeadlineNanos() { return deadline; }
+		public long getExpectedPresentationTimeNanos() { return present; }
+	}
+	public static final class FrameData {
+		private final long frameTimeNanos; private final FrameTimeline[] timelines;
+		FrameData(long t) { frameTimeNanos = t; timelines = new FrameTimeline[] { new FrameTimeline(0, t + 8000000L, t + 16666667L) }; }
+		public long getFrameTimeNanos() { return frameTimeNanos; }
+		public FrameTimeline[] getFrameTimelines() { return timelines; }
+		public FrameTimeline getPreferredFrameTimeline() { return timelines[0]; }
+	}
+	private final java.util.Map<VsyncCallback, FrameCallback> tlVsync = new java.util.HashMap<>();
+	public void postVsyncCallback(final VsyncCallback callback) {
+		FrameCallback fc = new FrameCallback() { public void doFrame(long frameTimeNanos) { tlVsync.remove(callback); callback.onVsync(new FrameData(frameTimeNanos)); } };
+		tlVsync.put(callback, fc);
+		postFrameCallback(fc);
+	}
+	public void removeVsyncCallback(VsyncCallback callback) {
+		FrameCallback fc = tlVsync.remove(callback);
+		if (fc != null) removeFrameCallback(fc);
+	}
+	public long getVsyncId() { return 0; }
 }

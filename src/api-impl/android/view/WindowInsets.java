@@ -1,4 +1,5 @@
 package android.view;
+import android.graphics.Insets;
 
 public class WindowInsets {
 
@@ -299,5 +300,46 @@ public class WindowInsets {
 		public static boolean hasCompatSystemBars(@InsetsType int types) {
 			return (types & (STATUS_BARS | NAVIGATION_BARS)) != 0;
 		}
+	}
+
+	/* teslalinux: WindowInsets additions (API 30 typed insets); nothing is ever inset on the car screen */
+	public static final class Side {
+		public static final int LEFT = 1, TOP = 1 << 1, RIGHT = 1 << 2, BOTTOM = 1 << 3;
+		public static int all() { return LEFT | TOP | RIGHT | BOTTOM; }
+	}
+	public Insets getInsets(int typeMask) { return Insets.NONE; }
+	public Insets getInsetsIgnoringVisibility(int typeMask) { return Insets.NONE; }
+	public boolean isVisible(int typeMask) { return (typeMask & Type.ime()) == 0; }
+	public WindowInsets inset(int left, int top, int right, int bottom) { return this; }
+	public WindowInsets inset(Insets insets) { return this; }
+	public Insets getMandatorySystemGestureInsets() { return Insets.NONE; }
+	public Insets getSystemGestureInsets() { return Insets.NONE; }
+	public Insets getTappableElementInsets() { return Insets.NONE; }
+	public Insets getSystemWindowInsets() { return Insets.NONE; }
+	public Insets getStableInsets() { return Insets.NONE; }
+	public boolean hasInsets() { return false; }
+	public boolean hasSystemWindowInsets() { return false; }
+	public boolean hasStableInsets() { return false; }
+	public DisplayCutout getDisplayCutout() { return null; }
+	public WindowInsets replaceSystemWindowInsets(android.graphics.Rect systemWindowInsets) { return this; }
+	public java.util.List<android.graphics.Rect> getBoundingRects(int typeMask) { return new java.util.ArrayList<>(); }
+	public java.util.List<android.graphics.Rect> getBoundingRectsIgnoringVisibility(int typeMask) { return new java.util.ArrayList<>(); }
+
+	public static final class Builder {
+		public Builder() {}
+		public Builder(WindowInsets insets) {}
+		public Builder setInsets(int typeMask, Insets insets) { return this; }
+		public Builder setInsetsIgnoringVisibility(int typeMask, Insets insets) { return this; }
+		public Builder setVisible(int typeMask, boolean visible) { return this; }
+		public Builder setSystemWindowInsets(Insets insets) { return this; }
+		public Builder setSystemGestureInsets(Insets insets) { return this; }
+		public Builder setMandatorySystemGestureInsets(Insets insets) { return this; }
+		public Builder setTappableElementInsets(Insets insets) { return this; }
+		public Builder setStableInsets(Insets insets) { return this; }
+		public Builder setDisplayCutout(DisplayCutout displayCutout) { return this; }
+		public Builder setBoundingRects(int typeMask, java.util.List<android.graphics.Rect> rects) { return this; }
+		public Builder setBoundingRectsIgnoringVisibility(int typeMask, java.util.List<android.graphics.Rect> rects) { return this; }
+		public Builder setPrivacyIndicatorBounds(android.graphics.Rect bounds) { return this; }
+		public WindowInsets build() { return new WindowInsets(); }
 	}
 }

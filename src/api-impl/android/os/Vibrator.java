@@ -39,4 +39,10 @@ public class Vibrator {
 
 	private native void native_vibrate(int fd, long millis);
 	private native int native_constructor();
+
+	/* teslalinux: Vibrator additions */
+	public boolean areAllPrimitivesSupported(int... primitiveIds) { return false; }
+	public boolean[] arePrimitivesSupported(int... primitiveIds) { return new boolean[primitiveIds.length]; }
+	public boolean areAllEffectsSupported(int... effectIds) { return false; }
+	public int getId() { return 0; }
 }

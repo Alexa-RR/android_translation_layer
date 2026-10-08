@@ -82,4 +82,11 @@ public class ViewConfiguration {
 	public static int getKeyRepeatDelay() {
 		return 100;
 	}
+
+	/* teslalinux: ViewConfiguration additions */
+	public int getScaledHoverSlop() { return 4; }
+	public int getScaledHandwritingSlop() { return 2; }
+	public int getScaledHandwritingGestureLineMargin() { return 16; }
+	public static int getFocusTraversalThreshold() { return 0; }
+	public int getScaledMinimumScalingSpan() { return 27; }
 }

@@ -38,4 +38,7 @@ public final class Debug {
 	}
 
 	public static void getMemoryInfo(MemoryInfo memoryInfo) {}
+
+	/* teslalinux: Debug additions */
+	public static long getNativeHeapSize() { return 64L * 1024 * 1024; }
 }

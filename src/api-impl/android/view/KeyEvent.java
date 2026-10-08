@@ -3362,4 +3362,7 @@ public class KeyEvent extends InputEvent implements Parcelable {
 
 	private native boolean native_isSystemKey(int keyCode);
 	private native boolean native_hasDefaultAction(int keyCode);
+
+	/* teslalinux: KeyEvent additions */
+	public boolean isFromSource(int source) { return (getSource() & source) == source; }
 }

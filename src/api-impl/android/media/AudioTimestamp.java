@@ -1,4 +1,7 @@
 package android.media;
 
-public class AudioTimestamp {
+public final class AudioTimestamp {
+	public static final int TIMEBASE_MONOTONIC = 0, TIMEBASE_BOOTTIME = 1;
+	public long framePosition;
+	public long nanoTime;
 }

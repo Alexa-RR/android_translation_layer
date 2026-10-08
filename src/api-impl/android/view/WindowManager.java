@@ -39,4 +39,15 @@ public interface WindowManager {
 
 		public void setTitle(CharSequence title) {}
 	}
+
+	/* teslalinux: WindowManager additions (default methods: WindowManagerImpl keeps compiling) */
+	default WindowMetrics getCurrentWindowMetrics() {
+		Display d = getDefaultDisplay();
+		return new WindowMetrics(new android.graphics.Rect(0, 0, d.getWidth(), d.getHeight()), new WindowInsets());
+	}
+	default WindowMetrics getMaximumWindowMetrics() { return getCurrentWindowMetrics(); }
+	default boolean isCrossWindowBlurEnabled() { return false; }
+	default void addCrossWindowBlurEnabledListener(java.util.function.Consumer<Boolean> listener) {}
+	default void addCrossWindowBlurEnabledListener(java.util.concurrent.Executor executor, java.util.function.Consumer<Boolean> listener) {}
+	default void removeCrossWindowBlurEnabledListener(java.util.function.Consumer<Boolean> listener) {}
 }

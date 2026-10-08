@@ -14,7 +14,6 @@ public class KeyguardManager {
 	}
 
 
-	/* teslalinux-frag 13ca4b5ac136 */
 	/* teslalinux: KeyguardManager additions */
 	public static abstract class KeyguardDismissCallback {
 		public void onDismissError() {}
