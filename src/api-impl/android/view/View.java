@@ -1708,8 +1708,10 @@ public class View implements Drawable.Callback {
 		}
 	}
 
+	/** AOSP: the measured state bits of both dimensions (MEASURED_STATE_TOO_SMALL etc). */
 	public final int getMeasuredState() {
-		return 0;
+		return (measuredWidth & MEASURED_STATE_MASK)
+				| ((measuredHeight >> MEASURED_HEIGHT_STATE_SHIFT) & (MEASURED_STATE_MASK >> MEASURED_HEIGHT_STATE_SHIFT));
 	}
 
 	public static int combineMeasuredStates(int curState, int newState) {
@@ -3542,4 +3544,12 @@ public class View implements Drawable.Callback {
 	@android.annotation.IntDef({LAYOUT_DIRECTION_LTR, LAYOUT_DIRECTION_RTL})
 	@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
 	public @interface ResolvedLayoutDir {}
+	/* teslalinux debugging: the specs of the last measure pass (android.atl.ViewDump) */
+	public int tlLastWidthMeasureSpec() {
+		return oldWidthMeasureSpec;
+	}
+
+	public int tlLastHeightMeasureSpec() {
+		return oldHeightMeasureSpec;
+	}
 }

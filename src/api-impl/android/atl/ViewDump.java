@@ -231,6 +231,9 @@ public final class ViewDump {
 		sb.append(" alpha=").append(v.getAlpha());
 		sb.append(" at ").append(v.getLeft()).append(',').append(v.getTop());
 		sb.append(" size ").append(v.getWidth()).append('x').append(v.getHeight());
+		sb.append(lpString(v.getLayoutParams()));
+		sb.append(" ms=").append(specString(v.tlLastWidthMeasureSpec())).append('x').append(specString(v.tlLastHeightMeasureSpec()));
+		sb.append(" md=").append(v.getMeasuredWidth()).append('x').append(v.getMeasuredHeight());
 		if (v.getTranslationX() != 0 || v.getTranslationY() != 0)
 			sb.append(" tr ").append(v.getTranslationX()).append(',').append(v.getTranslationY());
 		sb.append(v.isAttachedToWindow() ? " attached" : " DETACHED");
@@ -247,5 +250,37 @@ public final class ViewDump {
 			for (int i = 0; i < g.getChildCount(); i++)
 				dump(g.getChildAt(i), depth + 1);
 		}
+	}
+
+	/** " lp=WxH[ w=weight][ g=gravity][ m=l,t,r,b]" with MATCH_PARENT/WRAP_CONTENT spelled out */
+	static String lpString(android.view.ViewGroup.LayoutParams lp) {
+		if (lp == null)
+			return " lp=null";
+		StringBuilder sb = new StringBuilder(" lp=").append(lpDim(lp.width)).append('x').append(lpDim(lp.height));
+		if (lp instanceof android.widget.LinearLayout.LayoutParams) {
+			android.widget.LinearLayout.LayoutParams l = (android.widget.LinearLayout.LayoutParams) lp;
+			if (l.weight != 0)
+				sb.append(" w=").append(l.weight);
+			if (l.gravity != -1)
+				sb.append(" g=0x").append(Integer.toHexString(l.gravity));
+		} else if (lp instanceof android.widget.FrameLayout.LayoutParams) {
+			sb.append(" g=0x").append(Integer.toHexString(((android.widget.FrameLayout.LayoutParams) lp).gravity));
+		}
+		if (lp instanceof android.view.ViewGroup.MarginLayoutParams) {
+			android.view.ViewGroup.MarginLayoutParams m = (android.view.ViewGroup.MarginLayoutParams) lp;
+			if (m.leftMargin != 0 || m.topMargin != 0 || m.rightMargin != 0 || m.bottomMargin != 0)
+				sb.append(" m=").append(m.leftMargin).append(',').append(m.topMargin).append(',').append(m.rightMargin).append(',').append(m.bottomMargin);
+		}
+		return sb.toString();
+	}
+
+	static String lpDim(int d) {
+		return d == android.view.ViewGroup.LayoutParams.MATCH_PARENT ? "MP" : d == android.view.ViewGroup.LayoutParams.WRAP_CONTENT ? "WC" : Integer.toString(d);
+	}
+
+	static String specString(int spec) {
+		int mode = android.view.View.MeasureSpec.getMode(spec);
+		return (mode == android.view.View.MeasureSpec.EXACTLY ? "E" : mode == android.view.View.MeasureSpec.AT_MOST ? "A" : "U")
+				+ android.view.View.MeasureSpec.getSize(spec);
 	}
 }
