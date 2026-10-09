@@ -656,6 +656,8 @@ public abstract class Context {
 		android.util.DisplayMetrics metrics = sys.getDisplayMetrics();
 		metrics.setToDefaults();
 		sys.updateConfiguration(sys_config, metrics);
+		for (android.atl.ATLLoadedApp app : android.atl.ATLLoadedAppManager.tlLoadedApps())
+			app.tlApplyConfiguration(sys_config, metrics);
 	}
 	/** AOSP: the name of the connectivity service (getSystemService). */
 	public static final String CONNECTIVITY_SERVICE = "connectivity";

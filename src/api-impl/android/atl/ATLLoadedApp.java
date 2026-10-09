@@ -132,8 +132,16 @@ public final class ATLLoadedApp {
 			displayMetrics = this.default_resources.getDisplayMetrics();
 		if (configuration == null)
 			configuration = Context.sys_config;
-		Resources resources = new Resources(this.default_resources.getAssets(), displayMetrics, configuration);
+		/* AOSP (ResourcesManager): the resources' configuration is the system one with the caller's
+		 * override applied, over an AssetManager of their own, and later system changes keep the override */
+		Configuration override = new Configuration(configuration);
+		Configuration effective = new Configuration(Context.sys_config);
+		effective.updateFrom(override);
+		Resources resources = new Resources(this.default_resources.getAssets().tlNewSharing(), displayMetrics, effective);
 		resources.applyPackageQuirks(this.pkg.applicationInfo.minSdkVersion);
+		synchronized (tl_resources) {
+			tl_resources.add(new Object[] {new java.lang.ref.WeakReference<Resources>(resources), override});
+		}
 		return resources;
 	}
 
@@ -308,5 +316,26 @@ public final class ATLLoadedApp {
 
 	public long getNativeWindow() {
 		return this.application == null ? 0 : this.application.native_window;
+	}
+
+	/* teslalinux: the Resources created for this app and the override each was created with */
+	private final java.util.ArrayList<Object[]> tl_resources = new java.util.ArrayList<>();
+
+	/** AOSP ResourcesManager.applyConfigurationToResources: a system configuration change reaches every Resources, each keeping its override. */
+	public void tlApplyConfiguration(Configuration sys, DisplayMetrics metrics) {
+		this.default_resources.updateConfiguration(sys, metrics);
+		synchronized (tl_resources) {
+			for (int i = tl_resources.size() - 1; i >= 0; i--) {
+				Object[] entry = tl_resources.get(i);
+				Resources res = ((java.lang.ref.WeakReference<Resources>) entry[0]).get();
+				if (res == null) {
+					tl_resources.remove(i);
+					continue;
+				}
+				Configuration effective = new Configuration(sys);
+				effective.updateFrom((Configuration) entry[1]);
+				res.updateConfiguration(effective, metrics);
+			}
+		}
 	}
 }

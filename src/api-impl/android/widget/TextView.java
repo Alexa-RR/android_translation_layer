@@ -37,7 +37,7 @@ public class TextView extends View {
 	private boolean include_padding = false;
 	private int break_strategy = 0 /*BREAK_STRATEGY_SIMPLE*/;
 	private int hyphenation_frequency = 0 /*HYPHENATION_FREQUENCY_NONE*/;
-	private int gravity = Gravity.CENTER;
+	private int gravity = Gravity.TOP | Gravity.START; // AOSP default
 
 	public TextView(Context context, AttributeSet attrs) {
 		this(context, attrs, 0);
@@ -56,6 +56,9 @@ public class TextView extends View {
 
 		TypedArray a = context.obtainStyledAttributes(attrs, com.android.internal.R.styleable.TextView, defStyleAttr, 0);
 		try {
+			if (a.hasValue(com.android.internal.R.styleable.TextView_gravity)) {
+				setGravity(a.getInt(com.android.internal.R.styleable.TextView_gravity, Gravity.TOP | Gravity.START));
+			}
 			if (a.hasValue(com.android.internal.R.styleable.TextView_text)) {
 				setText(a.getText(com.android.internal.R.styleable.TextView_text));
 			}
@@ -601,4 +604,27 @@ public class TextView extends View {
 	public int getCurrentHintTextColor() {
 		return mCurHintTextColor;
 	}
+	/** AOSP: the gravity of the text within the view; a missing half defaults to START / TOP. */
+	@Override
+	public void setGravity(int gravity) {
+		if ((gravity & Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK) == 0) {
+			gravity |= Gravity.START;
+		}
+		if ((gravity & Gravity.VERTICAL_GRAVITY_MASK) == 0) {
+			gravity |= Gravity.TOP;
+		}
+		boolean newLayout = (gravity & Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK) != (this.gravity & Gravity.RELATIVE_HORIZONTAL_GRAVITY_MASK);
+		if (gravity != this.gravity) {
+			invalidate();
+		}
+		this.gravity = gravity;
+		if (widget != 0) {
+			native_setGravity(widget, gravity);
+		}
+		if (newLayout) {
+			requestLayout();
+		}
+	}
+
+	private native void native_setGravity(long widget, int gravity);
 }

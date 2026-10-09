@@ -209,6 +209,15 @@ public final class ViewDump {
 					n = mod.getClass().getName();
 				if (mods.length() < 160)
 					mods.append(n).append(',');
+				if (n.equals("BackgroundElement")) {
+					try {
+						java.lang.reflect.Field f = mod.getClass().getDeclaredField("color");
+						f.setAccessible(true);
+						long color = f.getLong(mod);
+						mods.append("#").append(Long.toHexString(color >>> 32)).append(',');
+					} catch (Exception e) {
+					}
+				}
 			}
 			if (mods.length() > 0)
 				sb.append(" [").append(mods).append(']');
@@ -234,6 +243,21 @@ public final class ViewDump {
 		sb.append(lpString(v.getLayoutParams()));
 		sb.append(" ms=").append(specString(v.tlLastWidthMeasureSpec())).append('x').append(specString(v.tlLastHeightMeasureSpec()));
 		sb.append(" md=").append(v.getMeasuredWidth()).append('x').append(v.getMeasuredHeight());
+		android.graphics.drawable.Drawable bg = v.getBackground();
+		if (bg != null) {
+			sb.append(" bg=");
+			if (bg instanceof android.graphics.drawable.ColorDrawable)
+				sb.append("#").append(Integer.toHexString(((android.graphics.drawable.ColorDrawable) bg).getColor()));
+			else
+				sb.append(bg.getClass().getSimpleName());
+		}
+		if (v instanceof android.widget.TextView)
+			sb.append(" tg=0x").append(Integer.toHexString(((android.widget.TextView) v).getGravity()));
+		if (v.getClass().getName().endsWith("AndroidComposeView")) {
+			android.content.res.Resources r = v.getContext().getResources();
+			sb.append(" res=").append(Integer.toHexString(System.identityHashCode(r))).append("/ui=0x").append(Integer.toHexString(r.getConfiguration().uiMode))
+			  .append(" ctx=").append(v.getContext().getClass().getSimpleName());
+		}
 		if (v.getTranslationX() != 0 || v.getTranslationY() != 0)
 			sb.append(" tr ").append(v.getTranslationX()).append(',').append(v.getTranslationY());
 		sb.append(v.isAttachedToWindow() ? " attached" : " DETACHED");

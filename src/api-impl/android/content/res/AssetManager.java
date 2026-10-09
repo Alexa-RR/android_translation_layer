@@ -930,4 +930,22 @@ public final class AssetManager {
 	}
 
 	private native final long openXmlAssetFromBufferNative(byte[] data);
+	/* teslalinux: AOSP gives every Resources its own AssetManager over the shared loaded APKs */
+	long tlApkAssets;      // native array of the loaded ApkAssets (set by native_setApkAssets)
+	int tlApkAssetsCount;
+
+	private native void native_shareApkAssets(long apkAssets, int count);
+
+	private AssetManager(AssetManager sharing, boolean sharingMarker) {
+		synchronized (this) {
+			init(android.os.Build.VERSION.RESOURCES_SDK_INT);
+			asset_paths.addAll(sharing.asset_paths);
+			native_shareApkAssets(sharing.tlApkAssets, sharing.tlApkAssetsCount);
+		}
+	}
+
+	/** A manager over the same APKs with its own configuration and caches (AOSP: one per ResourcesImpl). */
+	public AssetManager tlNewSharing() {
+		return new AssetManager(this, true);
+	}
 }

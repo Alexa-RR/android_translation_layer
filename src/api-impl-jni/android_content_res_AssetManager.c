@@ -165,6 +165,21 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAsset
 		(*env)->ReleaseStringUTFChars(env, path_jstr, path);
 	}
 	AssetManager_setApkAssets(asset_manager, apk_assets, num_assets, true, true);
+	/* tl_assets_share: keep the loaded ApkAssets so sibling managers can share them */
+	const struct ApkAssets **keep = malloc(sizeof(*keep) * (num_assets > 0 ? num_assets : 1));
+	memcpy(keep, apk_assets, sizeof(*keep) * num_assets);
+	_SET_LONG_FIELD(this, "tlApkAssets", _INTPTR(keep));
+	_SET_INT_FIELD(this, "tlApkAssetsCount", num_assets);
+}
+
+JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1shareApkAssets(JNIEnv *env, jobject this, jlong apk_assets_ptr, jint num_assets)
+{
+	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
+	AM_SCOPEDLOCK(asset_manager)
+	const struct ApkAssets **apk_assets = _PTR(apk_assets_ptr);
+	AssetManager_setApkAssets(asset_manager, apk_assets, num_assets, true, true);
+	_SET_LONG_FIELD(this, "tlApkAssets", apk_assets_ptr);
+	_SET_INT_FIELD(this, "tlApkAssetsCount", num_assets);
 }
 
 JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_loadResourceValue(JNIEnv *env, jobject this, jint ident, jshort density, jobject outValue, jboolean resolve)
