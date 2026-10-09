@@ -91,7 +91,15 @@ public class Dialog implements Window.Callback, DialogInterface {
 		Runnable action = new Runnable() {
 			@Override
 			public void run() {
-				onCreate(null);
+				/* AOSP: a dialog is created once, started on every show and ignored when already showing */
+				if (mShowing) {
+					nativeShow(nativePtr);
+					return;
+				}
+				if (!mCreated) {
+					mCreated = true;
+					onCreate(null);
+				}
 				onStart();
 				// Read the size of the main window. Floating dialogs should be smaller as specified in the windowMinWidth* attributes.
 				// Non-floating are typically constructed with MATCH_PARENT layout params and thus get the exact size of the main window.
@@ -119,6 +127,7 @@ public class Dialog implements Window.Callback, DialogInterface {
 				getWindow().getDecorView().internalSetDefaultMeasureSpec(widthMeasureSpec, heightMeasureSpec);
 
 				nativeShow(nativePtr);
+				mShowing = true;
 				if (onShowListener != null)
 					onShowListener.onShow(Dialog.this);
 			}
@@ -143,7 +152,10 @@ public class Dialog implements Window.Callback, DialogInterface {
 		new Handler(Looper.getMainLooper()).postDelayed(new Runnable() {
 			@Override
 			public void run() {
+				if (!mShowing)
+					return; // AOSP: dismissing a dialog that is not showing does nothing
 				nativeClose(nativePtr);
+				mShowing = false;
 				onStop();
 				if (onDismissListener != null)
 					onDismissListener.onDismiss(Dialog.this);
@@ -271,4 +283,8 @@ public class Dialog implements Window.Callback, DialogInterface {
 			show();
 		}
 	}
+
+	/* AOSP dialog state */
+	private boolean mCreated;
+	private boolean mShowing;
 }

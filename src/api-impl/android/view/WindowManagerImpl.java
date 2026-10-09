@@ -104,9 +104,20 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		Rect displayFrame = new Rect();
 		view.getWindowVisibleDisplayFrame(displayFrame);
 		view.internalSetDefaultMeasureSpec(View.MeasureSpec.AT_MOST | displayFrame.width(), View.MeasureSpec.AT_MOST | displayFrame.height());
-		WindowManager.LayoutParams windowParams = (WindowManager.LayoutParams)params;
+		final WindowManager.LayoutParams windowParams = (WindowManager.LayoutParams)params;
 		view.setLayoutParams(params);
-		native_updateViewLayout(view.widget, windowParams.x, windowParams.y, params.width, params.height);
+		/* AOSP: the new parameters are applied on the next traversal (ViewRootImpl.setLayoutParams ->
+		 * requestLayout); applying them here makes GTK re-present the popover and measure the view
+		 * synchronously, which Compose rejects when it is already measuring (popups move onSizeChanged). */
+		final View target = view;
+		final int width = params.width, height = params.height;
+		new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+			@Override
+			public void run() {
+				if (target.parent == WindowManagerImpl.this || target.isAttachedToWindow())
+					native_updateViewLayout(target.widget, windowParams.x, windowParams.y, width, height);
+			}
+		});
 	}
 
 	@Override
