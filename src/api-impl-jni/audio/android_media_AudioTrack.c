@@ -110,7 +110,10 @@ JNIEXPORT jint JNICALL Java_android_media_AudioTrack_getMinBufferSize(JNIEnv *en
 
 	ret = snd_pcm_open(&pcm_handle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0);
 	if (ret < 0)
+	{
 		printf("Error calling snd_pcm_open: %s\n", snd_strerror(ret));
+		return -1; /* AOSP: ERROR when the output cannot be queried */
+	}
 
 	snd_pcm_hw_params_alloca(&params);
 	helper_hw_params_init(pcm_handle, params, sampleRateInHz, channelConfig, SND_PCM_FORMAT_S16_LE, &num_channels); // FIXME: a switch?
@@ -126,9 +129,7 @@ JNIEXPORT jint JNICALL Java_android_media_AudioTrack_getMinBufferSize(JNIEnv *en
 	// TODO: snd_pcm_hw_params_free(params) causes segfault, is it not supposed to be called?
 	snd_pcm_close(pcm_handle);
 
-	_SET_STATIC_INT_FIELD(this_class, "frames", frames);
-	if ((*env)->ExceptionCheck(env))
-		(*env)->ExceptionDescribe(env);
+	/* tl_audiotrack: the period size is returned, not kept in a static field */
 
 	printf("\n\nJava_android_media_AudioTrack_getMinBufferSize is returning: %ld\n\n\n", frames * num_channels * 2);
 	return frames * num_channels * 2; // FIXME: 2 bytes = 16 bits (s16)

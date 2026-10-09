@@ -665,7 +665,7 @@ public final class MediaCodec {
             if (mInputBuffers == null || index < 0 || index >= mInputBuffers.length)
                 throw new IllegalStateException("bad input buffer index " + index);
             if (mFreeInputs.contains(index) || mQueuedInputs.contains(index))
-                throw new IllegalStateException("input buffer " + index + " was not dequeued");
+                throw new IllegalStateException("input buffer " + index + " is owned by the codec");
             ByteBuffer b = mInputBuffers[index];
             if (offset < 0 || size < 0 || offset + size > b.capacity())
                 throw new IllegalArgumentException("offset/size outside the buffer");
@@ -766,9 +766,11 @@ public final class MediaCodec {
                 break; // the decoder wants its frames read first (EAGAIN)
             mQueuedInputs.poll();
             if (index >= 0) {
-                mFreeInputs.add(index);
-                if (mCallback != null && !mFlushedAsync)
-                    postInputAvailable(index);
+                if (mCallback != null && !mFlushedAsync) {
+                    postInputAvailable(index); // asynchronous mode: the client owns the buffer again
+                } else {
+                    mFreeInputs.add(index);
+                }
             }
             progressed = true;
         }
@@ -810,8 +812,10 @@ public final class MediaCodec {
 
     // ---- asynchronous mode ----
 
+    /** Asynchronous mode: hands every free input buffer to the client (it owns them until queued). */
     private void announceInputs() {
-        for (Integer i : mFreeInputs)
+        Integer i;
+        while ((i = mFreeInputs.poll()) != null)
             postInputAvailable(i);
     }
 
