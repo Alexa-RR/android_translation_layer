@@ -356,17 +356,6 @@ void wrapper_widget_queue_draw(WrapperWidget *wrapper)
 	}
 }
 
-static bool on_click(GtkGestureClick *gesture, int n_press, double x, double y, jobject this)
-{
-	JNIEnv *env = get_jni_env();
-
-	bool ret = (*env)->CallBooleanMethod(env, this, handle_cache.view.performClick);
-	if ((*env)->ExceptionCheck(env))
-		(*env)->ExceptionDescribe(env);
-
-	return ret;
-}
-
 #define KEYCODE_0             7 /* KEYCODE_[1-9] = [8-16] */
 #define KEYCODE_DPAD_UP       19
 #define KEYCODE_DPAD_DOWN     20
@@ -585,19 +574,14 @@ void wrapper_widget_set_jobject(WrapperWidget *wrapper, JNIEnv *env, jobject job
 		(*env)->DeleteLocalRef(env, canvas_class);
 	}
 
+	/* tl_click_from_java: a performClick override (CompoundButton & co.) needs the touch path */
 	jmethodID performClick_method = _METHOD(_CLASS(jobj), "performClick", "()Z");
-	if (performClick_method != handle_cache.view.performClick) {
-		GtkEventController *controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
-
-		g_signal_connect(controller, "released", G_CALLBACK(on_click), wrapper->jobj);
-		gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
-		widget_set_needs_allocation(wrapper->child);
-	}
 
 	jmethodID ontouchevent_method = _METHOD(_CLASS(jobj), "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
 	jmethodID dispatchtouchevent_method = _METHOD(_CLASS(jobj), "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z");
 	wrapper->custom_dispatch_touch = (dispatchtouchevent_method != handle_cache.view.dispatchTouchEvent && dispatchtouchevent_method != handle_cache.view_group.dispatchTouchEvent);
-	if (ontouchevent_method != handle_cache.view.onTouchEvent || wrapper->custom_dispatch_touch) {
+	if (ontouchevent_method != handle_cache.view.onTouchEvent || wrapper->custom_dispatch_touch
+	    || performClick_method != handle_cache.view.performClick) {
 		_setOnTouchListener(env, jobj, GTK_WIDGET(wrapper));
 	}
 

@@ -55,7 +55,16 @@ JNIEXPORT void JNICALL Java_android_atl_ViewDump_nativeDumpGtk(JNIEnv *env, jcla
 		        gtk_widget_get_width(GTK_WIDGET(w)), gtk_widget_get_height(GTK_WIDGET(w)), 10);
 		g_object_unref(w);
 	}
-	fprintf(stderr, "=== GTK widget tree from %s ===%c", G_OBJECT_TYPE_NAME(top), 10);
-	dump_widget(env, top, 0, stderr);
+	/* every toplevel's tree (dialogs and popups are their own windows) */
+	for (guint i = 0; i < n_top; i++) {
+		GtkWindow *tw = g_list_model_get_item(toplevels, i);
+		fprintf(stderr, "=== GTK widget tree from %s %p ===%c", G_OBJECT_TYPE_NAME(tw), (void *)tw, 10);
+		dump_widget(env, GTK_WIDGET(tw), 0, stderr);
+		g_object_unref(tw);
+	}
+	if (!GTK_IS_WINDOW(top)) {
+		fprintf(stderr, "=== GTK widget tree from %s (unrooted) ===%c", G_OBJECT_TYPE_NAME(top), 10);
+		dump_widget(env, top, 0, stderr);
+	}
 	fprintf(stderr, "=== end GTK tree ===%c", 10);
 }

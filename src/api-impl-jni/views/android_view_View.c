@@ -180,18 +180,12 @@ void remove_pointer_fast(GPtrArray *pointer_indices, struct pointer *pointer)
 	pointer->id = 0;
 }
 
-static bool action_up_already_handled = false;
 
 // TODO: find a way to reconcile this with libandroid/input.c?
 static gboolean on_pointer_event(GtkEventControllerLegacy *event_controller, GdkEvent *event, gpointer user_data)
 {
 	double x;
 	double y;
-
-	if ((gdk_event_get_event_type(event) == GDK_TOUCH_END || gdk_event_get_event_type(event) == GDK_BUTTON_RELEASE) && action_up_already_handled) {
-		action_up_already_handled = false;
-		return true;
-	}
 
 	uintptr_t id = (uintptr_t)gdk_event_get_event_sequence(event);
 	if (id > MAX_POINTERS - 1) // sequence id is a real pointer for drag and drop events
@@ -294,27 +288,6 @@ static gboolean on_event(GtkEventControllerLegacy *event_controller, GdkEvent *e
 			return on_pointer_event(event_controller, event, user_data);
 		default: // not a touch or mouse event, nothing to do here
 			return false;
-	}
-}
-
-static void on_click(GtkGestureClick *gesture, int n_press, double x, double y, gpointer user_data)
-{
-	JNIEnv *env = get_jni_env();
-	GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(widget));
-
-	jboolean handled = (*env)->CallBooleanMethod(env, wrapper->jobj, handle_cache.view.performClick);
-
-	if ((*env)->ExceptionCheck(env))
-		(*env)->ExceptionDescribe(env);
-
-	if (handled) {
-		gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-		// claiming fails if there is no last event, set a flag in that case
-		GdkEvent *event = gtk_gesture_get_last_event(GTK_GESTURE(gesture), gtk_gesture_get_last_updated_sequence(GTK_GESTURE(gesture)));
-		if (!event) {
-			action_up_already_handled = true;
-		}
 	}
 }
 
@@ -461,15 +434,8 @@ JNIEXPORT void JNICALL Java_android_view_View_nativeSetOnClickListener(JNIEnv *e
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
 
-	GtkEventController *old_controller = g_object_get_data(G_OBJECT(widget), "on_click_listener");
-	if (old_controller)
-		return;
-
-	GtkEventController *controller = GTK_EVENT_CONTROLLER(gtk_gesture_click_new());
-
-	g_signal_connect(controller, "released", G_CALLBACK(on_click), NULL); // the release completes the click, I guess?
-	gtk_widget_add_controller(widget, controller);
-	g_object_set_data(G_OBJECT(widget), "on_click_listener", controller);
+	/* tl_click_from_java: AOSP performs the click from View.onTouchEvent on ACTION_UP */
+	_setOnTouchListener(env, this, gtk_widget_get_parent(widget));
 	widget_set_needs_allocation(widget);
 }
 
@@ -843,42 +809,11 @@ JNIEXPORT jboolean JNICALL Java_android_view_View_native_1getGlobalVisibleRect(J
 	return true;
 }
 
-static void on_long_click(GtkGestureLongPress *gesture, double x, double y, gpointer user_data)
-{
-	JNIEnv *env = get_jni_env();
-	GtkWidget *widget = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
-	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(widget));
-
-	bool ret = (*env)->CallBooleanMethod(env, wrapper->jobj, handle_cache.view.performLongClick, x, y);
-
-	if ((*env)->ExceptionCheck(env))
-		(*env)->ExceptionDescribe(env);
-
-	if (ret)
-		gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-}
-
-static void on_long_click_update(GtkGesture *gesture, GdkEventSequence *sequence, gpointer user_data)
-{
-	GdkEvent *event = gtk_gesture_get_last_event(gesture, sequence);
-	if (event == canceled_event) {
-		gtk_event_controller_reset(GTK_EVENT_CONTROLLER(gesture));
-	}
-}
-
 JNIEXPORT void JNICALL Java_android_view_View_nativeSetOnLongClickListener(JNIEnv *env, jobject this, jlong widget_ptr)
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
-	GtkEventController *old_controller = g_object_get_data(G_OBJECT(widget), "on_long_click_listener");
-	if (old_controller)
-		return;
-
-	GtkEventController *controller = GTK_EVENT_CONTROLLER(gtk_gesture_long_press_new());
-
-	g_signal_connect(controller, "pressed", G_CALLBACK(on_long_click), NULL);
-	g_signal_connect(controller, "update", G_CALLBACK(on_long_click_update), NULL);
-	gtk_widget_add_controller(widget, controller);
-	g_object_set_data(G_OBJECT(widget), "on_long_click_listener", controller);
+	/* AOSP: the long press comes from View.onTouchEvent's pending check (tl_click_from_java) */
+	_setOnTouchListener(env, this, gtk_widget_get_parent(widget));
 }
 
 JNIEXPORT jboolean JNICALL Java_android_view_View_native_1getMatrix(JNIEnv *env, jobject this, jlong widget_ptr, jlong matrix_ptr)

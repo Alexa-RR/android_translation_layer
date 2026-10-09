@@ -21,6 +21,8 @@ JNIEXPORT jlong JNICALL Java_android_app_Dialog_nativeInit(JNIEnv *env, jobject 
 {
 	GtkWidget *dialog = gtk_window_new();
 	gtk_window_set_transient_for(GTK_WINDOW(dialog), window);
+	gtk_window_set_decorated(GTK_WINDOW(dialog), FALSE); /* tl_dialog_undecorated: AOSP dialogs have no title bar */
+	gtk_window_set_modal(GTK_WINDOW(dialog), TRUE);      /* AOSP: a dialog window blocks the app window beneath */
 	gtk_window_set_child(GTK_WINDOW(dialog), gtk_box_new(GTK_ORIENTATION_VERTICAL, 1));
 	g_signal_connect_swapped(dialog, "response", G_CALLBACK(gtk_window_destroy), dialog);
 	g_signal_connect(GTK_WINDOW(dialog), "close-request", G_CALLBACK(on_close_request), _REF(this));

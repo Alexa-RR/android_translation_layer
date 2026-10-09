@@ -1266,8 +1266,7 @@ public class View implements Drawable.Callback {
 						}
 						if (!mHasPerformedLongPress && !mIgnoreNextUpEvent) {
 							removeLongPressCallback();
-							if (tlClickFromJavaDispatch || on_click_listener == null)
-								performClickInternal();
+							performClickInternal(); // AOSP: the click comes from the UP, never from a GTK gesture
 						}
 						if (mUnsetPressedState == null)
 							mUnsetPressedState = new Runnable() {
@@ -1287,7 +1286,6 @@ public class View implements Drawable.Callback {
 					break;
 				case MotionEvent.ACTION_DOWN:
 					mHasPerformedLongPress = false;
-					tlClickFromJavaDispatch = tlDispatchingSynthetic;
 					if (isInScrollingContainer()) {
 						mPrePressed = true;
 						if (mPendingCheckForTap == null)
@@ -1662,8 +1660,11 @@ public class View implements Drawable.Callback {
 		return background;
 	}
 
+	/** AOSP: a clickable view consumes touches (it handles them in onTouchEvent), so attach the touch path. */
 	public void setClickable(boolean clickable) {
 		mClickable = clickable;
+		if (clickable && widget != 0)
+			nativeSetOnTouchListener(widget);
 	}
 
 	public void setEnabled(boolean enabled) {
@@ -1692,6 +1693,8 @@ public class View implements Drawable.Callback {
 
 	public void setLongClickable(boolean longClickable) {
 		mLongClickable = longClickable;
+		if (longClickable && widget != 0)
+			nativeSetOnTouchListener(widget);
 	}
 
 	public void setOnHoverListener(OnHoverListener listener) {}
@@ -3402,9 +3405,8 @@ public class View implements Drawable.Callback {
 	private Runnable mPendingCheckForLongPress;
 	private Runnable mUnsetPressedState;
 	private float tlTapX, tlTapY;
-	/** The event being handled was dispatched by Java code (not by GTK), so no native click gesture will fire for it. */
+	/** The event being handled was dispatched by Java code rather than by a GTK controller. */
 	private boolean tlDispatchingSynthetic;
-	private boolean tlClickFromJavaDispatch;
 	private TouchDelegate mTouchDelegate;
 
 	public boolean isContextClickable() {
