@@ -37,7 +37,12 @@ public final class ViewDump {
 					String command = readTrigger();
 					TRIGGER.delete();
 					View decor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
-					if (command.startsWith("setvis ")) {
+					if (command.startsWith("textprobe")) {
+						// "textprobe [size]": log what the text measurement API reports for a few strings
+						String[] parts = command.trim().split(" ");
+						float size = parts.length > 1 ? Float.parseFloat(parts[1]) : 44f;
+						textProbe(size);
+					} else if (command.startsWith("setvis ")) {
 						// "setvis <id hex> <0|4|8>": change a view's visibility (debugging the stacking of views)
 						String[] parts = command.trim().split(" ");
 						int id = (int) Long.parseLong(parts[1].replace("0x", ""), 16);
@@ -57,6 +62,32 @@ public final class ViewDump {
 				handler.postDelayed(this, 1000);
 			}
 		}, 1000);
+	}
+
+	/** Logs Paint/StaticLayout measurements (tag ViewDump) for "H", "Hey Wazer!" and the empty string. */
+	private static void textProbe(float size) {
+		android.text.TextPaint paint = new android.text.TextPaint();
+		paint.setTextSize(size);
+		android.graphics.Paint.FontMetricsInt fmi = paint.getFontMetricsInt();
+		android.graphics.Paint.FontMetrics fm = paint.getFontMetrics();
+		Log.i(TAG, "textprobe size=" + size + " ascent=" + paint.ascent() + " descent=" + paint.descent()
+				+ " fmi top/asc/desc/bottom/lead=" + fmi.top + "/" + fmi.ascent + "/" + fmi.descent + "/" + fmi.bottom + "/" + fmi.leading
+				+ " fm=" + fm.top + "/" + fm.ascent + "/" + fm.descent + "/" + fm.bottom + " spacing=" + paint.getFontSpacing()
+				+ " letterSpacing=" + paint.getLetterSpacing() + " scaleX=" + paint.getTextScaleX());
+		for (String t : new String[] { "H", "Hey Wazer!", "" }) {
+			android.graphics.Rect r = new android.graphics.Rect();
+			paint.getTextBounds(t, 0, t.length(), r);
+			float[] widths = new float[Math.max(1, t.length())];
+			int n = paint.getTextWidths(t, widths);
+			StringBuilder w = new StringBuilder();
+			for (int i = 0; i < n; i++)
+				w.append(i > 0 ? "," : "").append(widths[i]);
+			android.text.StaticLayout l = android.text.StaticLayout.Builder.obtain(t, 0, t.length(), paint, 100000).setIncludePad(false).build();
+			Log.i(TAG, "textprobe \"" + t + "\": measureText=" + paint.measureText(t) + " bounds=" + r + " widths=[" + w + "]"
+					+ " layout h=" + l.getHeight() + " lines=" + l.getLineCount() + " top0=" + l.getLineTop(0) + " bottom0=" + l.getLineBottom(0)
+					+ " asc0=" + l.getLineAscent(0) + " desc0=" + l.getLineDescent(0) + " base0=" + l.getLineBaseline(0) + " w0=" + l.getLineWidth(0)
+					+ " desired=" + android.text.Layout.getDesiredWidth(t, paint) + " runAdvance=" + paint.getRunAdvance(t, 0, t.length(), 0, t.length(), false, t.length()));
+		}
 	}
 
 	private static String readTrigger() {

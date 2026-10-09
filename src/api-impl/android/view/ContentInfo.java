@@ -86,6 +86,7 @@ public final class ContentInfo implements Parcelable {
 		this.mSource = b.mSource;
 		this.mFlags = b.mFlags;
 		this.mLinkUri = b.mLinkUri;
+		this.mInputContentInfo = b.mInputContentInfo;
 		this.mExtras = b.mExtras;
 	}
 
@@ -227,7 +228,15 @@ public final class ContentInfo implements Parcelable {
 		public ContentInfo build() {
 			return new ContentInfo(this);
 		}
-	}
+	
+		private android.view.inputmethod.InputContentInfo mInputContentInfo;
+
+		/** AOSP (hidden): the InputContentInfo of content committed by an input method. */
+		public Builder setInputContentInfo(android.view.inputmethod.InputContentInfo inputContentInfo) {
+			mInputContentInfo = inputContentInfo;
+			return this;
+		}
+}
 
 	@Override
 	public int describeContents() {
@@ -265,4 +274,12 @@ public final class ContentInfo implements Parcelable {
 			return new ContentInfo[size];
 		}
 	};
+
+	/* teslalinux: the InputContentInfo of content committed by an input method (AOSP hidden API) */
+	private android.view.inputmethod.InputContentInfo mInputContentInfo;
+
+	/** AOSP (hidden): the InputContentInfo this content came from, for input-method sources. */
+	public android.view.inputmethod.InputContentInfo getInputContentInfo() {
+		return mInputContentInfo;
+	}
 }

@@ -978,4 +978,86 @@ public class Parcel {
 		this.pos = offset;
 		this.size = offset + length;
 	}
+
+	/** AOSP (API 30): a UTF-8 string; the in-process parcel stores strings the same way as writeString. */
+	public void writeString8(String value) {
+		writeString(value);
+	}
+
+	public String readString8() {
+		return readString();
+	}
+
+	public void writeString16(String value) {
+		writeString(value);
+	}
+
+	public String readString16() {
+		return readString();
+	}
+	/** AOSP (API 33): a typed readParcelable; parcelled classes that cannot be instantiated raise BadParcelableException. */
+	@SuppressWarnings("unchecked")
+	public <T> T readParcelable(ClassLoader loader, Class<T> clazz) {
+		try {
+			Parcelable p = readParcelable(loader);
+			if (p != null && !clazz.isInstance(p))
+				throw new BadParcelableException("Parcelable " + p.getClass() + " is not an instance of " + clazz);
+			return (T) p;
+		} catch (ReflectiveOperationException e) {
+			throw new BadParcelableException(e.toString());
+		}
+	}
+
+	/** AOSP (hidden): a string array written with writeStringArray. */
+	public String[] readStringArray() {
+		return createStringArray();
+	}
+
+	/** AOSP: a PersistableBundle as a length-prefixed key/value sequence (-1 for null). */
+	public void writePersistableBundle(PersistableBundle val) {
+		if (val == null) {
+			writeInt(-1);
+			return;
+		}
+		writeInt(val.mMap.size());
+		for (java.util.Map.Entry<String, Object> e : val.mMap.entrySet()) {
+			writeString(e.getKey());
+			writeValue(e.getValue());
+		}
+	}
+
+	public PersistableBundle readPersistableBundle() {
+		return readPersistableBundle(getClass().getClassLoader());
+	}
+
+	public PersistableBundle readPersistableBundle(ClassLoader loader) {
+		int n = readInt();
+		if (n < 0)
+			return null;
+		PersistableBundle b = new PersistableBundle();
+		try {
+			for (int i = 0; i < n; i++) {
+				String key = readString();
+				b.mMap.put(key, readValue(loader));
+			}
+		} catch (ReflectiveOperationException e) {
+			throw new BadParcelableException(e.toString());
+		}
+		return b;
+	}
+	/** AOSP (API 23): a nullable Parcelable written with a presence flag. */
+	public <T extends Parcelable> void writeTypedObject(T val, int parcelableFlags) {
+		if (val != null) {
+			writeInt(1);
+			val.writeToParcel(this, parcelableFlags);
+		} else {
+			writeInt(0);
+		}
+	}
+
+	public <T> T readTypedObject(Parcelable.Creator<T> c) {
+		if (readInt() != 0)
+			return c.createFromParcel(this);
+		return null;
+	}
 }

@@ -263,6 +263,7 @@ public class TextView extends View {
 	}
 
 	public void setAllCaps(boolean allCaps) {
+		mAllCaps = allCaps;
 		String[] classesToRemove = {"ATL-text-uppercase"};
 		native_removeClasses(widget, classesToRemove);
 
@@ -369,7 +370,9 @@ public class TextView extends View {
 		return getText().length();
 	}
 
-	public void setHighlightColor(int color) {}
+	public void setHighlightColor(int color) {
+		mHighlightColor = color;
+	}
 
 	public Editable getEditableText() {
 		return new SpannableStringBuilder(getText());
@@ -413,7 +416,10 @@ public class TextView extends View {
 		return -1;
 	}
 
-	public boolean isAllCaps() { return false; }
+	/** AOSP: whether the text is transformed to upper case (setAllCaps). */
+	public boolean isAllCaps() {
+		return mAllCaps;
+	}
 
 	public int getAutoSizeStepGranularity() {
 		return -1;
@@ -540,5 +546,59 @@ public class TextView extends View {
 				break;
 		}
 		return alignment;
+	}
+
+
+	/* teslalinux: AOSP text attributes that have no Pango counterpart are kept and reported */
+	private boolean mAllCaps;
+	private int mLineBreakStyle = android.graphics.text.LineBreakConfig.LINE_BREAK_STYLE_NONE;
+	private int mLineBreakWordStyle = android.graphics.text.LineBreakConfig.LINE_BREAK_WORD_STYLE_NONE;
+	private boolean mFallbackLineSpacing = true;
+
+	/** AOSP (API 33): the line-break strictness for CJK text; Pango uses the Unicode line breaking rules only. */
+	public void setLineBreakStyle(int lineBreakStyle) {
+		mLineBreakStyle = lineBreakStyle;
+	}
+
+	public int getLineBreakStyle() {
+		return mLineBreakStyle;
+	}
+
+	public void setLineBreakWordStyle(int lineBreakWordStyle) {
+		mLineBreakWordStyle = lineBreakWordStyle;
+	}
+
+	public int getLineBreakWordStyle() {
+		return mLineBreakWordStyle;
+	}
+
+	/** AOSP (API 28): whether fallback fonts may raise the line height; Pango always sizes lines by the fonts used. */
+	public void setFallbackLineSpacing(boolean enabled) {
+		mFallbackLineSpacing = enabled;
+	}
+
+	public boolean isFallbackLineSpacing() {
+		return mFallbackLineSpacing;
+	}
+
+	public void setElegantTextHeight(boolean elegant) {
+		getPaint().setElegantTextHeight(elegant);
+	}
+
+	public boolean isElegantTextHeight() {
+		return getPaint().isElegantTextHeight();
+	}
+	/* AOSP: selection highlight colour (default holo blue, 40% alpha) */
+	private int mHighlightColor = 0x6633B5E5;
+
+	public int getHighlightColor() {
+		return mHighlightColor;
+	}
+
+	private int mCurHintTextColor = 0xFF808080;
+
+	/** AOSP: the hint colour for the current state. */
+	public int getCurrentHintTextColor() {
+		return mCurHintTextColor;
 	}
 }

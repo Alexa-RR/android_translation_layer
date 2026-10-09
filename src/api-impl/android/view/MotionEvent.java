@@ -3623,4 +3623,13 @@ public final class MotionEvent extends InputEvent {
 	public static final int CLASSIFICATION_NONE = 0, CLASSIFICATION_AMBIGUOUS_GESTURE = 1, CLASSIFICATION_DEEP_PRESS = 2, CLASSIFICATION_TWO_FINGER_SWIPE = 3, CLASSIFICATION_MULTI_FINGER_SWIPE = 4, CLASSIFICATION_PINCH = 5;
 	public int getClassification() { return CLASSIFICATION_NONE; }
 	public boolean isFromSource(int source) { return (getSource() & source) == source; }
+
+	/** AOSP: the tool type of a touch made by the palm (API 29). */
+	public static final int TOOL_TYPE_PALM = 5;
+
+	/** AOSP: the tool-type values of {@link #getToolType(int)}. */
+	@android.annotation.IntDef(prefix = { "TOOL_TYPE_" }, value = {
+			TOOL_TYPE_UNKNOWN, TOOL_TYPE_FINGER, TOOL_TYPE_STYLUS, TOOL_TYPE_MOUSE, TOOL_TYPE_ERASER, TOOL_TYPE_PALM })
+	@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+	public @interface ToolType {}
 }

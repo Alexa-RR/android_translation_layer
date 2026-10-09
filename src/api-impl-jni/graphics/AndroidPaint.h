@@ -8,6 +8,7 @@ struct AndroidPaint {
 	GskStroke *gsk_stroke;
 	PangoFontDescription *font;
 	PangoAlignment alignment;
+	float letter_spacing; /* teslalinux: em units, as Paint.setLetterSpacing */
 	graphene_matrix_t color_matrix;
 	graphene_vec4_t color_offset;
 	bool is_fill : 1;

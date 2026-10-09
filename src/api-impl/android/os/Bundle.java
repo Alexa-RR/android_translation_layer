@@ -1214,4 +1214,8 @@ public final class Bundle extends BaseBundle implements Cloneable, Parcelable {
 		}
 		return out;
 	}
+	/** AOSP (hidden): a loose equality used by EditorInfo; entries are compared with equals(). */
+	public boolean kindofEquals(Bundle other) {
+		return other != null && mMap.equals(other.mMap);
+	}
 }

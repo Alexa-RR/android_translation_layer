@@ -300,6 +300,15 @@ char *find_jar_or_die(char *builddir_path, char *installed_path, char *install_p
 	return path;
 }
 
+/* teslalinux: ATL_DEBUG_KEY window-level key trace, see native-key-debug.sh */
+static gboolean tl_trace_window_key(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer user_data)
+{
+	GtkWidget *window = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(controller));
+	GtkWidget *focus = gtk_root_get_focus(GTK_ROOT(window));
+	fprintf(stderr, "[key] window key-pressed keyval=0x%x (%s) keycode=%u state=0x%x focus=%p (%s)%c", keyval, gdk_keyval_name(keyval) ? gdk_keyval_name(keyval) : "?", keycode, state, (void *)focus, focus ? G_OBJECT_TYPE_NAME(focus) : "none", 10);
+	return FALSE;
+}
+
 
 /* teslalinux: ATL_DEBUG_TOUCH window-level event trace (capture phase, never consumes) */
 static gboolean tl_trace_window_event(GtkEventControllerLegacy *controller, GdkEvent *event, gpointer user_data)
@@ -466,6 +475,12 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 		gtk_event_controller_set_propagation_phase(trace, GTK_PHASE_CAPTURE);
 		g_signal_connect(trace, "event", G_CALLBACK(tl_trace_window_event), NULL);
 		gtk_widget_add_controller(window, trace);
+	}
+	if (getenv("ATL_DEBUG_KEY")) {
+		GtkEventController *keytrace = GTK_EVENT_CONTROLLER(gtk_event_controller_key_new());
+		gtk_event_controller_set_propagation_phase(keytrace, GTK_PHASE_CAPTURE);
+		g_signal_connect(keytrace, "key-pressed", G_CALLBACK(tl_trace_window_key), NULL);
+		gtk_widget_add_controller(window, keytrace);
 	}
 
 	const char *disable_decoration_env = getenv("ATL_DISABLE_WINDOW_DECORATIONS");

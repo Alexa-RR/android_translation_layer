@@ -355,7 +355,8 @@ public class TextUtils {
 		return s;
 	}
 
-	public static CharSequence concat(CharSequence[] array) {
+	/** AOSP: varargs concatenation (a single argument is returned as is). */
+	public static CharSequence concat(CharSequence... array) {
 		StringBuilder sb = new StringBuilder();
 		for (CharSequence cs : array) {
 			sb.append(cs);
@@ -510,4 +511,34 @@ public class TextUtils {
 	public static final int LINE_HEIGHT_SPAN = 28;
 	public static final int ACCESSIBILITY_REPLACEMENT_SPAN = 29;
 	public static final int LAST_SPAN = ACCESSIBILITY_REPLACEMENT_SPAN;
+
+	/** AOSP: a String for plain text, a SpannedString for spanned text (so copies are immutable). */
+	public static CharSequence stringOrSpannedString(CharSequence source) {
+		if (source == null)
+			return null;
+		if (source instanceof SpannedString)
+			return source;
+		if (source instanceof Spanned)
+			return new SpannedString(source);
+		return source.toString();
+	}
+	/** AOSP: prints every span of the text with its range and flags (debugging aid of the editors). */
+	public static void dumpSpans(CharSequence cs, android.util.Printer printer, String prefix) {
+		if (cs instanceof Spanned) {
+			Spanned sp = (Spanned) cs;
+			Object[] os = sp.getSpans(0, cs.length(), Object.class);
+			for (int i = 0; i < os.length; i++) {
+				Object o = os[i];
+				printer.println(prefix + cs.subSequence(sp.getSpanStart(o), sp.getSpanEnd(o)) + ": "
+						+ Integer.toHexString(System.identityHashCode(o)) + " " + o.getClass().getCanonicalName()
+						+ " (" + sp.getSpanStart(o) + "-" + sp.getSpanEnd(o) + ") fl=#" + sp.getSpanFlags(o));
+			}
+		} else {
+			printer.println(prefix + cs + ": (no spans)");
+		}
+	}
+	/* AOSP: getCapsMode request bits */
+	public static final int CAP_MODE_CHARACTERS = android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS;
+	public static final int CAP_MODE_WORDS = android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS;
+	public static final int CAP_MODE_SENTENCES = android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
 }

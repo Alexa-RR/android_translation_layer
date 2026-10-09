@@ -4,6 +4,8 @@
 #include "../defines.h"
 #include "../util.h"
 #include "../generated_headers/android_text_Layout.h"
+struct AndroidPaint;
+void tl_paint_apply_attrs(struct AndroidPaint *paint, PangoLayout *layout);
 #include "../graphics/AndroidPaint.h"
 
 extern GtkWidget *window;
@@ -13,6 +15,7 @@ JNIEXPORT jlong JNICALL Java_android_text_Layout_native_1constructor(JNIEnv *env
 	struct AndroidPaint *android_paint = _PTR(paint);
 	PangoLayout *layout = pango_layout_new(gtk_widget_get_pango_context(window));
 	pango_layout_set_font_description(layout, android_paint->font);
+	tl_paint_apply_attrs(android_paint, layout);
 	const char *str = (*env)->GetStringUTFChars(env, text, NULL);
 	pango_layout_set_text(layout, str, -1);
 	(*env)->ReleaseStringUTFChars(env, text, str);
@@ -63,19 +66,27 @@ JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1end(JNIEnv *e
 	return g_utf8_strlen(pango_layout_get_text(pango_layout), byte_index);
 }
 
+static void tl_line_layout_extents(PangoLayout *pango_layout, int line, PangoRectangle *logical_rect)
+{
+	/* teslalinux: layout-relative logical extents of a line (pango_layout_line_get_extents is baseline-relative) */
+	PangoLayoutIter *iter = pango_layout_get_iter(pango_layout);
+	while (line-- > 0 && pango_layout_iter_next_line(iter))
+		;
+	pango_layout_iter_get_line_extents(iter, NULL, logical_rect);
+	pango_layout_iter_free(iter);
+}
+
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1top(JNIEnv *env, jobject object, jlong layout, jint line)
 {
-	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(PANGO_LAYOUT(_PTR(layout)), line);
 	PangoRectangle logical_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, NULL);
-	return (logical_rect.y) / PANGO_SCALE;
+	tl_line_layout_extents(PANGO_LAYOUT(_PTR(layout)), line, &logical_rect);
+	return logical_rect.y / PANGO_SCALE;
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1bottom(JNIEnv *env, jobject object, jlong layout, jint line)
 {
-	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(PANGO_LAYOUT(_PTR(layout)), line);
 	PangoRectangle logical_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, NULL);
+	tl_line_layout_extents(PANGO_LAYOUT(_PTR(layout)), line, &logical_rect);
 	return (logical_rect.y + logical_rect.height) / PANGO_SCALE;
 }
 

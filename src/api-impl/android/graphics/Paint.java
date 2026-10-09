@@ -99,10 +99,19 @@ public class Paint {
 	public void getTextBounds(char[] text, int index, int count, Rect bounds) {
 		native_get_text_bounds(paint, new String(text, index, count), bounds);
 	}
+	/** AOSP: the advance of every character of text[start, end) into widths; returns the count. */
 	public int getTextWidths(String text, int start, int end, float[] widths) {
-		Rect bounds = new Rect();
-		native_get_text_bounds(paint, text.substring(start, end), bounds);
-		return bounds.width();
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((start | end | (end - start) | (text.length() - end)) < 0)
+			throw new IndexOutOfBoundsException();
+		if (end - start > widths.length)
+			throw new ArrayIndexOutOfBoundsException();
+		if (end == start)
+			return 0;
+		char[] buf = new char[end - start];
+		text.getChars(start, end, buf, 0);
+		return getTextWidths(buf, 0, buf.length, widths);
 	}
 	/** AOSP: FILTER_BITMAP_FLAG selects bilinear sampling of scaled bitmaps. */
 	public void setFilterBitmap(boolean filter) {
@@ -121,13 +130,30 @@ public class Paint {
 		native_set_style(paint, style.ordinal());
 	}
 
+	/** AOSP: distance above the baseline (negative) recommended by the font. */
 	public float ascent() {
-		return -getTextSize();
+		return tlFontMetrics()[1];
 	}
 
-	public float measureText(char[] text, int index, int count) { return 10; }
+	public float measureText(char[] text, int index, int count) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((index | count) < 0 || index + count > text.length)
+			throw new ArrayIndexOutOfBoundsException();
+		if (count == 0)
+			return 0f;
+		return native_measure_text(paint, text, index, count) * mTextScaleX;
+	}
 	public float measureText(String text, int start, int end) {
-		return (end - start) * getTextSize() * .6f;
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((start | end | (end - start) | (text.length() - end)) < 0)
+			throw new IndexOutOfBoundsException();
+		if (end == start)
+			return 0f;
+		char[] buf = new char[end - start];
+		text.getChars(start, end, buf, 0);
+		return measureText(buf, 0, buf.length);
 	}
 	public float measureText(String text) {
 		return measureText(text, 0, text.length());
@@ -254,16 +280,60 @@ public class Paint {
 		return native_get_text_size(paint);
 	}
 
-	public /*native*/ float getTextScaleX() { return 0; }
-	public /*native*/ void setTextScaleX(float scaleX) {}
+	/** AOSP: horizontal scale of the text, 1.0 by default; applied to measured advances. */
+	public float getTextScaleX() {
+		return mTextScaleX;
+	}
+	public void setTextScaleX(float scaleX) {
+		mTextScaleX = scaleX;
+	}
 	public /*native*/ float getTextSkewX() { return 0; }
 	public /*native*/ void setTextSkewX(float skewX) {}
 
-	public /*native*/ float descent() { return 0; }
-	public /*native*/ float getFontMetrics(FontMetrics metrics) { return 0; }
-	public /*native*/ int getFontMetricsInt(FontMetricsInt fmi) { return 0; }
+	/** AOSP: distance below the baseline recommended by the font. */
+	public float descent() {
+		return tlFontMetrics()[2];
+	}
+	/** AOSP: fills metrics (may be null) and returns the recommended line spacing descent - ascent + leading. */
+	public float getFontMetrics(FontMetrics metrics) {
+		float[] m = tlFontMetrics();
+		if (metrics != null) {
+			metrics.top = m[0];
+			metrics.ascent = m[1];
+			metrics.descent = m[2];
+			metrics.bottom = m[3];
+			metrics.leading = m[4];
+		}
+		return m[2] - m[1] + m[4];
+	}
+	/** AOSP (Paint.cpp): top floored, bottom ceiled, the rest rounded; returns descent - ascent + leading. */
+	public int getFontMetricsInt(FontMetricsInt fmi) {
+		float[] m = tlFontMetrics();
+		int top = (int) Math.floor(m[0]);
+		int ascent = Math.round(m[1]);
+		int descent = Math.round(m[2]);
+		int bottom = (int) Math.ceil(m[3]);
+		int leading = Math.round(m[4]);
+		if (fmi != null) {
+			fmi.top = top;
+			fmi.ascent = ascent;
+			fmi.descent = descent;
+			fmi.bottom = bottom;
+			fmi.leading = leading;
+		}
+		return descent - ascent + leading;
+	}
 
-	public void setShadowLayer(float radius, float dx, float dy, int color) {}
+	/**
+	 * AOSP: a blurred shadow drawn under the text (radius 0 clears it). The parameters are kept on
+	 * the paint and reported by the getters; GskCanvas draws the shadow for text (see tlShadow*).
+	 */
+	public void setShadowLayer(float radius, float dx, float dy, int color) {
+		mShadowLayerRadius = radius;
+		mShadowLayerDx = dx;
+		mShadowLayerDy = dy;
+		mShadowLayerColor = color;
+	}
 
 	public Xfermode setXfermode(Xfermode xfermode) {
 		this.xfermode = xfermode;
@@ -285,7 +355,10 @@ public class Paint {
 		return null;
 	}
 
-	public void setLetterSpacing(float spacing) {}
+	public void setLetterSpacing(float spacing) {
+		mLetterSpacing = spacing;
+		native_set_letter_spacing(paint, spacing);
+	}
 
 	public enum Cap {
 		/**
@@ -358,24 +431,75 @@ public class Paint {
 		return effect;
 	}
 
-	public int breakText(char[] text, int index, int count, float maxWidth, float[] measuredWidth) { return 10; }
-	public int breakText(String text, boolean measureForwards, float maxWidth, float[] measuredWidth) { return 10; }
-	public int breakText(CharSequence text, int start, int end, boolean measureForwards, float maxWidth, float[] measuredWidth) { return 10; }
-
-	public void clearShadowLayer() {}
-
-	public boolean hasShadowLayer() {
-		return false;
+	/** AOSP: how many characters of text[index, index+count) fit into maxWidth (count < 0 measures backwards). */
+	public int breakText(char[] text, int index, int count, float maxWidth, float[] measuredWidth) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if (index < 0 || text.length - index < Math.abs(count))
+			throw new ArrayIndexOutOfBoundsException();
+		boolean forwards = count >= 0;
+		int n = Math.abs(count);
+		if (n == 0) {
+			if (measuredWidth != null && measuredWidth.length > 0)
+				measuredWidth[0] = 0;
+			return 0;
+		}
+		int from = forwards ? index : index - n;
+		float[] widths = new float[n];
+		getTextWidths(text, from, n, widths);
+		float sum = 0;
+		int fit = 0;
+		for (int i = 0; i < n; i++) {
+			float w = widths[forwards ? i : n - 1 - i];
+			if (sum + w > maxWidth)
+				break;
+			sum += w;
+			fit++;
+		}
+		if (measuredWidth != null && measuredWidth.length > 0)
+			measuredWidth[0] = sum;
+		return fit;
+	}
+	public int breakText(String text, boolean measureForwards, float maxWidth, float[] measuredWidth) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		char[] buf = text.toCharArray();
+		return measureForwards ? breakText(buf, 0, buf.length, maxWidth, measuredWidth)
+		                       : breakText(buf, buf.length, -buf.length, maxWidth, measuredWidth);
+	}
+	public int breakText(CharSequence text, int start, int end, boolean measureForwards, float maxWidth, float[] measuredWidth) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((start | end | (end - start) | (text.length() - end)) < 0)
+			throw new IndexOutOfBoundsException();
+		char[] buf = new char[end - start];
+		android.text.TextUtils.getChars(text, start, end, buf, 0);
+		return measureForwards ? breakText(buf, 0, buf.length, maxWidth, measuredWidth)
+		                       : breakText(buf, buf.length, -buf.length, maxWidth, measuredWidth);
 	}
 
+	public void clearShadowLayer() {
+		setShadowLayer(0, 0, 0, 0);
+	}
+
+	public boolean hasShadowLayer() {
+		return mShadowLayerRadius > 0;
+	}
+
+	/** AOSP: a new FontMetrics filled from the current font. */
 	public FontMetrics getFontMetrics() {
-		return new FontMetrics();
+		FontMetrics fm = new FontMetrics();
+		getFontMetrics(fm);
+		return fm;
 	}
 
 	public void setFontMetricsInt(FontMetricsInt fmi) {}
 
+	/** AOSP: a new FontMetricsInt filled from the current font. */
 	public FontMetricsInt getFontMetricsInt() {
-		return new FontMetricsInt();
+		FontMetricsInt fm = new FontMetricsInt();
+		getFontMetricsInt(fm);
+		return fm;
 	}
 
 	public void set(Paint paint) {
@@ -397,7 +521,10 @@ public class Paint {
 
 	public Locale getTextLocale() { return getTextLocales().get(0); }
 
-	public float getLetterSpacing() { return 1.0f; }
+	/** AOSP: letter spacing in em units, 0 by default. */
+	public float getLetterSpacing() {
+		return mLetterSpacing;
+	}
 
 	public Style getStyle() {
 		return Style.values[native_get_style(paint)];
@@ -407,7 +534,14 @@ public class Paint {
 		return align;
 	}
 
-	public boolean hasGlyph(String text) { return false; }
+	/** AOSP: true when the string renders as a single glyph of the font (so emoji sequences are supported). */
+	public boolean hasGlyph(String text) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if (text.isEmpty())
+			return false;
+		return native_has_glyph(paint, text);
+	}
 
 	public MaskFilter setMaskFilter(MaskFilter filter) { return filter; }
 
@@ -499,4 +633,198 @@ public class Paint {
 	/** Paint hinting modes (AOSP). */
 	public static final int HINTING_OFF = 0x0;
 	public static final int HINTING_ON = 0x1;
+
+	/* teslalinux: text measurement state and natives (native-paint-metrics.sh) */
+	private float mLetterSpacing = 0f;
+	private float mTextScaleX = 1f;
+	private static native void native_get_font_metrics(long paint, float[] out);
+	private static native float native_measure_text(long paint, char[] text, int index, int count);
+	private static native float native_get_text_advances(long paint, char[] text, int index, int count, float[] advances, int advancesIndex);
+	private static native boolean native_has_glyph(long paint, String text);
+	private static native void native_set_letter_spacing(long paint, float spacing);
+
+	/** top, ascent, descent, bottom, leading of the current font in pixels (ascent and top negative). */
+	private float[] tlFontMetrics() {
+		float[] m = new float[5];
+		native_get_font_metrics(paint, m);
+		return m;
+	}
+
+	/** AOSP: the recommended line spacing, descent - ascent + leading. */
+	public float getFontSpacing() {
+		return getFontMetrics(null);
+	}
+
+	public int getTextWidths(char[] text, int index, int count, float[] widths) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((index | count) < 0 || index + count > text.length || count > widths.length)
+			throw new ArrayIndexOutOfBoundsException();
+		if (count == 0)
+			return 0;
+		native_get_text_advances(paint, text, index, count, widths, 0);
+		if (mTextScaleX != 1f)
+			for (int i = 0; i < count; i++)
+				widths[i] *= mTextScaleX;
+		return count;
+	}
+
+	public int getTextWidths(CharSequence text, int start, int end, float[] widths) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((start | end | (end - start) | (text.length() - end)) < 0)
+			throw new IndexOutOfBoundsException();
+		if (end - start > widths.length)
+			throw new ArrayIndexOutOfBoundsException();
+		if (end == start)
+			return 0;
+		char[] buf = new char[end - start];
+		android.text.TextUtils.getChars(text, start, end, buf, 0);
+		return getTextWidths(buf, 0, buf.length, widths);
+	}
+
+	public int getTextWidths(String text, float[] widths) {
+		return getTextWidths(text, 0, text.length(), widths);
+	}
+
+	/**
+	 * AOSP (hidden, used by the text layout code): advances of chars[index, index+count) measured in
+	 * the context chars[contextIndex, contextIndex+contextCount); returns the total advance.
+	 */
+	public float getTextRunAdvances(char[] chars, int index, int count, int contextIndex, int contextCount, boolean isRtl, float[] advances, int advancesIndex) {
+		if (chars == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((index | count | contextIndex | contextCount | advancesIndex | (index - contextIndex) | (contextCount - count)
+				| ((contextIndex + contextCount) - (index + count)) | (chars.length - (contextIndex + contextCount))
+				| (advances == null ? 0 : (advances.length - (advancesIndex + count)))) < 0)
+			throw new IndexOutOfBoundsException();
+		if (count == 0)
+			return 0f;
+		/* measure the whole context so shaping across the run boundary matches drawing, then take the slice */
+		float[] all = new float[contextCount];
+		native_get_text_advances(paint, chars, contextIndex, contextCount, all, 0);
+		float total = 0f;
+		for (int i = 0; i < count; i++) {
+			float a = all[index - contextIndex + i] * mTextScaleX;
+			if (advances != null)
+				advances[advancesIndex + i] = a;
+			total += a;
+		}
+		return total;
+	}
+
+	public float getTextRunAdvances(CharSequence text, int start, int end, int contextStart, int contextEnd, boolean isRtl, float[] advances, int advancesIndex) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((start | end | contextStart | contextEnd | (end - start) | (start - contextStart) | (contextEnd - end) | (text.length() - contextEnd)) < 0)
+			throw new IndexOutOfBoundsException();
+		char[] buf = new char[contextEnd - contextStart];
+		android.text.TextUtils.getChars(text, contextStart, contextEnd, buf, 0);
+		return getTextRunAdvances(buf, start - contextStart, end - start, 0, contextEnd - contextStart, isRtl, advances, advancesIndex);
+	}
+
+	/** AOSP: the advance from start to offset within the run text[start, end), measured in its context. */
+	public float getRunAdvance(char[] text, int start, int end, int contextStart, int contextEnd, boolean isRtl, int offset) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((contextStart | start | offset | end | contextEnd | start - contextStart | offset - start | end - offset
+				| contextEnd - end | text.length - contextEnd) < 0)
+			throw new IndexOutOfBoundsException();
+		if (end == start)
+			return 0f;
+		float[] all = new float[contextEnd - contextStart];
+		native_get_text_advances(paint, text, contextStart, contextEnd - contextStart, all, 0);
+		float sum = 0f;
+		for (int i = start; i < offset; i++)
+			sum += all[i - contextStart];
+		return sum * mTextScaleX;
+	}
+
+	public float getRunAdvance(CharSequence text, int start, int end, int contextStart, int contextEnd, boolean isRtl, int offset) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((contextStart | start | offset | end | contextEnd | start - contextStart | offset - start | end - offset
+				| contextEnd - end | text.length() - contextEnd) < 0)
+			throw new IndexOutOfBoundsException();
+		if (end == start)
+			return 0f;
+		char[] buf = new char[contextEnd - contextStart];
+		android.text.TextUtils.getChars(text, contextStart, contextEnd, buf, 0);
+		return getRunAdvance(buf, start - contextStart, end - contextStart, 0, contextEnd - contextStart, isRtl, offset - contextStart);
+	}
+
+	/** AOSP: the character offset whose position is closest to advance (cluster boundaries only). */
+	public int getOffsetForAdvance(char[] text, int start, int end, int contextStart, int contextEnd, boolean isRtl, float advance) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		if ((contextStart | start | end | contextEnd | start - contextStart | end - start | contextEnd - end
+				| text.length - contextEnd) < 0)
+			throw new IndexOutOfBoundsException();
+		float[] all = new float[contextEnd - contextStart];
+		if (contextEnd > contextStart)
+			native_get_text_advances(paint, text, contextStart, contextEnd - contextStart, all, 0);
+		float x = 0f;
+		int best = start;
+		float bestDistance = Math.abs(advance);
+		for (int i = start; i < end; i++) {
+			float w = all[i - contextStart] * mTextScaleX;
+			if (w == 0f && i > start)
+				continue; /* not a cluster boundary */
+			x += w;
+			float distance = Math.abs(advance - x);
+			if (distance <= bestDistance) {
+				bestDistance = distance;
+				best = i + 1;
+			}
+		}
+		return best;
+	}
+
+	public int getOffsetForAdvance(CharSequence text, int start, int end, int contextStart, int contextEnd, boolean isRtl, float advance) {
+		if (text == null)
+			throw new IllegalArgumentException("text cannot be null");
+		char[] buf = new char[contextEnd - contextStart];
+		android.text.TextUtils.getChars(text, contextStart, contextEnd, buf, 0);
+		return getOffsetForAdvance(buf, start - contextStart, end - contextStart, 0, contextEnd - contextStart, isRtl, advance) + contextStart;
+	}
+
+	/* teslalinux: shadow layer and elegant text height state (AOSP Paint) */
+	private float mShadowLayerRadius;
+	private float mShadowLayerDx;
+	private float mShadowLayerDy;
+	private int mShadowLayerColor;
+	private boolean mElegantTextHeight;
+
+	public float getShadowLayerRadius() {
+		return mShadowLayerRadius;
+	}
+
+	public float getShadowLayerDx() {
+		return mShadowLayerDx;
+	}
+
+	public float getShadowLayerDy() {
+		return mShadowLayerDy;
+	}
+
+	public int getShadowLayerColor() {
+		return mShadowLayerColor;
+	}
+
+	public long getShadowLayerColorLong() {
+		return Color.pack(mShadowLayerColor);
+	}
+
+	public void setShadowLayer(float radius, float dx, float dy, long color) {
+		setShadowLayer(radius, dx, dy, Color.toArgb(color));
+	}
+
+	/** AOSP: whether tall scripts use their elegant (taller) variant fonts; Pango has no such variant switch, the flag is kept. */
+	public boolean isElegantTextHeight() {
+		return mElegantTextHeight;
+	}
+
+	public void setElegantTextHeight(boolean elegant) {
+		mElegantTextHeight = elegant;
+	}
 }

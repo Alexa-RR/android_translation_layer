@@ -1,6 +1,8 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <gtk/gtk.h>
 
 #include "../defines.h"
@@ -187,6 +189,8 @@ int snapshot_in_progress = 0;
 /* teslalinux: ATL_DEBUG_NODE support, see native-node-debug.sh */
 static gboolean tl_node_debug(JNIEnv *env, WrapperWidget *wrapper)
 {
+	if ((*env)->ExceptionCheck(env))
+		return FALSE;
 	static const char *pattern = NULL;
 	static int checked = 0;
 	if (!checked) {
@@ -478,6 +482,29 @@ static int map_meta_state(GdkModifierType state)
 #define ACTION_DOWN 0
 #define ACTION_UP   1
 
+/* teslalinux: ATL_DEBUG_KEY trace of key events forwarded to Java, see native-key-debug.sh */
+static void tl_key_debug(JNIEnv *env, WrapperWidget *wrapper, guint keyval, gboolean ret)
+{
+	if ((*env)->ExceptionCheck(env))
+		return;
+	static int enabled = -1;
+	if (enabled < 0)
+		enabled = getenv("ATL_DEBUG_KEY") != NULL;
+	if (!enabled)
+		return;
+	const char *cname = "?";
+	jstring name = NULL;
+	if (wrapper->jobj && !(*env)->IsSameObject(env, wrapper->jobj, NULL)) {
+		jclass cls = (*env)->GetObjectClass(env, wrapper->jobj);
+		jmethodID get_name = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, cls), "getName", "()Ljava/lang/String;");
+		name = (*env)->CallObjectMethod(env, cls, get_name);
+		cname = (*env)->GetStringUTFChars(env, name, NULL);
+	}
+	fprintf(stderr, "[key] wrapper %p %s dispatchKeyEvent keyval=0x%x -> %d%c", (void *)wrapper, cname, keyval, ret, 10);
+	if (name)
+		(*env)->ReleaseStringUTFChars(env, name, cname);
+}
+
 static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, WrapperWidget *wrapper)
 {
 	JNIEnv *env = get_jni_env();
@@ -487,6 +514,7 @@ static gboolean on_key_pressed(GtkEventControllerKey *controller, guint keyval, 
 	gboolean ret = (*env)->CallBooleanMethod(env, wrapper->jobj, handle_cache.view.dispatchKeyEvent, key_event);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
+	tl_key_debug(env, wrapper, keyval, ret);
 	return ret;
 }
 
@@ -499,6 +527,7 @@ static gboolean on_key_released(GtkEventControllerKey *controller, guint keyval,
 	gboolean ret = (*env)->CallBooleanMethod(env, wrapper->jobj, handle_cache.view.dispatchKeyEvent, key_event);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
+	tl_key_debug(env, wrapper, keyval, ret);
 	return ret;
 }
 

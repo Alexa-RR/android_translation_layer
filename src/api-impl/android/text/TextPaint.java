@@ -82,7 +82,5 @@ public class TextPaint extends Paint {
 		underlineThickness = thickness;
 	}
 
-	public float getLetterSpacing() {
-		return 1.0f;
-	}
+	/* teslalinux: letter spacing lives in Paint (AOSP TextPaint does not override it) */
 }

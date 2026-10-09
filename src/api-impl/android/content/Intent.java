@@ -970,4 +970,9 @@ public class Intent implements Parcelable {
 	public static Intent createChooser(Intent target, CharSequence title, IntentSender sender) {
 		return createChooser(target, title);
 	}
+	/* AOSP: URI permission grant flags */
+	public static final int FLAG_GRANT_READ_URI_PERMISSION = 0x00000001;
+	public static final int FLAG_GRANT_WRITE_URI_PERMISSION = 0x00000002;
+	public static final int FLAG_GRANT_PERSISTABLE_URI_PERMISSION = 0x00000040;
+	public static final int FLAG_GRANT_PREFIX_URI_PERMISSION = 0x00000080;
 }
