@@ -50,10 +50,30 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1removeView(JNIEnv *en
 	gtk_widget_unparent(gtk_widget_get_parent(GTK_WIDGET(_PTR(child))));
 }
 
+/* teslalinux: a SurfaceView below `child` has a frame nobody snapshotted yet: flag the path from it
+ * up to `child` so the following gtk_widget_snapshot_child() re-runs the snapshot functions instead
+ * of appending cached render nodes. Depth-limited walk; SurfaceView trees are shallow. */
+static void tl_prepare_child_snapshot(GtkWidget *child, GtkWidget *w, int depth)
+{
+	if (depth > 8)
+		return;
+	if (g_object_get_data(G_OBJECT(w), "tl-frame-pending")) {
+		for (GtkWidget *a = w; a; a = gtk_widget_get_parent(a)) {
+			gtk_widget_queue_draw(a);
+			if (a == child)
+				break;
+		}
+		return;
+	}
+	for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
+		tl_prepare_child_snapshot(child, c, depth + 1);
+}
+
 JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChildren(JNIEnv *env, jobject this, jlong widget_ptr, jlong snapshot_ptr)
 {
 	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(GTK_WIDGET(_PTR(widget_ptr))));
 	GdkSnapshot *snapshot = GDK_SNAPSHOT(_PTR(snapshot_ptr));
+	tl_prepare_child_snapshot(wrapper->child, wrapper->child, 0);
 	gtk_widget_snapshot_child(&wrapper->parent_instance, wrapper->child, snapshot);
 }
 
@@ -63,6 +83,7 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChild(JNIEnv *env
 	GtkWidget *child = gtk_widget_get_parent(GTK_WIDGET(_PTR(child_ptr)));
 	GdkSnapshot *snapshot = GDK_SNAPSHOT(_PTR(snapshot_ptr));
 	gtk_widget_queue_draw(child); // FIXME: why didn't compose UI invalidate the child?
+	tl_prepare_child_snapshot(child, child, 0);
 	gtk_widget_snapshot_child(widget, child, snapshot);
 }
 

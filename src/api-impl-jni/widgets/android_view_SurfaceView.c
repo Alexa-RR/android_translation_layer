@@ -55,6 +55,7 @@ static void surface_view_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapsho
 			fprintf(stderr, "[surface] snapshot #%d widget %p texture=%p %dx%d\n", snaps, (void *)widget, (void *)surface_view_widget->texture,
 			        gtk_widget_get_width(widget), gtk_widget_get_height(widget));
 	}
+	g_object_set_data(G_OBJECT(widget), "tl-frame-pending", NULL);
 	if (surface_view_widget->texture) {
 		graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, gtk_widget_get_width(widget), gtk_widget_get_height(widget));
 		if (surface_view_widget->needs_flip) {
@@ -143,6 +144,14 @@ static void tl_invalidate_java_view(GtkWidget *surface_view_widget)
 		(*env)->ExceptionDescribe(env);
 }
 
+/* teslalinux: flag the whole ancestor chain so the toplevel queues a render even when an
+ * intermediate widget is already flagged (gtk_widget_queue_draw stops there). */
+static void tl_flag_ancestors(GtkWidget *widget)
+{
+	for (GtkWidget *w = widget; w; w = gtk_widget_get_parent(w))
+		gtk_widget_queue_draw(w);
+}
+
 void surface_view_widget_set_texture(SurfaceViewWidget *surface_view_widget, GdkTexture *texture, gboolean needs_flip)
 {
 	if (surface_view_widget->texture)
@@ -157,7 +166,8 @@ void surface_view_widget_set_texture(SurfaceViewWidget *surface_view_widget, Gdk
 			        gtk_widget_get_width(GTK_WIDGET(surface_view_widget)), gtk_widget_get_height(GTK_WIDGET(surface_view_widget)),
 			        gtk_widget_get_mapped(GTK_WIDGET(surface_view_widget)), gtk_widget_get_visible(GTK_WIDGET(surface_view_widget)));
 	}
-	gtk_widget_queue_draw(GTK_WIDGET(surface_view_widget));
+	g_object_set_data(G_OBJECT(surface_view_widget), "tl-frame-pending", GINT_TO_POINTER(1));
+	tl_flag_ancestors(GTK_WIDGET(surface_view_widget));
 	tl_invalidate_java_view(GTK_WIDGET(surface_view_widget));
 }
 
@@ -202,6 +212,16 @@ static gboolean on_realize_delayed(struct jni_callback_data *d)
 	return G_SOURCE_REMOVE;
 }
 
+/* teslalinux: the widget lost its window -> the surface is gone (AOSP surfaceDestroyed) */
+static void on_unrealize(GtkWidget *self, struct jni_callback_data *d)
+{
+	JNIEnv *env = get_jni_env();
+	jmethodID surface_destroyed = _METHOD(handle_cache.surface_view.class, "surfaceDestroyed", "()V"); /* private: look it up on SurfaceView itself */
+	(*env)->CallVoidMethod(env, d->this, surface_destroyed);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
 static void on_realize(GtkWidget *self, struct jni_callback_data *d)
 {
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, G_SOURCE_FUNC(on_realize_delayed), d, NULL);
@@ -229,6 +249,7 @@ JNIEXPORT jlong JNICALL Java_android_view_SurfaceView_native_1constructor(JNIEnv
 
 	g_signal_connect(dummy, "resize", G_CALLBACK(on_resize), callback_data);
 	g_signal_connect(dummy, "realize", G_CALLBACK(on_realize), callback_data);
+	g_signal_connect(dummy, "unrealize", G_CALLBACK(on_unrealize), callback_data);
 
 	return _INTPTR(graphics_offload);
 }

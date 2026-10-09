@@ -23,10 +23,13 @@ public final class ViewDump {
 	private ViewDump() {
 	}
 
+	private static Thread sStackWatcher;
+
 	/** Starts the trigger poller for an activity (no-op unless ATL_DEBUG_DUMPVIEWS is set). */
 	public static void installPoller(final Activity activity) {
 		if (!ENABLED)
 			return;
+		installStackWatcher();
 		final Handler handler = new Handler(Looper.getMainLooper());
 		handler.postDelayed(new Runnable() {
 			@Override
@@ -88,6 +91,41 @@ public final class ViewDump {
 					+ " asc0=" + l.getLineAscent(0) + " desc0=" + l.getLineDescent(0) + " base0=" + l.getLineBaseline(0) + " w0=" + l.getLineWidth(0)
 					+ " desired=" + android.text.Layout.getDesiredWidth(t, paint) + " runAdvance=" + paint.getRunAdvance(t, 0, t.length(), 0, t.length(), false, t.length()));
 		}
+	}
+
+	/**
+	 * A daemon thread that logs the stack of every Java thread when /tmp/atl-dumpstacks appears
+	 * (created by native debugging hooks, e.g. the thread-exit trace), independent of the main thread.
+	 */
+	private static synchronized void installStackWatcher() {
+		if (sStackWatcher != null)
+			return;
+		sStackWatcher = new Thread("atl-stack-watcher") {
+			@Override
+			public void run() {
+				final File trigger = new File("/tmp/atl-dumpstacks");
+				while (true) {
+					try {
+						Thread.sleep(150);
+					} catch (InterruptedException e) {
+						return;
+					}
+					if (!trigger.exists())
+						continue;
+					trigger.delete();
+					Log.i(TAG, "=== java thread stacks ===");
+					for (java.util.Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+						Thread t = e.getKey();
+						Log.i(TAG, "\"" + t.getName() + "\" id=" + t.getId() + " state=" + t.getState());
+						for (StackTraceElement f : e.getValue())
+							Log.i(TAG, "    at " + f);
+					}
+					Log.i(TAG, "=== end stacks ===");
+				}
+			}
+		};
+		sStackWatcher.setDaemon(true);
+		sStackWatcher.start();
 	}
 
 	private static String readTrigger() {

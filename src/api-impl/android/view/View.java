@@ -3484,4 +3484,56 @@ public class View implements Drawable.Callback {
 		if (getLayerType() == LAYER_TYPE_NONE)
 			throw new IllegalStateException("Cannot build a layer if the layer type is set to LAYER_TYPE_NONE");
 	}
+	/* AOSP: accessibility live regions */
+	public static final int ACCESSIBILITY_LIVE_REGION_NONE = 0x00000000;
+	public static final int ACCESSIBILITY_LIVE_REGION_POLITE = 0x00000001;
+	public static final int ACCESSIBILITY_LIVE_REGION_ASSERTIVE = 0x00000002;
+	/* AOSP (API 34): whether accessibility services may see this view's data */
+	public static final int ACCESSIBILITY_DATA_SENSITIVE_AUTO = 0x00000000;
+	public static final int ACCESSIBILITY_DATA_SENSITIVE_YES = 0x00000001;
+	public static final int ACCESSIBILITY_DATA_SENSITIVE_NO = 0x00000002;
+	private int mAccessibilityDataSensitive = ACCESSIBILITY_DATA_SENSITIVE_AUTO;
+	/* AOSP: touches are discarded while another window obscures this one; the compositor never
+	 * reports MotionEvent.FLAG_WINDOW_IS_OBSCURED to ATL, so the flag only records the request */
+	private boolean mFilterTouchesWhenObscured;
+
+	public void setFilterTouchesWhenObscured(boolean enabled) {
+		mFilterTouchesWhenObscured = enabled;
+	}
+
+	public boolean getFilterTouchesWhenObscured() {
+		return mFilterTouchesWhenObscured;
+	}
+	private static int sNextAccessibilityViewId = 1;
+	private int mAccessibilityViewId = NO_ID;
+
+	/** AOSP (hidden): the id accessibility uses for this view, assigned on first use. */
+	public int getAccessibilityViewId() {
+		if (mAccessibilityViewId == NO_ID)
+			mAccessibilityViewId = sNextAccessibilityViewId++;
+		return mAccessibilityViewId;
+	}
+
+	/**
+	 * AOSP (hidden): the accessibility id of the window; the accessibility manager service assigns
+	 * one when a service is running, otherwise it stays undefined, which is the case here.
+	 */
+	public int getAccessibilityWindowId() {
+		return android.view.accessibility.AccessibilityWindowInfo.UNDEFINED_WINDOW_ID;
+	}
+
+	public void setAccessibilityDataSensitive(int accessibilityDataSensitive) {
+		mAccessibilityDataSensitive = accessibilityDataSensitive;
+	}
+
+	public int getAccessibilityDataSensitive() {
+		return mAccessibilityDataSensitive;
+	}
+
+	/** AOSP: AUTO resolves to whether touches are filtered when the view is obscured. */
+	public boolean isAccessibilityDataSensitive() {
+		if (mAccessibilityDataSensitive == ACCESSIBILITY_DATA_SENSITIVE_AUTO)
+			return getFilterTouchesWhenObscured();
+		return mAccessibilityDataSensitive == ACCESSIBILITY_DATA_SENSITIVE_YES;
+	}
 }

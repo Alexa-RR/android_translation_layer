@@ -541,4 +541,9 @@ public class TextUtils {
 	public static final int CAP_MODE_CHARACTERS = android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS;
 	public static final int CAP_MODE_WORDS = android.text.InputType.TYPE_TEXT_FLAG_CAP_WORDS;
 	public static final int CAP_MODE_SENTENCES = android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES;
+	/** AOSP (hidden): surrounds the builder's content with start and end. */
+	public static void wrap(StringBuilder builder, String start, String end) {
+		builder.insert(0, start);
+		builder.append(end);
+	}
 }

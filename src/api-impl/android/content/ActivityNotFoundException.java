@@ -1,4 +1,5 @@
 package android.content;
 
-public class ActivityNotFoundException extends Exception {
+/* AOSP: an unchecked exception */
+public class ActivityNotFoundException extends RuntimeException {
 }

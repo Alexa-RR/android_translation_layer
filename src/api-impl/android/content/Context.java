@@ -643,4 +643,8 @@ public abstract class Context {
 	public void sendBroadcast(Intent intent, String receiverPermission, android.os.Bundle options) { sendBroadcast(intent); }
 	/** AOSP: name of the content capture service; absent in this runtime, so getSystemService returns null. */
 	public static final String CONTENT_CAPTURE_MANAGER_SERVICE = "content_capture";
+	/** AOSP (hidden): whether resources of other packages may be loaded; true for the app's own package. */
+	public boolean canLoadUnsafeResources() {
+		return getPackageName().equals(getOpPackageName());
+	}
 }

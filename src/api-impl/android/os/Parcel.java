@@ -1060,4 +1060,70 @@ public class Parcel {
 			return c.createFromParcel(this);
 		return null;
 	}
+	/** AOSP: a CharSequence with its spans (TextUtils.writeToParcel). */
+	public void writeCharSequence(CharSequence val) {
+		android.text.TextUtils.writeToParcel(val, this, 0);
+	}
+
+	public CharSequence readCharSequence() {
+		return android.text.TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(this);
+	}
+
+	/** AOSP (API 33): typed readList; the items are values written with writeValue. */
+	@SuppressWarnings("unchecked")
+	public <T> void readList(java.util.List<? super T> outVal, ClassLoader loader, Class<T> clazz) {
+		int n = readInt();
+		try {
+			while (n-- > 0)
+				outVal.add((T) readValue(loader));
+		} catch (ReflectiveOperationException e) {
+			throw new BadParcelableException(e.toString());
+		}
+	}
+
+	/** AOSP (API 29): a list of Parcelables, -1 for null. */
+	public <T extends Parcelable> void writeParcelableList(java.util.List<T> val, int flags) {
+		if (val == null) {
+			writeInt(-1);
+			return;
+		}
+		writeInt(val.size());
+		for (T t : val)
+			writeParcelable(t, flags);
+	}
+
+	@SuppressWarnings("unchecked")
+	public <T extends Parcelable> java.util.List<T> readParcelableList(java.util.List<T> list, ClassLoader cl) {
+		int n = readInt();
+		if (n == -1) {
+			list.clear();
+			return list;
+		}
+		list.clear();
+		try {
+			for (int i = 0; i < n; i++)
+				list.add((T) readParcelable(cl));
+		} catch (ReflectiveOperationException e) {
+			throw new BadParcelableException(e.toString());
+		}
+		return list;
+	}
+
+	public <T> java.util.List<T> readParcelableList(java.util.List<T> list, ClassLoader cl, Class<? extends T> clazz) {
+		int n = readInt();
+		list.clear();
+		if (n == -1)
+			return list;
+		try {
+			for (int i = 0; i < n; i++) {
+				Parcelable p = readParcelable(cl);
+				if (p != null && !clazz.isInstance(p))
+					throw new BadParcelableException("Parcelable " + p.getClass() + " is not an instance of " + clazz);
+				list.add(clazz.cast(p));
+			}
+		} catch (ReflectiveOperationException e) {
+			throw new BadParcelableException(e.toString());
+		}
+		return list;
+	}
 }

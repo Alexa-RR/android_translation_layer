@@ -16,6 +16,7 @@
 
 package android.text.style;
 
+import android.annotation.NonNull;
 import android.text.TextPaint;
 
 /**
@@ -32,8 +33,7 @@ public abstract class MetricAffectingSpan
      *
      * @param textPaint the paint used for drawing the text
      */
-    public void updateMeasureState(TextPaint textPaint) {
-    }
+    public abstract void updateMeasureState(@NonNull TextPaint textPaint);
 
     /**
      * Returns "this" for most MetricAffectingSpans, but for
@@ -59,7 +59,7 @@ public abstract class MetricAffectingSpan
         /**
          * Creates a new Passthrough of the specfied MetricAffectingSpan.
          */
-        Passthrough(MetricAffectingSpan cs) {
+        Passthrough(@NonNull MetricAffectingSpan cs) {
             mStyle = cs;
         }
 
@@ -67,7 +67,7 @@ public abstract class MetricAffectingSpan
          * Passes updateDrawState through to the underlying MetricAffectingSpan.
          */
         @Override
-        public void updateDrawState(TextPaint tp) {
+        public void updateDrawState(@NonNull TextPaint tp) {
             mStyle.updateDrawState(tp);
         }
 
@@ -75,7 +75,7 @@ public abstract class MetricAffectingSpan
          * Passes updateMeasureState through to the underlying MetricAffectingSpan.
          */
         @Override
-        public void updateMeasureState(TextPaint tp) {
+        public void updateMeasureState(@NonNull TextPaint tp) {
             mStyle.updateMeasureState(tp);
         }
 

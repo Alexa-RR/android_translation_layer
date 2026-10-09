@@ -722,10 +722,12 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 
 	/** Native entry points: AOSP's perform*() ordering. */
 	public final void performCreate(android.os.Bundle savedInstanceState) { dispatchActivityPreCreated(savedInstanceState); onCreate(savedInstanceState); dispatchActivityPostCreated(savedInstanceState); }
-	public final void performStart() { dispatchActivityPreStarted(); onStart(); dispatchActivityPostStarted(); }
+	/** AOSP: a stopped activity gets onRestart before onStart. */
+	private boolean mStopped;
+	public final void performStart() { if (mStopped) { mStopped = false; onRestart(); } dispatchActivityPreStarted(); onStart(); dispatchActivityPostStarted(); }
 	public final void performResume() { dispatchActivityPreResumed(); onResume(); dispatchActivityPostResumed(); }
 	public final void performPause() { dispatchActivityPrePaused(); onPause(); dispatchActivityPostPaused(); }
-	public final void performStop() { dispatchActivityPreStopped(); onStop(); dispatchActivityPostStopped(); }
+	public final void performStop() { dispatchActivityPreStopped(); onStop(); mStopped = true; dispatchActivityPostStopped(); }
 	public final void performDestroy() { dispatchActivityPreDestroyed(); onDestroy(); dispatchActivityPostDestroyed(); }
 	public final void performSaveInstanceState(android.os.Bundle outState) { dispatchActivityPreSaveInstanceState(outState); onSaveInstanceState(outState); dispatchActivitySaveInstanceState(outState); dispatchActivityPostSaveInstanceState(outState); }
 
