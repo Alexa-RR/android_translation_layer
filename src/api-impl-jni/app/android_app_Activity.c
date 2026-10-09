@@ -374,3 +374,14 @@ JNIEXPORT jboolean JNICALL Java_android_app_Activity_isTaskRoot(JNIEnv *env, job
 	// NULL means that we are currently creating the root activity, so no other activity can exist yet
 	return root_activity == NULL || (*env)->IsSameObject(env, this, root_activity);
 }
+
+/* teslalinux: AOSP delivers configuration changes to the resumed activity (native-config.sh) */
+void activity_configuration_changed(JNIEnv *env, jobject config)
+{
+	if (!activity_current)
+		return;
+	jmethodID method = _METHOD(_CLASS(activity_current), "performConfigurationChanged", "(Landroid/content/res/Configuration;)V");
+	(*env)->CallVoidMethod(env, activity_current, method, config);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}

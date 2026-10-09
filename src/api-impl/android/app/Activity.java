@@ -768,4 +768,11 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	public void setLocusContext(android.content.LocusId locusId, android.os.Bundle bundle) {
 		mLocusId = locusId;
 	}
+	/** AOSP: the configuration changed while this activity is resumed (Application first, then the activity). */
+	public final void performConfigurationChanged(android.content.res.Configuration newConfig) {
+		android.app.Application app = getApplication();
+		if (app != null)
+			app.onConfigurationChanged(newConfig);
+		onConfigurationChanged(newConfig);
+	}
 }

@@ -200,8 +200,12 @@ static gboolean tl_node_debug(JNIEnv *env, WrapperWidget *wrapper)
 	if (!pattern)
 		return FALSE;
 	gpointer cached = g_object_get_data(G_OBJECT(wrapper), "tl-node-debug");
-	if (cached)
+	if (cached) {
+		/* while /tmp/atl-capturenode exists every matching wrapper is captured again (tap.sh capture) */
+		if (GPOINTER_TO_INT(cached) == 2 && g_file_test("/tmp/atl-capturenode", G_FILE_TEST_EXISTS))
+			g_object_set_data(G_OBJECT(wrapper), "tl-node-debug-count", GINT_TO_POINTER(0));
 		return GPOINTER_TO_INT(cached) == 2;
+	}
 	int match = 1;
 	if (wrapper->jobj && !(*env)->IsSameObject(env, wrapper->jobj, NULL)) {
 		jclass cls = (*env)->GetObjectClass(env, wrapper->jobj);
@@ -270,9 +274,22 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 	} else {
 		GtkWidget *widget = &wrapper->parent_instance;
 		GtkWidget *child = gtk_widget_get_first_child(widget);
+		JNIEnv *env = get_jni_env();
+		GtkSnapshot *target = snapshot;
+		GtkSnapshot *sub = NULL;
+		if (tl_node_debug(env, wrapper))
+			target = sub = gtk_snapshot_new();
 		while (child) {
-			gtk_widget_snapshot_child(widget, child, snapshot);
+			gtk_widget_snapshot_child(widget, child, target);
 			child = gtk_widget_get_next_sibling(child);
+		}
+		if (sub) {
+			GskRenderNode *node = gtk_snapshot_free_to_node(sub);
+			tl_node_debug_report(wrapper, node);
+			if (node) {
+				gtk_snapshot_append_node(snapshot, node);
+				gsk_render_node_unref(node);
+			}
 		}
 	}
 	if (wrapper->real_height > 0 && wrapper->real_width > 0) {

@@ -647,4 +647,14 @@ public abstract class Context {
 	public boolean canLoadUnsafeResources() {
 		return getPackageName().equals(getOpPackageName());
 	}
+	/**
+	 * teslalinux: the window size changed (native-config.sh updated sys_config and the Display);
+	 * refresh the system resources' metrics and configuration like AOSP's ResourcesManager does.
+	 */
+	public static void tlOnConfigurationChanged() {
+		android.content.res.Resources sys = android.content.res.Resources.getSystem();
+		android.util.DisplayMetrics metrics = sys.getDisplayMetrics();
+		metrics.setToDefaults();
+		sys.updateConfiguration(sys_config, metrics);
+	}
 }

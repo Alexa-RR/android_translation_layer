@@ -42,6 +42,19 @@ JNIEXPORT void JNICALL Java_android_atl_ViewDump_nativeDumpGtk(JNIEnv *env, jcla
 		return;
 	GtkRoot *root = gtk_widget_get_root(w);
 	GtkWidget *top = root ? GTK_WIDGET(root) : w;
+	/* every toplevel first: a kiosk compositor shows the newest one on top of the app window */
+	GListModel *toplevels = gtk_window_get_toplevels();
+	guint n_top = g_list_model_get_n_items(toplevels);
+	fprintf(stderr, "=== GTK toplevels: %u ===%c", n_top, 10);
+	for (guint i = 0; i < n_top; i++) {
+		GtkWindow *w = g_list_model_get_item(toplevels, i);
+		const char *title = gtk_window_get_title(w);
+		fprintf(stderr, "  %s %p title=%s visible=%d mapped=%d realized=%d transient_for=%p size=%dx%d%c", G_OBJECT_TYPE_NAME(w), (void *)w,
+		        title ? title : "(none)", gtk_widget_get_visible(GTK_WIDGET(w)), gtk_widget_get_mapped(GTK_WIDGET(w)),
+		        gtk_widget_get_realized(GTK_WIDGET(w)), (void *)gtk_window_get_transient_for(w),
+		        gtk_widget_get_width(GTK_WIDGET(w)), gtk_widget_get_height(GTK_WIDGET(w)), 10);
+		g_object_unref(w);
+	}
 	fprintf(stderr, "=== GTK widget tree from %s ===%c", G_OBJECT_TYPE_NAME(top), 10);
 	dump_widget(env, top, 0, stderr);
 	fprintf(stderr, "=== end GTK tree ===%c", 10);

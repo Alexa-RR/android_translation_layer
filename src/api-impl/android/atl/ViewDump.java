@@ -40,7 +40,16 @@ public final class ViewDump {
 					String command = readTrigger();
 					TRIGGER.delete();
 					View decor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
-					if (command.startsWith("textprobe")) {
+					if (command.startsWith("config")) {
+						// "config": the Configuration and DisplayMetrics the app sees
+						android.content.res.Resources res = activity.getResources();
+						Log.i(TAG, "config " + res.getConfiguration());
+						Log.i(TAG, "metrics " + res.getDisplayMetrics());
+						android.view.Display disp = activity.getWindowManager().getDefaultDisplay();
+						android.graphics.Point p = new android.graphics.Point();
+						disp.getSize(p);
+						Log.i(TAG, "display size " + p.x + "x" + p.y + " rotation=" + disp.getRotation());
+					} else if (command.startsWith("textprobe")) {
 						// "textprobe [size]": log what the text measurement API reports for a few strings
 						String[] parts = command.trim().split(" ");
 						float size = parts.length > 1 ? Float.parseFloat(parts[1]) : 44f;
