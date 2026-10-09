@@ -25,8 +25,12 @@ JNIEXPORT void JNICALL Java_android_media_AudioTrack_native_1constructor(JNIEnv 
 
 	/* Open the PCM device in playback mode */
 	ret = snd_pcm_open(&pcm_handle, PCM_DEVICE, SND_PCM_STREAM_PLAYBACK, 0);
-	if (ret < 0)
+	if (ret < 0) {
+		/* tl_audiotrack: no output device: the Java side reports STATE_UNINITIALIZED */
 		printf("ERROR: Can't open \"%s\" PCM device. %s\n", PCM_DEVICE, snd_strerror(ret));
+		_SET_LONG_FIELD(this, "pcm_handle", 0);
+		return;
+	}
 
 	snd_pcm_hw_params_alloca(&params);
 	helper_hw_params_init(pcm_handle, params, rate, channel_config, SND_PCM_FORMAT_S16_LE, &channels);
@@ -88,6 +92,9 @@ JNIEXPORT void JNICALL Java_android_media_AudioTrack_native_1constructor(JNIEnv 
 	snd_pcm_hw_params_get_period_time(params, &period_time, NULL);
 
 	_SET_LONG_FIELD(this, "pcm_handle", _INTPTR(pcm_handle));
+	snd_pcm_uframes_t buffer_frames = 0;
+	snd_pcm_hw_params_get_buffer_size(params, &buffer_frames);
+	_SET_INT_FIELD(this, "buffer_frames", (jint)buffer_frames);
 	_SET_LONG_FIELD(this, "params", _INTPTR(params));
 	_SET_INT_FIELD(this, "channels", channels_out);
 	_SET_INT_FIELD(this, "period_time", period_time);
@@ -196,6 +203,8 @@ JNIEXPORT void JNICALL Java_android_media_AudioTrack_native_1play(JNIEnv *env, j
 	/*--↑*/
 }
 
+static int tl_xruns; /* tl_audiotrack: underruns since the last read (per process; tracks read and clear it) */
+
 static int write_frames(snd_pcm_t *pcm_handle, const void *buffer, int frames_to_write, float volume)
 {
 	if (volume != 1.f) {
@@ -204,7 +213,7 @@ static int write_frames(snd_pcm_t *pcm_handle, const void *buffer, int frames_to
 	}
 	snd_pcm_sframes_t frames_written = snd_pcm_writei(pcm_handle, buffer, frames_to_write);
 	if (frames_written == -EPIPE) {
-		printf("XRUN.\n");
+		tl_xruns++;
 		snd_pcm_recover(pcm_handle, frames_written, 0);
 		frames_written = snd_pcm_writei(pcm_handle, buffer, frames_to_write);
 		snd_pcm_start(pcm_handle);
@@ -257,4 +266,44 @@ JNIEXPORT jint JNICALL Java_android_media_AudioTrack_native_1getPlaybackHeadPosi
 	snd_pcm_delay(pcm_handle, &delay);
 
 	return delay;
+}
+
+/* ---- teslalinux additions (tl_audiotrack) ---- */
+JNIEXPORT void JNICALL Java_android_media_AudioTrack_native_1stop(JNIEnv *env, jobject this)
+{
+	snd_pcm_t *pcm_handle = _PTR(_GET_LONG_FIELD(this, "pcm_handle"));
+	if (!pcm_handle)
+		return;
+	snd_pcm_drop(pcm_handle);
+	snd_pcm_prepare(pcm_handle);
+}
+
+JNIEXPORT void JNICALL Java_android_media_AudioTrack_native_1flush(JNIEnv *env, jobject this)
+{
+	snd_pcm_t *pcm_handle = _PTR(_GET_LONG_FIELD(this, "pcm_handle"));
+	if (!pcm_handle)
+		return;
+	snd_pcm_drop(pcm_handle);
+	snd_pcm_prepare(pcm_handle);
+}
+
+/* frames that can be written without blocking (the free part of the ALSA ring buffer) */
+JNIEXPORT jint JNICALL Java_android_media_AudioTrack_native_1avail(JNIEnv *env, jobject this)
+{
+	snd_pcm_t *pcm_handle = _PTR(_GET_LONG_FIELD(this, "pcm_handle"));
+	if (!pcm_handle)
+		return 0;
+	snd_pcm_sframes_t avail = snd_pcm_avail_update(pcm_handle);
+	if (avail < 0) {
+		snd_pcm_recover(pcm_handle, avail, 1);
+		avail = snd_pcm_avail_update(pcm_handle);
+	}
+	return avail < 0 ? 0 : (jint)avail;
+}
+
+JNIEXPORT jint JNICALL Java_android_media_AudioTrack_native_1takeUnderruns(JNIEnv *env, jobject this)
+{
+	int n = tl_xruns;
+	tl_xruns = 0;
+	return n;
 }

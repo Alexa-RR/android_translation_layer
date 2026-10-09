@@ -81,7 +81,7 @@ public class AudioRecord {
 		}
 
 		public AudioRecord build() {
-			return new AudioRecord(audioSource, audioFormat.sampleRate, audioFormat.channelMask, audioFormat.encoding, 32768);
+			return new AudioRecord(audioSource, audioFormat.getSampleRate(), audioFormat.getChannelMask(), audioFormat.getEncoding(), 32768);
 		}
 	
 		public Builder setBufferSizeInBytes(int bufferSizeInBytes) { return this; }

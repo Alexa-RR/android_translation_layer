@@ -41,6 +41,7 @@ srcs = [
 	'android/media/AudioRouting.java',
 	'android/media/PlaybackParams.java',
 	'android/media/Spatializer.java',
+	'android/media/Utils.java',
 	'android/media/metrics/BundleSession.java',
 	'android/media/metrics/EditingSession.java',
 	'android/media/metrics/Event.java',

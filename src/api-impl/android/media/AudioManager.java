@@ -179,4 +179,8 @@ public class AudioManager {
 	public int getEncodedSurroundMode() { return 0; }
 	public boolean isSurroundFormatEnabled(int format) { return false; }
 	public void setStreamMute(int streamType, boolean state) {}
+	/** The output device every track is routed to (the host's default ALSA output). */
+	public static AudioDeviceInfo tlDefaultOutputDevice() {
+		return TL_SPEAKER;
+	}
 }

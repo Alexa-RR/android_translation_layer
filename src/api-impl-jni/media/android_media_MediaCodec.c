@@ -49,8 +49,9 @@ JNIEXPORT jlong JNICALL Java_android_media_MediaCodec_native_1constructor(JNIEnv
 	const char *name = (*env)->GetStringUTFChars(env, codec_name, NULL);
 	const AVCodec *codec = avcodec_find_decoder_by_name(name);
 	if (!codec) {
-		printf("Codec %s not found\n", name);
-		exit(0);
+		/* tl_mediacodec: MediaCodec.createByCodecName turns this into an IOException */
+		(*env)->ReleaseStringUTFChars(env, codec_name, name);
+		return 0;
 	}
 	(*env)->ReleaseStringUTFChars(env, codec_name, name);
 	if (!codec)
@@ -79,7 +80,7 @@ JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1configure_1audio(JN
 	else if (nb_channels == 2)
 		codec_ctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
 	else {
-		printf("MediaCodec: Unsupported number of channels %d\n", nb_channels);
+		av_channel_layout_default(&codec_ctx->ch_layout, nb_channels); /* AOSP: any channel count */
 		exit(0);
 	}
 
@@ -493,4 +494,32 @@ JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1release(JNIEnv *env
 
 	avcodec_free_context(&ctx->codec);
 	free(ctx);
+}
+
+/* ---- teslalinux additions (tl_mediacodec) ---- */
+JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1flush(JNIEnv *env, jobject this, jlong codec)
+{
+	struct ATL_codec_context *ctx = _PTR(codec);
+	if (ctx && ctx->codec && avcodec_is_open(ctx->codec))
+		avcodec_flush_buffers(ctx->codec);
+}
+
+JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1setOutputSurface(JNIEnv *env, jobject this, jlong codec, jobject surface_obj)
+{
+	struct ATL_codec_context *ctx = _PTR(codec);
+	if (!ctx || !ctx->codec || ctx->codec->codec_type != AVMEDIA_TYPE_VIDEO)
+		return;
+	if (!surface_obj) {
+		ctx->video.surface_view_widget = NULL;
+		return;
+	}
+	ctx->video.surface_view_widget = SURFACE_VIEW_WIDGET(gtk_widget_get_first_child(_PTR(_GET_LONG_FIELD(surface_obj, "widget"))));
+}
+
+JNIEXPORT jboolean JNICALL Java_android_media_MediaCodecList_nativeHasDecoder(JNIEnv *env, jclass this, jstring codec_name)
+{
+	const char *name = (*env)->GetStringUTFChars(env, codec_name, NULL);
+	const AVCodec *codec = avcodec_find_decoder_by_name(name);
+	(*env)->ReleaseStringUTFChars(env, codec_name, name);
+	return codec != NULL;
 }
