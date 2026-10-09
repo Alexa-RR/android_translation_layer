@@ -98,7 +98,12 @@ public class Drawable {
 		}
 
 		public abstract int getChangingConfigurations();
-	}
+	
+		/** AOSP: whether this constant state has theme attributes to apply. */
+		public boolean canApplyTheme() {
+			return false;
+		}
+}
 
 	public void setBounds(int left, int top, int right, int bottom) {
 		boolean changed = left != mBounds.left || top != mBounds.top || right != mBounds.right || bottom != mBounds.bottom;
@@ -479,4 +484,31 @@ public class Drawable {
 	public android.graphics.PorterDuff.Mode tlGetTintMode() { return mTintMode; }
 	/** AOSP: the drawable currently showing (the drawable itself unless a container overrides). */
 	public Drawable getCurrent() { return this; }
+	/** AOSP (hidden): wraps a checked exception from a drawable inflation helper. */
+	static void rethrowAsRuntimeException(Exception e) {
+		throw new RuntimeException(e);
+	}
+	/* AOSP Drawable defaults (API 23-29) */
+	/** AOSP: called when the resolved layout direction changes; true when the drawable changed because of it. */
+	public boolean onLayoutDirectionChanged(int layoutDirection) {
+		return false;
+	}
+
+	/** AOSP (API 29): a tint blend mode; the default maps it to the PorterDuff mode. */
+	public void setTintBlendMode(android.graphics.BlendMode blendMode) {
+		setTintMode(android.graphics.BlendMode.blendModeToPorterDuffMode(blendMode));
+	}
+
+	/** AOSP (API 28): whether the drawable has a state for focus (so no focus highlight is needed). */
+	public boolean hasFocusStateSpecified() {
+		return false;
+	}
+
+	/** AOSP (hidden): an Xfermode for drawables that support one; ignored by the base class. */
+	public void setXfermode(android.graphics.Xfermode mode) {
+	}
+
+	/** AOSP (hidden): clears the mutated state after a constant state swap. */
+	public void clearMutated() {
+	}
 }

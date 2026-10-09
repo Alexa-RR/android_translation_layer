@@ -584,4 +584,9 @@ public class ActivityInfo extends ComponentInfo {
 	public int describeContents() {
 		return 0;
 	}
+
+	/** AOSP: the configuration-change bits (CONFIG_*). */
+	@android.annotation.IntDef(flag = true, value = {})
+	@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+	public @interface Config {}
 }

@@ -3536,4 +3536,8 @@ public class View implements Drawable.Callback {
 			return getFilterTouchesWhenObscured();
 		return mAccessibilityDataSensitive == ACCESSIBILITY_DATA_SENSITIVE_YES;
 	}
+	/** AOSP: a resolved layout direction, LAYOUT_DIRECTION_LTR or LAYOUT_DIRECTION_RTL. */
+	@android.annotation.IntDef({LAYOUT_DIRECTION_LTR, LAYOUT_DIRECTION_RTL})
+	@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+	public @interface ResolvedLayoutDir {}
 }
