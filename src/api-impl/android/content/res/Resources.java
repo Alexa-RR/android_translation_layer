@@ -2253,6 +2253,11 @@ public class Resources {
 					}
 					Trace.traceEnd(Trace.TRACE_TAG_RESOURCES);
 				}
+				/* AOSP: a file that yields no drawable is a NotFoundException, never a null drawable */
+				if (dr == null) {
+					throw new NotFoundException("File " + file + " from drawable resource ID #0x"
+					                            + Integer.toHexString(id) + " could not be decoded");
+				}
 			}
 		}
 

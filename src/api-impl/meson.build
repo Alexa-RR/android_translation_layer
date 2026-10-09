@@ -23,6 +23,8 @@ srcs = [
 	'android/graphics/SurfaceTexture.java',
 	'android/graphics/drawable/Animatable2.java',
 	'android/graphics/drawable/AnimatedRotateDrawable.java',
+	'android/graphics/drawable/AnimatedStateListDrawable.java',
+	'android/graphics/drawable/LevelListDrawable.java',
 	'android/graphics/drawable/RotateDrawable.java',
 	'android/graphics/fonts/Font.java',
 	'android/graphics/fonts/FontFamily.java',

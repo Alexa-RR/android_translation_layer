@@ -183,11 +183,17 @@ public class Drawable {
 	}
 
 	public boolean isVisible() {
-		return false;
+		return mVisible;
 	}
 
+	/** AOSP: sets the visibility; returns true when it changed (subclasses restart animations then). */
 	public boolean setVisible(boolean visible, boolean restart) {
-		return false;
+		boolean changed = mVisible != visible;
+		if (changed) {
+			mVisible = visible;
+			invalidateSelf();
+		}
+		return changed;
 	}
 
 	protected static TypedArray obtainAttributes(Resources r, Theme theme, AttributeSet set, int[] attrs) {
@@ -309,7 +315,9 @@ public class Drawable {
 				return drawable;
 			}
 			case "transition": {
-				return new Drawable();
+				TransitionDrawable drawable = new TransitionDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
 			}
 			case "ripple": {
 				RippleDrawable drawable = new RippleDrawable();
@@ -330,7 +338,9 @@ public class Drawable {
 				return new NinePatchDrawable(resources, null, null, null, null);
 			}
 			case "animation-list": {
-				return new AnimationDrawable();
+				AnimationDrawable drawable = new AnimationDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
 			}
 			case "adaptive-icon": {
 				AdaptiveIconDrawable drawable = new AdaptiveIconDrawable();
@@ -342,9 +352,51 @@ public class Drawable {
 				drawable.inflate(resources, parser, attrs, theme);
 				return drawable;
 			}
+			/* AOSP DrawableInflater.inflateFromTag: the remaining drawable tags */
+			case "animated-selector": {
+				AnimatedStateListDrawable drawable = new AnimatedStateListDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "level-list": {
+				LevelListDrawable drawable = new LevelListDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "color": {
+				ColorDrawable drawable = new ColorDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "animated-vector": {
+				AnimatedVectorDrawable drawable = new AnimatedVectorDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "scale": {
+				ScaleDrawable drawable = new ScaleDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "clip": {
+				ClipDrawable drawable = new ClipDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "rotate": {
+				RotateDrawable drawable = new RotateDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
+			case "animated-rotate": {
+				AnimatedRotateDrawable drawable = new AnimatedRotateDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
 		}
 
-		return null;
+		/* AOSP: an unknown tag is an error, not a null drawable */
+		throw new XmlPullParserException(parser.getPositionDescription() + ": invalid drawable tag " + parser.getName());
 	}
 
 	public static Drawable createFromResourceStream(Resources resources, TypedValue value, InputStream is, String file,
@@ -511,4 +563,34 @@ public class Drawable {
 	/** AOSP (hidden): clears the mutated state after a constant state swap. */
 	public void clearMutated() {
 	}
+	/** AOSP: the hotspot bounds, the drawable bounds unless a subclass narrows them. */
+	public void getHotspotBounds(Rect outRect) {
+		outRect.set(getBounds());
+	}
+
+	/** AOSP: the more opaque of two opacities, used by containers. */
+	public static int resolveOpacity(int op1, int op2) {
+		if (op1 == op2) {
+			return op1;
+		}
+		if (op1 == android.graphics.PixelFormat.UNKNOWN || op2 == android.graphics.PixelFormat.UNKNOWN) {
+			return android.graphics.PixelFormat.UNKNOWN;
+		}
+		if (op1 == android.graphics.PixelFormat.TRANSLUCENT || op2 == android.graphics.PixelFormat.TRANSLUCENT) {
+			return android.graphics.PixelFormat.TRANSLUCENT;
+		}
+		if (op1 == android.graphics.PixelFormat.TRANSPARENT || op2 == android.graphics.PixelFormat.TRANSPARENT) {
+			return android.graphics.PixelFormat.TRANSPARENT;
+		}
+		return android.graphics.PixelFormat.OPAQUE;
+	}
+
+	/** AOSP (hidden): reads the "visible" attribute during inflation. */
+	void inflateWithAttributes(Resources r, org.xmlpull.v1.XmlPullParser parser, android.content.res.TypedArray attrs, int visibleAttr)
+			throws org.xmlpull.v1.XmlPullParserException, java.io.IOException {
+		mVisible = attrs.getBoolean(visibleAttr, mVisible);
+	}
+
+	/* AOSP: visibility state (setVisible/isVisible); drawables start visible */
+	private boolean mVisible = true;
 }
