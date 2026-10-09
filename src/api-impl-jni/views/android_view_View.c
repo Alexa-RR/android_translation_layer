@@ -793,8 +793,18 @@ JNIEXPORT jboolean JNICALL Java_android_view_View_native_1getGlobalVisibleRect(J
 	double off_x;
 	double off_y;
 	gboolean ret;
-	GtkWidget *window = GTK_WIDGET(gtk_widget_get_native(widget));
-	gtk_native_get_surface_transform(GTK_NATIVE(window), &off_x, &off_y);
+	GtkNative *native = gtk_widget_get_native(widget);
+	GtkWidget *window;
+	if (native) {
+		window = GTK_WIDGET(native);
+		gtk_native_get_surface_transform(native, &off_x, &off_y);
+	} else {
+		/* tl_unrooted_rect: AOSP reports a detached view's rect relative to its outermost ancestor */
+		window = widget;
+		while (gtk_widget_get_parent(window))
+			window = gtk_widget_get_parent(window);
+		off_x = off_y = 0;
+	}
 	ret = gtk_widget_compute_point(widget, window, &point_in, &point_out);
 	if (!ret)
 		return false;

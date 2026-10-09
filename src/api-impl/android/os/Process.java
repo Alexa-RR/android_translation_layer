@@ -412,10 +412,9 @@ public class Process {
 	 * app-specific sandbox.  It is different from {@link #myUserHandle} in that
 	 * a uid identifies a specific app sandbox in a specific user.
 	 */
+	/** AOSP: the uid this process runs as (the framework's UidRange and NetworkRequest reject a negative one). */
 	public static final int myUid() {
-		// HACK: provide wrong Uid, as some applications like Whatsapp don't accept files with their own Uid for security reasons
-		return -1;
-		// return Libcore.os.getuid();
+		return Libcore.os.getuid();
 	}
 
 	/**

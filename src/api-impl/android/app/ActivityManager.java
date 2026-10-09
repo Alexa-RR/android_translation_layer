@@ -104,7 +104,8 @@ public class ActivityManager {
 
 
 	/* teslalinux: ActivityManager additions */
-	public boolean isRunningInTestHarness() { return false; }
+	/** AOSP (static, deprecated): whether the device runs under an instrumentation test harness. */
+	public static boolean isRunningInTestHarness() { return false; }
 	public static boolean isRunningInUserTestHarness() { return false; }
 	public int getLauncherLargeIconSize() { return 96; }
 	public int getLauncherLargeIconDensity() { return 320; }
