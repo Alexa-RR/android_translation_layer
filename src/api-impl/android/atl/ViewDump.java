@@ -54,6 +54,10 @@ public final class ViewDump {
 						String[] parts = command.trim().split(" ");
 						float size = parts.length > 1 ? Float.parseFloat(parts[1]) : 44f;
 						textProbe(size);
+					} else if (command.startsWith("hit ")) {
+						// "hit X Y": what Compose's own hit test returns at a window position (per compose root)
+						String[] parts = command.trim().split(" ");
+						composeHitTest(decor, Float.parseFloat(parts[1]), Float.parseFloat(parts[2]));
 					} else if (command.startsWith("setvis ")) {
 						// "setvis <id hex> <0|4|8>": change a view's visibility (debugging the stacking of views)
 						String[] parts = command.trim().split(" ");
@@ -306,5 +310,58 @@ public final class ViewDump {
 		int mode = android.view.View.MeasureSpec.getMode(spec);
 		return (mode == android.view.View.MeasureSpec.EXACTLY ? "E" : mode == android.view.View.MeasureSpec.AT_MOST ? "A" : "U")
 				+ android.view.View.MeasureSpec.getSize(spec);
+	}
+
+	/** Runs LayoutNode.hitTest of every attached compose root at a window position and logs the hit nodes. */
+	static void composeHitTest(View root, float x, float y) {
+		java.util.ArrayList<View> composeViews = new java.util.ArrayList<>();
+		collectByName(root, "AndroidComposeView", composeViews);
+		for (View cv : composeViews) {
+			if (!cv.isAttachedToWindow() || cv.getWidth() == 0)
+				continue;
+			int[] loc = new int[2];
+			cv.getLocationInWindow(loc);
+			float lx = x - loc[0], ly = y - loc[1];
+			try {
+				Object layoutNode = call(cv, "getRoot");
+				Class<?> hitResultClass = Class.forName("androidx.compose.ui.node.HitTestResult", true, cv.getClass().getClassLoader());
+				Object result = hitResultClass.getDeclaredConstructor().newInstance();
+				java.lang.reflect.Method hit = null;
+				for (java.lang.reflect.Method m : layoutNode.getClass().getMethods()) {
+					if (m.getName().startsWith("hitTest") && !m.getName().contains("Semantics") && m.getParameterCount() == 4
+							&& m.getParameterTypes()[0] == long.class && m.getParameterTypes()[1] == hitResultClass) {
+						hit = m;
+					}
+				}
+				if (hit == null) {
+					Log.i(TAG, "hit: no LayoutNode.hitTest on " + layoutNode.getClass());
+					continue;
+				}
+				long packed = (((long) Float.floatToRawIntBits(lx)) << 32) | (Float.floatToRawIntBits(ly) & 0xffffffffL);
+				hit.invoke(layoutNode, packed, result, true, true);
+				StringBuilder sb = new StringBuilder("hit " + x + "," + y + " in " + cv.getWidth() + "x" + cv.getHeight() + " @" + loc[0] + "," + loc[1] + ": ");
+				int n = 0;
+				for (Object node : (java.util.List<?>) result) {
+					if (n++ > 24)
+						break;
+					sb.append(node.getClass().getSimpleName()).append(' ');
+				}
+				if (n == 0)
+					sb.append("(nothing)");
+				Log.i(TAG, sb.toString());
+			} catch (Exception e) {
+				Log.i(TAG, "hit failed: " + e);
+			}
+		}
+	}
+
+	static void collectByName(View v, String simpleName, java.util.List<View> out) {
+		if (v.getClass().getSimpleName().equals(simpleName))
+			out.add(v);
+		if (v instanceof android.view.ViewGroup) {
+			android.view.ViewGroup g = (android.view.ViewGroup) v;
+			for (int i = 0; i < g.getChildCount(); i++)
+				collectByName(g.getChildAt(i), simpleName, out);
+		}
 	}
 }
