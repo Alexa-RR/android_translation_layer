@@ -657,4 +657,6 @@ public abstract class Context {
 		metrics.setToDefaults();
 		sys.updateConfiguration(sys_config, metrics);
 	}
+	/** AOSP: the name of the connectivity service (getSystemService). */
+	public static final String CONNECTIVITY_SERVICE = "connectivity";
 }

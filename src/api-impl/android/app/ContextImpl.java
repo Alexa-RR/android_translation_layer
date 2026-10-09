@@ -147,7 +147,7 @@ public final class ContextImpl extends Context {
 			case "sensor":
 				return new SensorManager();
 			case "connectivity":
-				return new ConnectivityManager();
+				return new ConnectivityManager(this);
 			case "keyguard":
 				return new KeyguardManager();
 			case "phone":

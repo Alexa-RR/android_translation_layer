@@ -846,4 +846,6 @@ public class Process {
 	public static boolean isSdkSandbox() { return false; }
 	public static String myProcessName() { return "com.waze"; }
 	public static boolean isSdkSandboxUid(int uid) { return false; }
+	/** AOSP (hidden): an invalid uid. */
+	public static final int INVALID_UID = -1;
 }

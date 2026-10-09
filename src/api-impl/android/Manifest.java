@@ -1271,7 +1271,12 @@ public final class Manifest {
 		 * Allows an application to write to the user dictionary.
 		 */
 		public static final String WRITE_USER_DICTIONARY = "android.permission.WRITE_USER_DICTIONARY";
-	}
+	
+        /** AOSP (signature): register network factories and agents. */
+        public static final String NETWORK_FACTORY = "android.permission.NETWORK_FACTORY";
+        /** AOSP (signature): request signal-strength wakeups on a network. */
+        public static final String NETWORK_SIGNAL_STRENGTH_WAKEUP = "android.permission.NETWORK_SIGNAL_STRENGTH_WAKEUP";
+}
 	public static final class permission_group {
 		/**
 		 * Used for permissions that allow requesting certain accessibility features.

@@ -1126,4 +1126,29 @@ public class Parcel {
 		}
 		return list;
 	}
+	/** AOSP (hidden): writes an ArraySet as a size followed by its values. */
+	public void writeArraySet(android.util.ArraySet<? extends Object> val) {
+		final int size = (val != null) ? val.size() : -1;
+		writeInt(size);
+		for (int i = 0; i < size; i++) {
+			writeValue(val.valueAt(i));
+		}
+	}
+
+	/** AOSP (hidden): reads an ArraySet written by writeArraySet. */
+	public android.util.ArraySet<Object> readArraySet(ClassLoader loader) {
+		final int size = readInt();
+		if (size < 0) {
+			return null;
+		}
+		android.util.ArraySet<Object> result = new android.util.ArraySet<>(size);
+		for (int i = 0; i < size; i++) {
+			try {
+				result.append(readValue(loader));
+			} catch (ReflectiveOperationException e) {
+				throw new RuntimeException(e);
+			}
+		}
+		return result;
+	}
 }
