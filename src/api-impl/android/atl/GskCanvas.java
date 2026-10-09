@@ -483,4 +483,10 @@ public class GskCanvas extends DisplayListCanvas {
 	}
 
 	private static native void native_pushColorMatrix(long snapshot, long paint);
+
+	/** AOSP: a display-list canvas is hardware accelerated; GSK renders the snapshot on the GPU. */
+	@Override
+	public boolean isHardwareAccelerated() {
+		return true;
+	}
 }

@@ -119,3 +119,21 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeAddStubNode(JNIEnv *e
 	gsk_render_node_unref(stub_node);
 	return _INTPTR(stub_node);
 }
+
+/* teslalinux: rectangular clip; the input keeps its reference (the clip node takes its own) */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeClipKeep(JNIEnv *env, jobject this, jlong node_ptr, jfloat left, jfloat top, jfloat right, jfloat bottom)
+{
+	GskRenderNode *node = _PTR(node_ptr);
+	return _INTPTR(gsk_clip_node_new(node, &GRAPHENE_RECT_INIT(left, top, right - left, bottom - top)));
+}
+
+/* teslalinux: rounded-rectangle clip (one radius for all corners); the input keeps its reference */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeRoundedClipKeep(JNIEnv *env, jobject this, jlong node_ptr, jfloat left, jfloat top, jfloat right, jfloat bottom, jfloat radius)
+{
+	GskRenderNode *node = _PTR(node_ptr);
+	GskRoundedRect rect = {
+		.bounds = GRAPHENE_RECT_INIT(left, top, right - left, bottom - top),
+		.corner = { { radius, radius }, { radius, radius }, { radius, radius }, { radius, radius } },
+	};
+	return _INTPTR(gsk_rounded_clip_node_new(node, &rect));
+}

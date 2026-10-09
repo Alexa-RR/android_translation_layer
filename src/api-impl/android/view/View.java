@@ -2522,8 +2522,9 @@ public class View implements Drawable.Callback {
 		return new Handler(Looper.getMainLooper());
 	}
 
+	/** AOSP: true for a view attached to a hardware-accelerated window; every ATL window renders through GSK. */
 	public boolean isHardwareAccelerated() {
-		return false;
+		return isAttachedToWindow();
 	}
 
 	public void setClipBounds(Rect clipBounds) {}

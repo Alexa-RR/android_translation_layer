@@ -200,6 +200,10 @@ public class RenderNode {
 
 	public boolean setClipToBounds(boolean clipToBounds) {
 		boolean changed = this.clipToBounds != clipToBounds;
+		if (changed && transformed_node != 0) {
+			nativeUnref(transformed_node);
+			transformed_node = 0;
+		}
 		this.clipToBounds = clipToBounds;
 		return changed;
 	}
@@ -257,14 +261,14 @@ public class RenderNode {
 		return false;
 	}
 
+	/** AOSP: the outline is copied into the node (callers reuse and mutate their Outline objects). */
 	public boolean setOutline(Outline outline) {
-		boolean changed = Objects.equals(this.outline, outline);
-		if (changed && transformed_node != 0) {
+		if (transformed_node != 0) {
 			nativeUnref(transformed_node);
 			transformed_node = 0;
 		}
-		this.outline = outline;
-		return changed;
+		this.outline = outline == null ? null : new Outline(outline);
+		return true;
 	}
 
 	public long getGskNode() {
@@ -278,12 +282,21 @@ public class RenderNode {
 		}
 		if (transformed_node == 0 || old_render_node != render_node) {
 			nativeUnref(transformed_node);
-			transformed_node = nativeTransform(render_node, scaleX, scaleY, translationX, translationY, rotation, pivotX, pivotY);
-			if (clipToOutline) {
-				Rect bounds = new Rect();
-				outline.getRect(bounds);
-				transformed_node = nativeClip(transformed_node, bounds.left, bounds.top, bounds.right, bounds.bottom);
+			/* AOSP/HWUI: the clip is in the node's own coordinates and applies before its transform.
+			 * clipToOutline clips only to a rectangular or rounded-rectangle outline (never to an
+			 * empty or path outline); clipToBounds clips to the node's size when it has one. */
+			long clipped = 0;
+			Rect bounds = new Rect();
+			if (clipToOutline && outline != null && outline.mMode == Outline.MODE_ROUND_RECT && outline.getRect(bounds) && !bounds.isEmpty()) {
+				float radius = outline.getRadius();
+				clipped = radius > 0 ? nativeRoundedClipKeep(render_node, bounds.left, bounds.top, bounds.right, bounds.bottom, radius)
+				                     : nativeClipKeep(render_node, bounds.left, bounds.top, bounds.right, bounds.bottom);
+			} else if (clipToBounds && width > 0 && height > 0) {
+				clipped = nativeClipKeep(render_node, 0, 0, width, height);
 			}
+			transformed_node = nativeTransform(clipped != 0 ? clipped : render_node, scaleX, scaleY, translationX, translationY, rotation, pivotX, pivotY);
+			if (clipped != 0)
+				nativeUnref(clipped);
 		}
 		return transformed_node;
 	}
@@ -361,4 +374,8 @@ public class RenderNode {
 	public float atlGetHeight() {
 		return height;
 	}
+
+	/* teslalinux: clip helpers that leave the input node referenced (native-rendernode-clip.sh) */
+	private static native long nativeClipKeep(long node, float left, float top, float right, float bottom);
+	private static native long nativeRoundedClipKeep(long node, float left, float top, float right, float bottom, float radius);
 }
