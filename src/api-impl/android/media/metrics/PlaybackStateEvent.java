@@ -279,4 +279,9 @@ public final class PlaybackStateEvent extends Event implements Parcelable {
             return o;
         }
     }
+
+    @Override
+    public String toString() {
+        return "PlaybackStateEvent { state = " + getState() + ", timeSinceCreatedMillis = " + getTimeSinceCreatedMillis() + " }";
+    }
 }

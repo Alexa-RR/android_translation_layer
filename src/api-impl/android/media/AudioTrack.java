@@ -35,6 +35,7 @@ import java.util.concurrent.Executor;
  */
 public class AudioTrack implements AudioRouting {
     private static final String TAG = "AudioTrack";
+    private static final boolean DEBUG = System.getenv("ATL_DEBUG_MEDIA") != null;
 
     public static final float VOLUME_MIN = 0.0f;
     public static final float VOLUME_MAX = 1.0f;
@@ -191,6 +192,8 @@ public class AudioTrack implements AudioRouting {
             mState = mode == MODE_STATIC ? STATE_NO_STATIC_DATA : STATE_INITIALIZED;
             mStartThresholdFrames = buffer_frames;
         }
+        if (DEBUG)
+            android.util.Log.i(TAG, "AudioTrack " + rate + "Hz mask=0x" + Integer.toHexString(mask) + " enc=" + encoding + " buffer=" + bufferSizeInBytes + " mode=" + mode + " -> state=" + mState + " frames=" + buffer_frames);
     }
 
     private AudioTrack(Builder b) {
@@ -708,6 +711,8 @@ public class AudioTrack implements AudioRouting {
             if (mPlayState == PLAYSTATE_PLAYING)
                 return;
             mPlayState = PLAYSTATE_PLAYING;
+            if (DEBUG)
+                android.util.Log.i(TAG, "play() written=" + mFramesWritten);
             native_play();
             if (mode == MODE_STATIC)
                 startStaticPlayback();
@@ -721,6 +726,8 @@ public class AudioTrack implements AudioRouting {
             if (mPlayState == PLAYSTATE_STOPPED)
                 return;
             mPlayState = PLAYSTATE_STOPPED;
+            if (DEBUG)
+                android.util.Log.i(TAG, "stop() written=" + mFramesWritten);
             native_stop();
             mFramesWritten = 0;
         }
@@ -845,6 +852,8 @@ public class AudioTrack implements AudioRouting {
             frames = Math.min(frames, avail);
         }
         int written = native_write(pcm, offset, frames, effectiveVolume());
+        if (DEBUG && (mFramesWritten == 0 || written <= 0))
+            android.util.Log.i(TAG, "write " + frames + " frames blocking=" + blocking + " -> " + written);
         if (written > 0) {
             synchronized (this) {
                 mFramesWritten += written;

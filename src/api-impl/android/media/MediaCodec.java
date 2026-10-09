@@ -39,6 +39,8 @@ import java.util.List;
  */
 public final class MediaCodec {
     private static final String TAG = "MediaCodec";
+    private static final boolean DEBUG = System.getenv("ATL_DEBUG_MEDIA") != null;
+    private int mDbgIn, mDbgOut;
 
     public static final int BUFFER_FLAG_SYNC_FRAME = 1;
     public static final int BUFFER_FLAG_KEY_FRAME = 1;
@@ -428,6 +430,8 @@ public final class MediaCodec {
                 native_configure_audio(mNative, format.getByteBuffer("csd-0"), sampleRate, channels);
             }
             mState = STATE_CONFIGURED;
+            if (DEBUG)
+                Log.i(TAG, mName + " configure " + format + " surface=" + surface + " -> out " + mOutputFormat);
         }
     }
 
@@ -509,6 +513,8 @@ public final class MediaCodec {
                 throw new IllegalStateException("start() in state " + mState);
             native_start(mNative);
             mState = STATE_STARTED;
+            if (DEBUG)
+                Log.i(TAG, mName + " start async=" + (mCallback != null));
             mFlushedAsync = false;
             if (mCallback != null) {
                 startWorker();
@@ -549,6 +555,8 @@ public final class MediaCodec {
         synchronized (mLock) {
             if (mState != STATE_STARTED)
                 throw new IllegalStateException("flush() in state " + mState);
+            if (DEBUG)
+                Log.i(TAG, mName + " flush");
             native_flush(mNative);
             for (Integer i : mQueuedInputs) {
                 if (i >= 0)
@@ -571,6 +579,8 @@ public final class MediaCodec {
         synchronized (mLock) {
             if (mState == STATE_RELEASED)
                 return;
+            if (DEBUG)
+                Log.i(TAG, mName + " release after " + mDbgIn + " inputs / " + mDbgOut + " outputs");
             stopWorkerLocked();
             if (mNative != 0)
                 native_release(mNative);
@@ -676,6 +686,8 @@ public final class MediaCodec {
             if ((flags & BUFFER_FLAG_END_OF_STREAM) != 0)
                 mEosQueued = true;
             mQueuedInputs.add(index);
+            if (DEBUG && (++mDbgIn <= 3 || (flags & BUFFER_FLAG_END_OF_STREAM) != 0))
+                Log.i(TAG, mName + " queueInput #" + mDbgIn + " idx=" + index + " size=" + size + " pts=" + presentationTimeUs + " flags=" + flags);
             drainInputsLocked();
             mLock.notifyAll();
         }
@@ -795,6 +807,8 @@ public final class MediaCodec {
         }
         if ((info.flags & BUFFER_FLAG_END_OF_STREAM) != 0)
             mEosDelivered = true;
+        if (DEBUG && (++mDbgOut <= 3 || mEosDelivered))
+            Log.i(TAG, mName + " output #" + mDbgOut + " idx=" + index + " size=" + info.size + " pts=" + info.presentationTimeUs + " flags=" + info.flags);
         return index;
     }
 
