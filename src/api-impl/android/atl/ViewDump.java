@@ -30,6 +30,7 @@ public final class ViewDump {
 		if (!ENABLED)
 			return;
 		installStackWatcher();
+		installMainStackDumper();
 		final Handler handler = new Handler(Looper.getMainLooper());
 		handler.postDelayed(new Runnable() {
 			@Override
@@ -798,5 +799,45 @@ public final class ViewDump {
 			for (int i = 0; i < g.getChildCount(); i++)
 				collectByName(g.getChildAt(i), simpleName, out);
 		}
+	}
+
+	/** A daemon thread that logs the main thread's Java stack when /tmp/atl-stack appears: works while the main thread is busy. */
+	private static boolean sStackDumper;
+	private static synchronized void installMainStackDumper() {
+		if (sStackDumper)
+			return;
+		sStackDumper = true;
+		Thread t = new Thread("ViewDump-stack") {
+			@Override public void run() {
+				java.io.File trigger = new java.io.File("/tmp/atl-stack");
+				java.io.File triggerAll = new java.io.File("/tmp/atl-stack-all");
+				while (true) {
+					try { Thread.sleep(300); } catch (InterruptedException e) { return; }
+					if (triggerAll.exists()) {
+						// "/tmp/atl-stack-all": every thread's top frames (who waits for whom)
+						triggerAll.delete();
+						for (java.util.Map.Entry<Thread, StackTraceElement[]> e : Thread.getAllStackTraces().entrySet()) {
+							Thread th = e.getKey();
+							StackTraceElement[] st = e.getValue();
+							if (st.length == 0)
+								continue;
+							Log.i(TAG, "allstack: \"" + th.getName() + "\" state=" + th.getState() + " frames=" + st.length);
+							for (int i = 0; i < Math.min(st.length, 10); i++)
+								Log.i(TAG, "allstack:     at " + st[i]);
+						}
+					}
+					if (!trigger.exists())
+						continue;
+					trigger.delete();
+					Thread main = Looper.getMainLooper().getThread();
+					StackTraceElement[] st = main.getStackTrace();
+					Log.i(TAG, "mainstack: state=" + main.getState() + " frames=" + st.length);
+					for (int i = 0; i < Math.min(st.length, 48); i++)
+						Log.i(TAG, "mainstack:   at " + st[i]);
+				}
+			}
+		};
+		t.setDaemon(true);
+		t.start();
 	}
 }

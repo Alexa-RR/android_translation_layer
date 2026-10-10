@@ -29,17 +29,23 @@ JNIEXPORT void JNICALL Java_android_view_ViewTreeObserver_native_1set_1have_1glo
 
 	gulong signal_handle = _GET_LONG_FIELD(this, "onGlobalLayout_signal_handle");
 	GdkFrameClock *clock = gtk_widget_get_frame_clock(window);
+	if (!clock) {
+		/* tl_vto_idempotent: not realized, nothing to connect; the handle is stale if any */
+		_SET_LONG_FIELD(this, "onGlobalLayout_signal_handle", 0);
+		return;
+	}
 
 	if (have_listeners && !signal_handle) {
 		/* this adds our callback before the existing handler, which means we effectively execute before the paint phase (after layout) */
 		signal_handle = g_signal_connect(G_OBJECT(clock), "paint", G_CALLBACK(on_global_layout_callback), _REF(this)); // FIXME: cleanup callback for _UNREF
 		_SET_LONG_FIELD(this, "onGlobalLayout_signal_handle", signal_handle);
 	} else if (!have_listeners && signal_handle) {
-		g_signal_handler_disconnect(G_OBJECT(clock), signal_handle);
+		if (g_signal_handler_is_connected(G_OBJECT(clock), signal_handle))
+			g_signal_handler_disconnect(G_OBJECT(clock), signal_handle);
 		_SET_LONG_FIELD(this, "onGlobalLayout_signal_handle", 0);
-	} else {
-		fprintf(stderr, "Java_android_view_ViewTreeObserver_native_1set_1have_1global_1layout_1listeners: invalid state: have_listeners: %d, signal_handle: 0x%016w64x\n", have_listeners, signal_handle);
-		exit(1);
+	} else if (getenv("ATL_DEBUG_LAYOUT")) {
+		/* tl_vto_idempotent: AOSP's listener list makes this a no-op (a second removal, an add while listening) */
+		fprintf(stderr, "Java_android_view_ViewTreeObserver_native_1set_1have_1global_1layout_1listeners: redundant: have_listeners: %d, signal_handle: 0x%016w64x\n", have_listeners, signal_handle);
 	}
 }
 

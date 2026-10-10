@@ -361,6 +361,7 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 static GHashTable *draw_surface_hashtable = NULL;
 static GHashTable *read_surface_hashtable = NULL;
 
+static GLuint tl_surface_back_buffer(ATLSurface *atl_surface); /* tl_makecurrent_nowait */
 EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context)
 {
 	if (getenv("ATL_DIRECT_EGL"))
@@ -414,10 +415,9 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 		}
 		glBindTexture(GL_TEXTURE_2D, previousTexture);
 	}
-	if (!atl_surface->back_buffer) {
-		atl_surface->back_buffer = g_async_queue_pop(atl_surface->unused_buffers);
-	}
-	glBindFramebuffer(GL_FRAMEBUFFER, atl_surface->back_buffer->gl_framebuffer);
+	/* tl_makecurrent_nowait: a bounded wait for a buffer, then the front buffer; never a wait on the
+	 * app's own main thread (AOSP's buffer queue is consumed by SurfaceFlinger regardless) */
+	glBindFramebuffer(GL_FRAMEBUFFER, tl_surface_back_buffer(atl_surface));
 	return ret;
 }
 
@@ -466,6 +466,11 @@ static gboolean queue_texture(gpointer data)
 	atl_surface->surface_view_widget->frame_callback_data = atl_surface->vsync;
 	atl_surface->surface_view_widget->frame_callback = frame_callback;
 	surface_view_widget_set_texture(atl_surface->surface_view_widget, gdk_gl_texture_builder_build(buffer->texture_builder, destroy_texture, buffer), TRUE);
+	if (!gtk_widget_get_mapped(GTK_WIDGET(atl_surface->surface_view_widget)) && atl_surface->surface_view_widget->frame_callback) {
+		/* tl_makecurrent_nowait: nobody snapshots a hidden widget; consume the frame like SurfaceFlinger does */
+		atl_surface->surface_view_widget->frame_callback(atl_surface->surface_view_widget);
+		atl_surface->surface_view_widget->frame_callback = NULL;
+	}
 	// atl_surface reference will be dropped in destroy_texture
 	return G_SOURCE_REMOVE;
 }

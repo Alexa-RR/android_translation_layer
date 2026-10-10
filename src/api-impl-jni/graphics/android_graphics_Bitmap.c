@@ -1,3 +1,4 @@
+#include <string.h>
 #include <gtk/gtk.h>
 
 #include "../defines.h"
@@ -107,12 +108,25 @@ JNIEXPORT jlong JNICALL Java_android_graphics_Bitmap_native_1ref_1texture(JNIEnv
 JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1get_1pixels(JNIEnv *env, jclass class, jlong texture_ptr, jintArray pixels, jint offset, jint stride, jint x, jint y, jint width, jint height)
 {
 	GdkTexture *texture = GDK_TEXTURE(_PTR(texture_ptr));
-	if (x != 0 || y != 0 || width != gdk_texture_get_width(texture) || height != gdk_texture_get_height(texture)) {
-		printf("Bitmap.readPixels: partial read not supported\n");
-		exit(1);
-	}
+	int tex_width = gdk_texture_get_width(texture);
+	int tex_height = gdk_texture_get_height(texture);
 	jint *array = (*env)->GetIntArrayElements(env, pixels, NULL);
-	gdk_texture_download(texture, (guchar *)(array + offset), stride * 4);
+	if (x == 0 && y == 0 && width == tex_width && height == tex_height) {
+		gdk_texture_download(texture, (guchar *)(array + offset), stride * 4);
+	} else {
+		/* tl_getpixels_rect: AOSP copies the rectangle into the array at offset with the given stride */
+		if (x < 0 || y < 0 || width < 0 || height < 0 || x + width > tex_width || y + height > tex_height) {
+			(*env)->ReleaseIntArrayElements(env, pixels, array, 0);
+			jclass iae = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
+			(*env)->ThrowNew(env, iae, "x + width and y + height must be <= bitmap dimensions");
+			return;
+		}
+		guchar *whole = g_malloc((gsize)tex_width * tex_height * 4);
+		gdk_texture_download(texture, whole, tex_width * 4);
+		for (int row = 0; row < height; row++)
+			memcpy(array + offset + (gsize)row * stride, whole + ((gsize)(y + row) * tex_width + x) * 4, (gsize)width * 4);
+		g_free(whole);
+	}
 	(*env)->ReleaseIntArrayElements(env, pixels, array, 0);
 }
 

@@ -233,6 +233,16 @@ static void on_unrealize(GtkWidget *self, struct jni_callback_data *d)
 		d->destroy_source = g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, G_SOURCE_FUNC(on_unrealize_delayed), d, NULL);
 }
 
+/* tl_surface_unroot: AOSP onDetachedFromWindow destroys the surface synchronously */
+static void on_unroot(GtkWidget *self, struct jni_callback_data *d)
+{
+	if (d->destroy_source) {
+		g_source_remove(d->destroy_source);
+		d->destroy_source = 0;
+		on_unrealize_delayed(d);
+	}
+}
+
 static void on_realize(GtkWidget *self, struct jni_callback_data *d)
 {
 	if (d->destroy_source) {
@@ -270,6 +280,8 @@ JNIEXPORT jlong JNICALL Java_android_view_SurfaceView_native_1constructor(JNIEnv
 	 * keeps stopped activities' views realized, so realize/unrealize no longer follow visibility) */
 	g_signal_connect(dummy, "map", G_CALLBACK(on_realize), callback_data);
 	g_signal_connect(dummy, "unmap", G_CALLBACK(on_unrealize), callback_data);
+	/* GTK4 has no "unroot" signal; a widget leaving a realized hierarchy is unrealized */
+	g_signal_connect(dummy, "unrealize", G_CALLBACK(on_unroot), callback_data); /* tl_surface_unroot */
 
 	return _INTPTR(graphics_offload);
 }
