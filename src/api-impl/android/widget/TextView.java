@@ -179,10 +179,16 @@ public class TextView extends View {
 	public void setLineSpacing(float add, float mult) {}
 	public final void setLinksClickable(boolean whether) {}
 
-	public void setInputType(int type) {}
+	/** AOSP: the content type of the text (EditorInfo input type); the input method reads it from the EditorInfo. */
+	public void setInputType(int type) {
+		tlInputType = type;
+	}
 	public void setFilters(InputFilter[] filters) {}
 	public void setCursorVisible(boolean visible) {}
-	public void setImeOptions(int imeOptions) {}
+	/** AOSP: the IME options (action key, flags) reported through the EditorInfo. */
+	public void setImeOptions(int imeOptions) {
+		tlImeOptions = imeOptions;
+	}
 
 	public final ColorStateList getTextColors() { return colors; }
 	public static ColorStateList getTextColors(Context context, TypedArray attrs) { return new ColorStateList(new int[][] {new int[0]}, new int[1]); }
@@ -283,7 +289,7 @@ public class TextView extends View {
 
 	public KeyListener getKeyListener() { return null; }
 
-	public int getInputType() { return 0; }
+	public int getInputType() { return tlInputType; }
 
 	public final void setTransformationMethod(TransformationMethod method) {}
 
@@ -470,7 +476,7 @@ public class TextView extends View {
 
 	public int getTotalPaddingBottom() { return 0; }
 
-	public int getImeOptions() { return 0; }
+	public int getImeOptions() { return tlImeOptions; }
 
 	public void setShadowLayer(float radius, float dx, float dy, int color) {}
 
@@ -655,4 +661,7 @@ public class TextView extends View {
 		tlUpdateCompoundPadding();
 		super.onMeasure(widthMeasureSpec, heightMeasureSpec);
 	}
+	/* AOSP EditorInfo state of this editor (set by setInputType/setImeOptions or the XML attributes) */
+	protected int tlInputType = android.text.InputType.TYPE_CLASS_TEXT;
+	protected int tlImeOptions = android.view.inputmethod.EditorInfo.IME_NULL;
 }

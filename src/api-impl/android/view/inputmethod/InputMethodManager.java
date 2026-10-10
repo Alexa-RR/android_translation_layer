@@ -447,4 +447,23 @@ public final class InputMethodManager {
 			ic.sendKeyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0));
 		}
 	}
+
+	/** The on-screen keyboard consumes BACK while it shows (AOSP: the IME window handles it); true when it did. */
+	private static boolean tlOskHandleBack() {
+		if (!nativeOskIsShown())
+			return false;
+		nativeOskHide();
+		sInputShown = false;
+		return true;
+	}
+
+	/** A window (dialog decor) left the screen: its editor's input session ends and the soft input hides (AOSP). */
+	public static void tlWindowRemoved(View decor) {
+		View v = sServedView;
+		while (v != null && v != decor)
+			v = v.getParent() instanceof View ? (View) v.getParent() : null;
+		if (v == decor && decor != null) {
+			endInput();
+		}
+	}
 }

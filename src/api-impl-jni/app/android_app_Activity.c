@@ -13,6 +13,15 @@
 static GList *activity_backlog = NULL;
 static jobject activity_current = NULL;
 
+/* tl_window_focus: Activity.tlWindowFocusChanged dispatches to the decor views, then onWindowFocusChanged */
+static jmethodID tl_window_focus_method(JNIEnv *env)
+{
+	static jmethodID method = NULL;
+	if (!method)
+		method = _METHOD(handle_cache.activity.class, "tlWindowFocusChanged", "(Z)V");
+	return method;
+}
+
 static void activity_close(JNIEnv *env, jobject activity)
 {
 	// in case some exception was left unhandled in native code, print it here so we don't confuse it with an exception thrown by onDestroy
@@ -39,7 +48,7 @@ static void activity_pause(JNIEnv *env, jobject activity)
 
 static void activity_window_focus(JNIEnv *env, jobject activity, jboolean focused)
 {
-	(*env)->CallVoidMethod(env, activity, handle_cache.activity.onWindowFocusChanged, focused);
+	(*env)->CallVoidMethod(env, activity, tl_window_focus_method(env), focused);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 }
@@ -94,7 +103,7 @@ static void activity_focus(JNIEnv *env, jobject activity)
 	if (_GET_BOOL_FIELD(activity, "finishing"))
 		return;
 
-	(*env)->CallVoidMethod(env, activity, handle_cache.activity.onWindowFocusChanged, true);
+	(*env)->CallVoidMethod(env, activity, tl_window_focus_method(env), true);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 }
@@ -140,7 +149,7 @@ void activity_window_ready(void)
 	JNIEnv *env = get_jni_env();
 
 	for (GList *l = activity_backlog; l != NULL; l = l->next) {
-		(*env)->CallVoidMethod(env, l->data, handle_cache.activity.onWindowFocusChanged, true);
+		(*env)->CallVoidMethod(env, l->data, tl_window_focus_method(env), true);
 		if ((*env)->ExceptionCheck(env))
 			(*env)->ExceptionDescribe(env);
 	}
@@ -404,6 +413,25 @@ gboolean current_activity_dispatch_key(guint keyval, GdkModifierType state, int 
 	jobject key_event = (*env)->NewObject(env, handle_cache.key_event.class, handle_cache.key_event.constructor,
 	                                      (jlong)0, (jlong)0, action, code, 0, map_meta_state(state));
 	_SET_INT_FIELD(key_event, "unicodeValue", gdk_keyval_to_unicode(keyval));
+	/* tl_edittext_ime: the on-screen keyboard consumes BACK while it shows (AOSP: the IME window) */
+	static gboolean tl_osk_back_down = FALSE;
+	if (code == TL_KEYCODE_BACK) {
+		if (action == TL_ACTION_DOWN) {
+			jclass imm = (*env)->FindClass(env, "android/view/inputmethod/InputMethodManager");
+			jmethodID handle = (*env)->GetStaticMethodID(env, imm, "tlOskHandleBack", "()Z");
+			tl_osk_back_down = (*env)->CallStaticBooleanMethod(env, imm, handle);
+			if ((*env)->ExceptionCheck(env))
+				(*env)->ExceptionDescribe(env);
+			if (tl_osk_back_down) {
+				(*env)->DeleteLocalRef(env, key_event);
+				return TRUE;
+			}
+		} else if (tl_osk_back_down) {
+			tl_osk_back_down = FALSE;
+			(*env)->DeleteLocalRef(env, key_event);
+			return TRUE;
+		}
+	}
 	/* tl_dialog_overlay: a showing dialog is the focused window and gets the key instead of the activity */
 	jboolean tl_dialog_dispatch_key(JNIEnv *env, jobject key_event);
 	if (tl_dialog_dispatch_key(env, key_event)) {

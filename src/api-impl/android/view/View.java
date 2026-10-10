@@ -1427,12 +1427,18 @@ public class View implements Drawable.Callback {
 		return requestFocus(direction, null);
 	}
 	public boolean requestFocus(int direction, Rect previouslyFocusedRect) {
-		if (atl_enabled && atl_focusable && visibility == VISIBLE) {
+		boolean ok = atl_enabled && atl_focusable && visibility == VISIBLE;
+		if (TL_DEBUG_FOCUS)
+			android.util.Log.i("View", "[focus] requestFocus " + getClass().getName() + " ok=" + ok + " enabled=" + atl_enabled + " focusable=" + atl_focusable
+			                   + " vis=" + visibility + " attached=" + isAttachedToWindow() + " windowFocus=" + hasWindowFocus() + " focused=" + isFocused(), TL_DEBUG_FOCUS_STACK ? new Throwable() : null);
+		if (ok) {
 			nativeRequestFocus(widget, direction);
 			return true;
 		}
 		return false;
 	}
+	private static final boolean TL_DEBUG_FOCUS = System.getenv("ATL_DEBUG_FOCUS") != null;
+	private static final boolean TL_DEBUG_FOCUS_STACK = "stack".equals(System.getenv("ATL_DEBUG_FOCUS"));
 	public final boolean requestFocusFromTouch() {
 		// TODO: if (isInTouchMode()) leave touch mode
 		return requestFocus(View.FOCUS_DOWN);
@@ -2152,7 +2158,13 @@ public class View implements Drawable.Callback {
 		mOnFocusChangeListener = l;
 	}
 
-	public boolean hasWindowFocus() { return true; }
+	/** AOSP: whether this view's window currently has focus (recorded on the window's root view). */
+	public boolean hasWindowFocus() {
+		View v = this;
+		while (v.getParent() instanceof View)
+			v = (View) v.getParent();
+		return v.tlWindowFocus;
+	}
 
 	public void setSaveEnabled(boolean enabled) {}
 
@@ -3837,5 +3849,13 @@ public class View implements Drawable.Callback {
 	 */
 	protected boolean onSetAlpha(int alpha) {
 		return false;
+	}
+	/* AOSP window focus: the root view of a window tree records it; every view can ask hasWindowFocus() */
+	private boolean tlWindowFocus;
+
+	/** AOSP: called by the window when it gains or loses focus; propagates to onWindowFocusChanged (and a ViewGroup's children). */
+	public void dispatchWindowFocusChanged(boolean hasFocus) {
+		tlWindowFocus = hasFocus;
+		onWindowFocusChanged(hasFocus);
 	}
 }

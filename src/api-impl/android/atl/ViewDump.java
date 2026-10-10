@@ -410,11 +410,16 @@ public final class ViewDump {
 				cv.getLocationOnScreen(loc);
 				Object ln = call(cv, "getRoot");
 				StringBuilder sb = new StringBuilder();
+				try {
+					Object wi = call(cv, "getWindowInfo");
+					sb.append("owner ").append(cv.getWidth()).append('x').append(cv.getHeight()).append(" composeWindowFocused=").append(call(wi, "isWindowFocused"))
+					  .append(" viewFocused=").append(cv.isFocused()).append(" hasWindowFocus=").append(cv.hasWindowFocus()).append(" attached=").append(cv.isAttachedToWindow())
+					  .append(" shown=").append(cv.isShown()).append(" | ");
+				} catch (Exception e) {
+					sb.append("owner? ").append(e).append(" | ");
+				}
 				walkTextFields(ln, 0, sb, cv.getWidth() + "x" + cv.getHeight() + "@" + loc[0] + "," + loc[1]);
-				if (sb.length() == 0)
-					Log.i(TAG, "textfields: none in compose root " + cv.getWidth() + "x" + cv.getHeight() + "@" + loc[0] + "," + loc[1]);
-				else
-					Log.i(TAG, sb.toString());
+				Log.i(TAG, "textfields: " + sb);
 			} catch (Exception e) {
 				Log.i(TAG, "textfields: " + e);
 			}

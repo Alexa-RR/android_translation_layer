@@ -184,7 +184,10 @@ public class Window {
 		return new WindowManagerImpl();
 	}
 
-	public void setSoftInputMode(int dummy) {}
+	/** AOSP: the window soft input mode (WindowManager.LayoutParams.SOFT_INPUT_*). */
+	public void setSoftInputMode(int dummy) {
+		tlSoftInputMode = dummy;
+	}
 
 	public int getNavigationBarColor() {
 		return tlNavigationBarColor;
@@ -277,4 +280,9 @@ public class Window {
 	public void setSustainedPerformanceMode(boolean enable) {}
 	/** teslalinux: removes the decor from the window (a destroyed activity's window is gone in AOSP). */
 	public native void tlRemoveRoot(long native_window, long widget);
+	private int tlSoftInputMode;
+
+	public int tlGetSoftInputMode() {
+		return tlSoftInputMode;
+	}
 }

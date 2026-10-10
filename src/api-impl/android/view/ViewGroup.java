@@ -976,4 +976,13 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		}
 		return isVisible;
 	}
+	/** AOSP: window focus reaches every child. */
+	@Override
+	public void dispatchWindowFocusChanged(boolean hasFocus) {
+		super.dispatchWindowFocusChanged(hasFocus);
+		final int count = getChildCount();
+		for (int i = 0; i < count; i++) {
+			getChildAt(i).dispatchWindowFocusChanged(hasFocus);
+		}
+	}
 }

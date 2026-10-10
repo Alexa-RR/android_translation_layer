@@ -132,6 +132,7 @@ public class Dialog implements Window.Callback, DialogInterface, android.view.Ke
 				mShowing = true;
 				mCanceled = false;
 				tlRegisterShowing(true);
+				tlDialogWindowFocus(true);
 				if (onShowListener != null)
 					onShowListener.onShow(Dialog.this);
 			}
@@ -161,6 +162,8 @@ public class Dialog implements Window.Callback, DialogInterface, android.view.Ke
 				nativeClose(nativePtr);
 				mShowing = false;
 				tlRegisterShowing(false);
+				tlDialogWindowFocus(false);
+				android.view.inputmethod.InputMethodManager.tlWindowRemoved(getWindow() != null ? getWindow().getDecorView() : null);
 				onStop();
 				if (onDismissListener != null)
 					onDismissListener.onDismiss(Dialog.this);
@@ -369,5 +372,16 @@ public class Dialog implements Window.Callback, DialogInterface, android.view.Ke
 			if (showing)
 				tlShowingDialogs.add(this);
 		}
+	}
+	/** AOSP: a showing dialog's window has the focus; the activity's window loses it and gets it back on dismiss. */
+	private void tlDialogWindowFocus(boolean showing) {
+		View decor = getWindow() != null ? getWindow().getDecorView() : null;
+		if (decor != null)
+			decor.dispatchWindowFocusChanged(showing);
+		Context c = getContext();
+		while (c instanceof android.content.ContextWrapper && !(c instanceof android.app.Activity))
+			c = ((android.content.ContextWrapper) c).getBaseContext();
+		if (c instanceof android.app.Activity)
+			((android.app.Activity) c).tlWindowFocusChanged(!showing);
 	}
 }

@@ -943,14 +943,35 @@ JNIEXPORT void JNICALL Java_android_view_View_native_1removeClasses(JNIEnv *env,
 	}
 }
 
+/* tl_focus_on_map: a focus requested before the widget is mapped is applied when it maps (AOSP
+ * keeps the focus request as view state and the window applies it) */
+static void tl_focus_on_map(GtkWidget *widget, gpointer data)
+{
+	if (g_object_get_data(G_OBJECT(widget), "tl-focus-pending")) {
+		g_object_set_data(G_OBJECT(widget), "tl-focus-pending", NULL);
+		gboolean ok = gtk_widget_grab_focus(widget);
+		if (getenv("ATL_DEBUG_FOCUS"))
+			fprintf(stderr, "[focus] deferred grab on map %s -> %d has_focus=%d\n", G_OBJECT_TYPE_NAME(widget), ok, gtk_widget_has_focus(widget));
+	}
+	g_signal_handlers_disconnect_by_func(widget, tl_focus_on_map, data);
+}
+
 JNIEXPORT void JNICALL Java_android_view_View_nativeRequestFocus(JNIEnv *env, jobject this, jlong widget_ptr, jint direction)
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
 	GtkWidget *wrapper = gtk_widget_get_parent(widget);
-	if (gtk_widget_get_focusable(widget))
-		gtk_widget_grab_focus(widget);
-	else
-		gtk_widget_grab_focus(wrapper);
+	GtkWidget *target = gtk_widget_get_focusable(widget) ? widget : wrapper;
+	if (gtk_widget_get_mapped(target)) {
+		gboolean ok = gtk_widget_grab_focus(target);
+		if (getenv("ATL_DEBUG_FOCUS"))
+			fprintf(stderr, "[focus] grab %s -> %d has_focus=%d\n", G_OBJECT_TYPE_NAME(target), ok, gtk_widget_has_focus(target));
+	} else {
+		if (getenv("ATL_DEBUG_FOCUS"))
+			fprintf(stderr, "[focus] grab deferred to map: %s\n", G_OBJECT_TYPE_NAME(target));
+		g_object_set_data(G_OBJECT(target), "tl-focus-pending", GINT_TO_POINTER(1));
+		g_signal_handlers_disconnect_by_func(target, tl_focus_on_map, NULL);
+		g_signal_connect(target, "map", G_CALLBACK(tl_focus_on_map), NULL);
+	}
 }
 
 JNIEXPORT jboolean JNICALL Java_android_view_View_nativeIsFocused(JNIEnv *env, jobject this, jlong widget_ptr)

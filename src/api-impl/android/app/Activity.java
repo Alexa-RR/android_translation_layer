@@ -833,4 +833,11 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	public boolean onKeyShortcut(int keyCode, KeyEvent event) {
 		return false;
 	}
+	/** teslalinux: ATL's window focus entry (AOSP ViewRootImpl): the decor views first, then this activity. */
+	public void tlWindowFocusChanged(boolean hasFocus) {
+		View decor = window != null ? window.getDecorView() : null;
+		if (decor != null)
+			decor.dispatchWindowFocusChanged(hasFocus);
+		onWindowFocusChanged(hasFocus);
+	}
 }
