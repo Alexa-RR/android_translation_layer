@@ -38,6 +38,16 @@ public final class ViewDump {
 					return;
 				if (TRIGGER.exists()) {
 					String command = readTrigger();
+					// "@Name command": only an activity whose class name contains Name answers (every activity polls)
+					if (command.startsWith("@")) {
+						int sp = command.indexOf(' ');
+						String want = sp > 0 ? command.substring(1, sp) : command.substring(1);
+						if (!activity.getClass().getName().contains(want)) {
+							handler.postDelayed(this, 200);
+							return;
+						}
+						command = sp > 0 ? command.substring(sp + 1) : "";
+					}
 					TRIGGER.delete();
 					View decor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
 					if (command.startsWith("config")) {
