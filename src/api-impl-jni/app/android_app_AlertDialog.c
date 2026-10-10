@@ -5,6 +5,8 @@
 #include "../util.h"
 #include "../generated_headers/android_app_AlertDialog.h"
 
+void tl_dialog_set_content(GtkWidget *layer, GtkWidget *content);
+
 struct _ListEntry {
 	GObject parent;
 	const char *text;
@@ -41,8 +43,19 @@ static void activate_cb(GtkListView *list, guint position, gpointer user_data)
 
 JNIEXPORT void JNICALL Java_android_app_AlertDialog_nativeConstruct(JNIEnv *env, jobject this, jlong ptr, jlong button_positive_ptr, jlong button_negative_ptr, jlong button_neutral_ptr)
 {
-	GtkWindow *dialog = GTK_WINDOW(_PTR(ptr));
+	GObject *dialog = G_OBJECT(_PTR(ptr)); /* tl_dialog_overlay: the dialog layer */
 	GtkBox *content_area = GTK_BOX(gtk_box_new(GTK_ORIENTATION_VERTICAL, 1));
+	/* AOSP: the dialog's title view, shown once Dialog.setTitle gives it text */
+	GtkWidget *title = gtk_label_new(NULL);
+	gtk_widget_add_css_class(title, "title-3");
+	gtk_widget_set_visible(title, FALSE);
+	gtk_box_append(content_area, title);
+	g_object_set_data(G_OBJECT(dialog), "title-label", title);
+	const char *pending_title = g_object_get_data(G_OBJECT(dialog), "title");
+	if (pending_title && pending_title[0]) {
+		gtk_label_set_text(GTK_LABEL(title), pending_title);
+		gtk_widget_set_visible(title, TRUE);
+	}
 
 	GtkLabel *label = GTK_LABEL(gtk_label_new(NULL));
 	gtk_label_set_wrap(label, TRUE);
@@ -63,12 +76,12 @@ JNIEXPORT void JNICALL Java_android_app_AlertDialog_nativeConstruct(JNIEnv *env,
 	gtk_box_append(content_area, gtk_widget_get_parent(GTK_WIDGET(_PTR(button_negative_ptr))));
 	gtk_box_append(content_area, gtk_widget_get_parent(GTK_WIDGET(_PTR(button_neutral_ptr))));
 
-	gtk_window_set_child(dialog, GTK_WIDGET(content_area));
+	tl_dialog_set_content(GTK_WIDGET(dialog), GTK_WIDGET(content_area));
 }
 
 JNIEXPORT void JNICALL Java_android_app_AlertDialog_nativeSetMessage(JNIEnv *env, jobject this, jlong ptr, jstring message)
 {
-	GtkWindow *dialog = GTK_WINDOW(_PTR(ptr));
+	GObject *dialog = G_OBJECT(_PTR(ptr)); /* tl_dialog_overlay: the dialog layer */
 	GtkLabel *label = g_object_get_data(G_OBJECT(dialog), "label");
 	const char *nativeMessage = (*env)->GetStringUTFChars(env, message, NULL);
 	gtk_label_set_text(label, nativeMessage);
@@ -77,7 +90,7 @@ JNIEXPORT void JNICALL Java_android_app_AlertDialog_nativeSetMessage(JNIEnv *env
 
 JNIEXPORT void JNICALL Java_android_app_AlertDialog_nativeSetItems(JNIEnv *env, jobject this, jlong ptr, jobjectArray items, jobject on_click)
 {
-	GtkWindow *dialog = GTK_WINDOW(_PTR(ptr));
+	GObject *dialog = G_OBJECT(_PTR(ptr)); /* tl_dialog_overlay: the dialog layer */
 	GtkListView *list = g_object_get_data(G_OBJECT(dialog), "list");
 
 	GListStore *store = g_list_store_new(list_entry_get_type());

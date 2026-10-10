@@ -17,7 +17,7 @@ import android.view.View;
 import android.view.Window;
 import android.view.WindowManager.LayoutParams;
 
-public class Dialog implements Window.Callback, DialogInterface {
+public class Dialog implements Window.Callback, DialogInterface, android.view.KeyEvent.Callback {
 	protected long nativePtr;
 
 	protected native long nativeInit();
@@ -74,7 +74,9 @@ public class Dialog implements Window.Callback, DialogInterface {
 		mCancelable = cancelable;
 	}
 
-	public void setOnCancelListener(OnCancelListener onCancelListener) {}
+	public void setOnCancelListener(OnCancelListener onCancelListener) {
+		tlOnCancelListener = onCancelListener;
+	}
 
 	public void setOnDismissListener(OnDismissListener onDismissListener) {
 		this.onDismissListener = onDismissListener;
@@ -128,6 +130,7 @@ public class Dialog implements Window.Callback, DialogInterface {
 
 				nativeShow(nativePtr);
 				mShowing = true;
+				mCanceled = false;
 				if (onShowListener != null)
 					onShowListener.onShow(Dialog.this);
 			}
@@ -167,7 +170,13 @@ public class Dialog implements Window.Callback, DialogInterface {
 		return window;
 	}
 
-	public void setCanceledOnTouchOutside(boolean cancel) {}
+	/** AOSP: a touch outside the dialog cancels it; enabling it makes the dialog cancelable. */
+	public void setCanceledOnTouchOutside(boolean cancel) {
+		if (cancel && !mCancelable) {
+			mCancelable = true;
+		}
+		mCanceledOnTouchOutside = cancel;
+	}
 
 	public class Builder {
 		public Builder(Context context) {
@@ -221,6 +230,11 @@ public class Dialog implements Window.Callback, DialogInterface {
 
 	@Override
 	public void cancel() {
+		if (!mCanceled && tlOnCancelListener != null) {
+			mCanceled = true;
+			tlOnCancelListener.onCancel(this);
+		}
+		mCanceled = true;
 		dismiss();
 	}
 
@@ -236,7 +250,9 @@ public class Dialog implements Window.Callback, DialogInterface {
 		return false;
 	}
 
-	public void setOnKeyListener(OnKeyListener onKeyListener) {}
+	public void setOnKeyListener(OnKeyListener onKeyListener) {
+		tlOnKeyListener = onKeyListener;
+	}
 
 	/* teslalinux: AOSP Dialog members (bodies from AOSP, minus the action bar which ATL does not have) */
 	private static final String DIALOG_SHOWING_TAG = "android:dialogShowing";
@@ -287,4 +303,53 @@ public class Dialog implements Window.Callback, DialogInterface {
 	/* AOSP dialog state */
 	private boolean mCreated;
 	private boolean mShowing;
+	/* AOSP: cancel, key and touch-outside handling */
+	private OnCancelListener tlOnCancelListener;
+	private OnKeyListener tlOnKeyListener;
+	private boolean mCanceledOnTouchOutside = true; /* the Material dialog themes set windowCloseOnTouchOutside */
+	private boolean mCanceled;
+	private final android.view.KeyEvent.DispatcherState tlKeyDispatchState = new android.view.KeyEvent.DispatcherState();
+
+	/** The dim behind the dialog was touched (native layer): AOSP Dialog.onTouchEvent with Window.shouldCloseOnTouch. */
+	private void tlTouchOutside() {
+		if (mCancelable && mShowing && mCanceledOnTouchOutside) {
+			cancel();
+		}
+	}
+
+	/** AOSP: the key listener, then the window's views (which GTK already gave the key), then this dialog's callbacks. */
+	public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+		if ((tlOnKeyListener != null) && (tlOnKeyListener.onKey(this, event.getKeyCode(), event))) {
+			return true;
+		}
+		return event.dispatch(this, tlKeyDispatchState, this);
+	}
+
+	public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+		if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+			event.startTracking();
+			return true;
+		}
+		return false;
+	}
+
+	public boolean onKeyLongPress(int keyCode, android.view.KeyEvent event) {
+		return false;
+	}
+
+	public boolean onKeyUp(int keyCode, android.view.KeyEvent event) {
+		if (keyCode == android.view.KeyEvent.KEYCODE_BACK && event.isTracking() && !event.isCanceled()) {
+			onBackPressed();
+			return true;
+		}
+		return false;
+	}
+
+	public boolean onKeyMultiple(int keyCode, int repeatCount, android.view.KeyEvent event) {
+		return false;
+	}
+
+	public boolean onKeyShortcut(int keyCode, android.view.KeyEvent event) {
+		return false;
+	}
 }

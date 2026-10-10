@@ -40,6 +40,7 @@
 #endif
 
 GtkWidget *window;
+GtkWidget *tl_main_overlay; /* tl_dialog_overlay: activity content below, dialog layers above */
 char *apk_path;
 
 // standard Gtk Application stuff, more or less
@@ -607,6 +608,8 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 		g_signal_connect(keytrace, "key-pressed", G_CALLBACK(tl_trace_window_key), NULL);
 		gtk_widget_add_controller(window, keytrace);
 	}
+	tl_main_overlay = gtk_overlay_new();
+	gtk_window_set_child(GTK_WINDOW(window), tl_main_overlay);
 
 	const char *disable_decoration_env = getenv("ATL_DISABLE_WINDOW_DECORATIONS");
 	gboolean decorated;
@@ -630,6 +633,10 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 	GtkCssProvider *cssProvider = gtk_css_provider_new();
 	gtk_css_provider_load_from_resource(cssProvider, "/com/gitlab/android-translation-layer/android-translation-layer/default-stylesheet.css");
 	gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(cssProvider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+	/* tl_dialog_overlay: the dim behind a dialog (AOSP dimAmount 0.6) */
+	GtkCssProvider *tl_css = gtk_css_provider_new();
+	gtk_css_provider_load_from_string(tl_css, "box.tl-dialog-dim { background-color: rgba(0, 0, 0, 0.6); background-image: none; }");
+	gtk_style_context_add_provider_for_display(gdk_display_get_default(), GTK_STYLE_PROVIDER(tl_css), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
 
 	prepare_main_looper(env);
 

@@ -855,6 +855,14 @@ JNIEXPORT void JNICALL Java_android_view_View_native_1drawContent(JNIEnv *env, j
 JNIEXPORT void JNICALL Java_android_view_View_nativeSetFullscreen(JNIEnv *env, jobject this, jlong widget_ptr, jboolean fullscreen)
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
+	/* tl_dialog_overlay: a dialog's decor lives in a layer of the main window; its system UI flags
+	 * apply to the dialog window in AOSP and must not change the activity window */
+	for (GtkWidget *p = widget; p; p = gtk_widget_get_parent(p)) {
+		if (gtk_widget_has_css_class(p, "tl-dialog-dim"))
+			return;
+	}
+	if (!gtk_widget_get_native(widget) || !GTK_IS_WINDOW(gtk_widget_get_native(widget)))
+		return;
 	GtkWindow *window = GTK_WINDOW(gtk_widget_get_native(widget));
 	if (fullscreen) {
 		if (gtk_window_is_maximized(window)) {

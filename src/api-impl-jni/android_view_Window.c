@@ -5,20 +5,32 @@
 
 #include "generated_headers/android_view_Window.h"
 
+/* tl_dialog_overlay: the main window's child is a GtkOverlay (activity content below, dialog layers above);
+ * a dialog's root is its layer, whose content is the decor */
+void tl_dialog_set_content(GtkWidget *layer, GtkWidget *content);
+
 JNIEXPORT void JNICALL Java_android_view_Window_set_1widget_1as_1root(JNIEnv *env, jobject this, jlong window, jlong widget)
 {
-	GtkWindow *gtk_window = GTK_WINDOW(_PTR(window));
+	GtkWidget *root = GTK_WIDGET(_PTR(window));
 	GtkWidget *gtk_widget = gtk_widget_get_parent(GTK_WIDGET(_PTR(widget)));
-	if (gtk_widget != gtk_window_get_child(gtk_window)) {
-		gtk_window_set_child(gtk_window, gtk_widget);
+	if (GTK_IS_WINDOW(root)) {
+		GtkWidget *child = gtk_window_get_child(GTK_WINDOW(root));
+		if (GTK_IS_OVERLAY(child)) {
+			if (gtk_overlay_get_child(GTK_OVERLAY(child)) != gtk_widget)
+				gtk_overlay_set_child(GTK_OVERLAY(child), gtk_widget);
+		} else if (gtk_widget != child) {
+			gtk_window_set_child(GTK_WINDOW(root), gtk_widget);
+		}
+	} else {
+		tl_dialog_set_content(root, gtk_widget);
 	}
 }
 
 JNIEXPORT void JNICALL Java_android_view_Window_set_1title(JNIEnv *env, jobject this, jlong window, jstring title_jstr)
 {
-	GtkWindow *gtk_window = GTK_WINDOW(_PTR(window));
 	const char *title = (*env)->GetStringUTFChars(env, title_jstr, NULL);
-	gtk_window_set_title(gtk_window, title);
+	if (GTK_IS_WINDOW(_PTR(window))) /* a dialog layer has no window title; Dialog.setTitle draws it in the decor */
+		gtk_window_set_title(GTK_WINDOW(_PTR(window)), title);
 	(*env)->ReleaseStringUTFChars(env, title_jstr, title);
 }
 
@@ -49,9 +61,15 @@ JNIEXPORT void JNICALL Java_android_view_Window_take_1input_1queue(JNIEnv *env, 
 
 JNIEXPORT void JNICALL Java_android_view_Window_set_1layout(JNIEnv *env, jobject this, jlong window, jint width, jint height)
 {
-	GtkWindow *gtk_window = GTK_WINDOW(_PTR(window));
-	if (width > 0 && height > 0)
-		gtk_window_set_default_size(gtk_window, width, height);
+	GtkWidget *root = GTK_WIDGET(_PTR(window));
+	if (GTK_IS_WINDOW(root)) {
+		if (width > 0 && height > 0)
+			gtk_window_set_default_size(GTK_WINDOW(root), width, height);
+	} else { /* a dialog layer: Window.setLayout sizes the decor (MATCH_PARENT/WRAP_CONTENT keep the decor's own measure) */
+		GtkWidget *content = gtk_widget_get_first_child(root);
+		if (content)
+			gtk_widget_set_size_request(content, width > 0 ? width : -1, height > 0 ? height : -1);
+	}
 }
 
 JNIEXPORT void JNICALL Java_android_view_Window_set_1jobject(JNIEnv *env, jclass this, jlong window, jobject window_jobj)
@@ -61,6 +79,9 @@ JNIEXPORT void JNICALL Java_android_view_Window_set_1jobject(JNIEnv *env, jclass
 
 JNIEXPORT void JNICALL Java_android_view_Window_remove_1gtk_1background(JNIEnv *env, jobject this, jlong window)
 {
+	/* tl_dialog_overlay: a dialog layer's background is AOSP's dim behind the dialog, not a window background */
+	if (gtk_widget_has_css_class(GTK_WIDGET(_PTR(window)), "tl-dialog-dim"))
+		return;
 	gtk_widget_add_css_class(GTK_WIDGET(_PTR(window)), "ATL-no-background");
 }
 

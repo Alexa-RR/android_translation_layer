@@ -404,6 +404,12 @@ gboolean current_activity_dispatch_key(guint keyval, GdkModifierType state, int 
 	jobject key_event = (*env)->NewObject(env, handle_cache.key_event.class, handle_cache.key_event.constructor,
 	                                      (jlong)0, (jlong)0, action, code, 0, map_meta_state(state));
 	_SET_INT_FIELD(key_event, "unicodeValue", gdk_keyval_to_unicode(keyval));
+	/* tl_dialog_overlay: a showing dialog is the focused window and gets the key instead of the activity */
+	jboolean tl_dialog_dispatch_key(JNIEnv *env, jobject key_event);
+	if (tl_dialog_dispatch_key(env, key_event)) {
+		(*env)->DeleteLocalRef(env, key_event);
+		return TRUE;
+	}
 	jmethodID dispatch = _METHOD(_CLASS(activity_current), "dispatchKeyEvent", "(Landroid/view/KeyEvent;)Z");
 	gboolean ret = (*env)->CallBooleanMethod(env, activity_current, dispatch, key_event);
 	if ((*env)->ExceptionCheck(env))
