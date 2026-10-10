@@ -215,10 +215,26 @@ struct _ATLSurface {
 	gboolean destroyed;
 };
 G_DECLARE_FINAL_TYPE(ATLSurface, atl_surface, ATL, SURFACE, GObject);
+
+/* tl_surface_for_widget (tl_dialog_overlay): a SurfaceView inside a dialog layer that is not in the
+ * window yet has no native; its GL context belongs to the main toplevel's surface, where the layer
+ * will be composited */
+static GdkSurface *tl_surface_for_widget(GtkWidget *widget)
+{
+	GtkNative *native = gtk_widget_get_native(widget);
+	if (native)
+		return gtk_native_get_surface(native);
+	GList *tops = gtk_window_list_toplevels();
+	GdkSurface *surface = NULL;
+	for (GList *l = tops; l && !surface; l = l->next)
+		surface = gtk_native_get_surface(GTK_NATIVE(l->data));
+	g_list_free(tops);
+	return surface;
+}
 static void atl_surface_dispose(GObject *object)
 {
 	ATLSurface *atl_surface = ATL_SURFACE(object);
-	GdkGLContext *gtk_gl_context = gdk_surface_create_gl_context(gtk_native_get_surface(gtk_widget_get_native(GTK_WIDGET(atl_surface->surface_view_widget))), NULL);
+	GdkGLContext *gtk_gl_context = gdk_surface_create_gl_context(tl_surface_for_widget(GTK_WIDGET(atl_surface->surface_view_widget)), NULL);
 	gdk_gl_context_make_current(gtk_gl_context);
 	for (int i = 0; i < NUM_BUFFERS; i++) {
 		if (atl_surface->buffers[i].texture_builder) {
@@ -429,7 +445,7 @@ static gboolean queue_texture(gpointer data)
 	struct atl_surface_buffer *buffer = atl_surface->front_buffer;
 	if (!buffer->texture_builder) {
 		GLuint texture_id;
-		GdkGLContext *gtk_gl_context = gdk_surface_create_gl_context(gtk_native_get_surface(gtk_widget_get_native(GTK_WIDGET(atl_surface->surface_view_widget))), NULL);
+		GdkGLContext *gtk_gl_context = gdk_surface_create_gl_context(tl_surface_for_widget(GTK_WIDGET(atl_surface->surface_view_widget)), NULL);
 		gdk_gl_context_make_current(gtk_gl_context);
 		glGenTextures(1, &texture_id);
 		glBindTexture(GL_TEXTURE_2D, texture_id);

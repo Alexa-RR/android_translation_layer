@@ -64,7 +64,11 @@ public final class InputMethodManager {
 		startInputInner(view);
 	}
 
+	private static final boolean TL_DEBUG_IME = System.getenv("ATL_DEBUG_IME") != null;
+
 	private boolean startInputInner(View view) {
+		if (TL_DEBUG_IME)
+			android.util.Log.i("InputMethodManager", "[ime] startInput view=" + view.getClass().getName() + " focused=" + view.isFocused());
 		EditorInfo tba = new EditorInfo();
 		tba.packageName = view.getContext() != null ? view.getContext().getPackageName() : null;
 		tba.fieldId = view.getId();
@@ -89,6 +93,8 @@ public final class InputMethodManager {
 		sExtractedText = null;
 		sCursorAnchorInfo = null;
 		nativeStartInput(sImContext, 0, null, 0);
+		nativeOskHide();
+		sInputShown = false;
 	}
 
 	/** AOSP: whether the view is the one the input method currently serves. */
@@ -148,6 +154,12 @@ public final class InputMethodManager {
 		}
 		boolean wasShown = sInputShown;
 		sInputShown = nativeActivate(sImContext);
+		if (tlOskEnabled() && sServedEditorInfo != null) {
+			nativeOskShow(sServedEditorInfo.imeOptions, sServedEditorInfo.inputType);
+			sInputShown = true;
+		}
+		if (TL_DEBUG_IME)
+			android.util.Log.i("InputMethodManager", "[ime] showSoftInput view=" + view.getClass().getName() + " shown=" + sInputShown + " ic=" + (sServedConnection != null ? sServedConnection.getClass().getName() : "null"));
 		if (resultReceiver != null)
 			resultReceiver.send(wasShown ? RESULT_UNCHANGED_SHOWN : RESULT_SHOWN, null);
 		return sInputShown;
@@ -160,7 +172,10 @@ public final class InputMethodManager {
 	/** AOSP: hides the soft input; returns whether it was showing (HIDE_IMPLICIT_ONLY only hides an implicit request). */
 	public boolean hideSoftInputFromWindow(IBinder windowToken, int flags, ResultReceiver resultReceiver) {
 		boolean wasShown = sInputShown;
+		if (TL_DEBUG_IME)
+			android.util.Log.i("InputMethodManager", "[ime] hideSoftInput wasShown=" + wasShown);
 		nativeDeactivate(sImContext);
+		nativeOskHide();
 		sInputShown = false;
 		if (resultReceiver != null)
 			resultReceiver.send(wasShown ? RESULT_HIDDEN : RESULT_UNCHANGED_HIDDEN, null);
@@ -367,4 +382,65 @@ public final class InputMethodManager {
 	private static native void nativeSetCursorLocation(long imContext, int x, int y, int width, int height);
 	/** pushes the connection's surrounding text and selection to the IM context */
 	private static native void nativeUpdateSurrounding(long imContext);
+
+	/* ------------------------------------------------------------------ teslalinux: built-in on-screen keyboard */
+	/*
+	 * This platform's input method (native-osk.sh): a keyboard layer in the main window, the way the
+	 * system IME window sits above the activity in AOSP. ATL_OSK=none leaves soft input to the
+	 * Wayland compositor's own keyboard.
+	 */
+	private static native void nativeOskShow(int imeOptions, int inputType);
+	private static native void nativeOskHide();
+	private static native boolean nativeOskIsShown();
+
+	private static boolean tlOskEnabled() {
+		String v = System.getenv("ATL_OSK");
+		return v == null || !v.equals("none");
+	}
+
+	/** A key of the on-screen keyboard: committed like an IME's commitText (main thread). */
+	private static void tlOskText(String text) {
+		InputConnection ic = sServedConnection;
+		if (ic == null)
+			return;
+		ic.beginBatchEdit();
+		ic.commitText(text, 1);
+		ic.endBatchEdit();
+	}
+
+	/** Backspace: the character before the cursor, or the selection (AOSP LatinIME's deleteSurroundingText path). */
+	private static void tlOskBackspace() {
+		InputConnection ic = sServedConnection;
+		if (ic == null)
+			return;
+		ic.beginBatchEdit();
+		CharSequence selected = ic.getSelectedText(0);
+		if (selected != null && selected.length() > 0) {
+			ic.commitText("", 1);
+		} else {
+			CharSequence before = ic.getTextBeforeCursor(2, 0);
+			int n = 1;
+			if (before != null && before.length() == 2 && Character.isSurrogatePair(before.charAt(0), before.charAt(1)))
+				n = 2;
+			ic.deleteSurroundingText(n, 0);
+		}
+		ic.endBatchEdit();
+	}
+
+	/** The action key: the editor's IME action when it has one, otherwise an ENTER key (AOSP LatinIME). */
+	private static void tlOskAction() {
+		InputConnection ic = sServedConnection;
+		if (ic == null)
+			return;
+		int imeOptions = sServedEditorInfo != null ? sServedEditorInfo.imeOptions : 0;
+		int action = imeOptions & EditorInfo.IME_MASK_ACTION;
+		boolean noEnterAction = (imeOptions & EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0;
+		if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED && !noEnterAction) {
+			ic.performEditorAction(action);
+		} else {
+			long now = android.os.SystemClock.uptimeMillis();
+			ic.sendKeyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER, 0));
+			ic.sendKeyEvent(new android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0));
+		}
+	}
 }

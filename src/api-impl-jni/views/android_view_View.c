@@ -985,7 +985,14 @@ JNIEXPORT jboolean JNICALL Java_android_view_View_nativeIsAttachedToWindow(JNIEn
 JNIEXPORT jobject JNICALL Java_android_view_View_native_1get_1window(JNIEnv *env, jobject this, jlong widget_ptr)
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
-	return g_object_get_data(G_OBJECT(gtk_widget_get_root(widget)), "jobject");
+	/* tl_dialog_overlay_window: the nearest ancestor carrying a Window (a dialog's layer before the
+	 * main window, which carries the activity's) */
+	for (GtkWidget *w = widget; w; w = gtk_widget_get_parent(w)) {
+		jobject jobj = g_object_get_data(G_OBJECT(w), "jobject");
+		if (jobj)
+			return jobj;
+	}
+	return NULL;
 }
 
 extern GtkWindow *window;
