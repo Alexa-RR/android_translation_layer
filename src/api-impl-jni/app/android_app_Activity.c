@@ -385,3 +385,29 @@ void activity_configuration_changed(JNIEnv *env, jobject config)
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 }
+
+/* ---- teslalinux: window-level key dispatch (tl_window_keys) ---- */
+int map_key_code(int key_code);
+int map_meta_state(GdkModifierType state);
+#define TL_KEYCODE_BACK 4
+#define TL_ACTION_DOWN 0
+#define TL_ACTION_UP 1
+
+gboolean current_activity_dispatch_key(guint keyval, GdkModifierType state, int action)
+{
+	if (!activity_current)
+		return FALSE;
+	JNIEnv *env = get_jni_env();
+	int code = map_key_code(keyval);
+	if (keyval == GDK_KEY_Escape)
+		code = TL_KEYCODE_BACK;
+	jobject key_event = (*env)->NewObject(env, handle_cache.key_event.class, handle_cache.key_event.constructor,
+	                                      (jlong)0, (jlong)0, action, code, 0, map_meta_state(state));
+	_SET_INT_FIELD(key_event, "unicodeValue", gdk_keyval_to_unicode(keyval));
+	jmethodID dispatch = _METHOD(_CLASS(activity_current), "dispatchKeyEvent", "(Landroid/view/KeyEvent;)Z");
+	gboolean ret = (*env)->CallBooleanMethod(env, activity_current, dispatch, key_event);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+	(*env)->DeleteLocalRef(env, key_event);
+	return ret;
+}

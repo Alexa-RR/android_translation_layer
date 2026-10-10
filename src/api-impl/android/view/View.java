@@ -3831,4 +3831,11 @@ public class View implements Drawable.Callback {
 	public void setContextClickable(boolean contextClickable) {
 		tlContextClickable = contextClickable;
 	}
+	/**
+	 * AOSP: invoked when the alpha changes; a subclass that applies the alpha itself returns true
+	 * (ImageButton/ImageView apply it to their drawable), otherwise the view is drawn through an alpha layer.
+	 */
+	protected boolean onSetAlpha(int alpha) {
+		return false;
+	}
 }

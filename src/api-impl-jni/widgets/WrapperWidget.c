@@ -397,7 +397,7 @@ void wrapper_widget_queue_draw(WrapperWidget *wrapper)
 #define KEYCODE_F1            131 /* KEYCODE_F[2-12] = [132-142] */
 #define KEYCODE_NUMPAD_0      144 /* KEYCODE_NUMPAD_[1-9] = [145-153] */
 
-static int map_key_code(int key_code)
+int map_key_code(int key_code) /* tl_window_keys: shared with the window-level dispatch */
 {
 	if (key_code >= GDK_KEY_0 && key_code <= GDK_KEY_9)
 		return key_code - GDK_KEY_0 + KEYCODE_0;
@@ -477,7 +477,7 @@ static int map_key_code(int key_code)
 #define META_META_ON      (1 << 16)
 #define META_CAPS_LOCK_ON (1 << 20)
 
-static int map_meta_state(GdkModifierType state)
+int map_meta_state(GdkModifierType state)
 {
 	int meta_state = 0;
 	if (state & GDK_SHIFT_MASK)

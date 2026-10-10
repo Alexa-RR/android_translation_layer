@@ -38,7 +38,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class Activity extends ContextThemeWrapper implements Window.Callback, LayoutInflater.Factory2, android.content.ComponentCallbacks2 {
+public class Activity extends ContextThemeWrapper implements Window.Callback, KeyEvent.Callback, LayoutInflater.Factory2, android.content.ComponentCallbacks2 {
 	private final static String TAG = "Activity";
 
 	public static final int RESULT_CANCELED = 0;
@@ -588,7 +588,14 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 	public void reportFullyDrawn() {}
 	public void setVisible(boolean visible) {}
 	public Uri getReferrer() { return null; }
-	public void setDefaultKeyMode(int flag) {}
+	/**
+	 * AOSP: the dialer, shortcut and search modes feed unhandled keys to the options menu, the dialer
+	 * or SearchManager; this platform has no options menu panel, dialer or search service, so those
+	 * modes keep the value and otherwise behave like DEFAULT_KEYS_DISABLE.
+	 */
+	public void setDefaultKeyMode(int flag) {
+		mDefaultKeyMode = flag;
+	}
 	public void registerForContextMenu(View view) {}
 	public native boolean isInMultiWindowMode();
 
@@ -644,8 +651,14 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 		finish();
 	}
 
+	/**
+	 * AOSP: the event goes to the window's views first (ATL's focused widget sees it natively before
+	 * the window-level controller calls here), then to this activity's KeyEvent.Callback methods,
+	 * where BACK ends in onBackPressed().
+	 */
 	public boolean dispatchKeyEvent(KeyEvent event) {
-		return false;
+		onUserInteraction();
+		return event.dispatch(this, tlKeyDispatchState, this);
 	}
 
 	public void requestPermissions(String[] permissions, int requestCode) {
@@ -774,5 +787,47 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, La
 		if (app != null)
 			app.onConfigurationChanged(newConfig);
 		onConfigurationChanged(newConfig);
+	}
+	/* AOSP default key handling */
+	public static final int DEFAULT_KEYS_DISABLE = 0;
+	public static final int DEFAULT_KEYS_DIALER = 1;
+	public static final int DEFAULT_KEYS_SHORTCUT = 2;
+	public static final int DEFAULT_KEYS_SEARCH_LOCAL = 3;
+	public static final int DEFAULT_KEYS_SEARCH_GLOBAL = 4;
+	private int mDefaultKeyMode = DEFAULT_KEYS_DISABLE;
+	private final KeyEvent.DispatcherState tlKeyDispatchState = new KeyEvent.DispatcherState();
+
+	public boolean onKeyDown(int keyCode, KeyEvent event) {
+		if (keyCode == KeyEvent.KEYCODE_BACK) {
+			if (getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.ECLAIR) {
+				event.startTracking();
+			} else {
+				onBackPressed();
+			}
+			return true;
+		}
+		return false;
+	}
+
+	public boolean onKeyLongPress(int keyCode, KeyEvent event) {
+		return false;
+	}
+
+	public boolean onKeyUp(int keyCode, KeyEvent event) {
+		if (getApplicationInfo().targetSdkVersion >= android.os.Build.VERSION_CODES.ECLAIR) {
+			if (keyCode == KeyEvent.KEYCODE_BACK && event.isTracking() && !event.isCanceled()) {
+				onBackPressed();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	public boolean onKeyMultiple(int keyCode, int repeatCount, KeyEvent event) {
+		return false;
+	}
+
+	public boolean onKeyShortcut(int keyCode, KeyEvent event) {
+		return false;
 	}
 }

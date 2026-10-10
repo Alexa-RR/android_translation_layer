@@ -81,6 +81,17 @@ char *construct_classpath(char *prefix, char **cp_array, size_t len)
 /* ---- teslalinux: JavaVM invocation table wrapper (native-thread-debug.sh) ---- */
 #include <sys/syscall.h>
 #include <unistd.h>
+
+/* tl_window_keys: keys the focused view did not consume reach the current activity (AOSP Activity.dispatchKeyEvent) */
+gboolean current_activity_dispatch_key(guint keyval, GdkModifierType state, int action);
+static gboolean tl_window_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data)
+{
+	return current_activity_dispatch_key(keyval, state, 0);
+}
+static gboolean tl_window_key_released(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data)
+{
+	return current_activity_dispatch_key(keyval, state, 1);
+}
 static struct JNIInvokeInterface_ tl_vm_table;
 static const struct JNIInvokeInterface_ *tl_vm_orig;
 static JavaVM *tl_vm;
@@ -576,6 +587,13 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 	/* -- misc -- */
 
 	window = gtk_application_window_new(app);
+	{
+		GtkEventController *tl_keys = gtk_event_controller_key_new();
+		gtk_event_controller_set_propagation_phase(tl_keys, GTK_PHASE_BUBBLE);
+		g_signal_connect(tl_keys, "key-pressed", G_CALLBACK(tl_window_key_pressed), NULL);
+		g_signal_connect(tl_keys, "key-released", G_CALLBACK(tl_window_key_released), NULL);
+		gtk_widget_add_controller(window, tl_keys);
+	}
 	if (getenv("ATL_DEBUG_TOUCH")) {
 		GtkEventController *trace = GTK_EVENT_CONTROLLER(gtk_event_controller_legacy_new());
 		gtk_event_controller_set_propagation_phase(trace, GTK_PHASE_CAPTURE);
