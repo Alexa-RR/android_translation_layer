@@ -16,8 +16,14 @@ JNIEXPORT void JNICALL Java_android_view_Window_set_1widget_1as_1root(JNIEnv *en
 	if (GTK_IS_WINDOW(root)) {
 		GtkWidget *child = gtk_window_get_child(GTK_WINDOW(root));
 		if (GTK_IS_OVERLAY(child)) {
-			if (gtk_overlay_get_child(GTK_OVERLAY(child)) != gtk_widget)
+			GtkWidget *stack = gtk_overlay_get_child(GTK_OVERLAY(child));
+			if (GTK_IS_STACK(stack)) { /* tl_window_attach: the decor is a page; the current activity's page is shown */
+				if (gtk_widget_get_parent(gtk_widget) != stack)
+					gtk_stack_add_child(GTK_STACK(stack), gtk_widget);
+				gtk_stack_set_visible_child(GTK_STACK(stack), gtk_widget);
+			} else if (stack != gtk_widget) {
 				gtk_overlay_set_child(GTK_OVERLAY(child), gtk_widget);
+			}
 		} else if (gtk_widget != child) {
 			gtk_window_set_child(GTK_WINDOW(root), gtk_widget);
 		}
@@ -142,4 +148,13 @@ JNIEXPORT void JNICALL Java_android_view_Window_set_1screen_1brightness(JNIEnv *
 	                       NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, set_brightness_done, FLOAT_TO_POINTER(brightness));
 
 	g_object_unref(connection);
+}
+
+/* tl_window_attach: a destroyed activity's decor leaves the window (AOSP: its window is removed) */
+JNIEXPORT void JNICALL Java_android_view_Window_tlRemoveRoot(JNIEnv *env, jobject this, jlong window, jlong widget)
+{
+	GtkWidget *gtk_widget = gtk_widget_get_parent(GTK_WIDGET(_PTR(widget)));
+	GtkWidget *parent = gtk_widget ? gtk_widget_get_parent(gtk_widget) : NULL;
+	if (parent && GTK_IS_STACK(parent))
+		gtk_stack_remove(GTK_STACK(parent), gtk_widget);
 }

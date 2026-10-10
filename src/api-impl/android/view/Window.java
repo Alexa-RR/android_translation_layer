@@ -275,4 +275,6 @@ public class Window {
 	public boolean isWideColorGamut() { return false; }
 	public void setPreferMinimalPostProcessing(boolean isPreferred) {}
 	public void setSustainedPerformanceMode(boolean enable) {}
+	/** teslalinux: removes the decor from the window (a destroyed activity's window is gone in AOSP). */
+	public native void tlRemoveRoot(long native_window, long widget);
 }

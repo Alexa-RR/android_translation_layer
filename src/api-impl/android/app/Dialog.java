@@ -131,6 +131,7 @@ public class Dialog implements Window.Callback, DialogInterface, android.view.Ke
 				nativeShow(nativePtr);
 				mShowing = true;
 				mCanceled = false;
+				tlRegisterShowing(true);
 				if (onShowListener != null)
 					onShowListener.onShow(Dialog.this);
 			}
@@ -159,6 +160,7 @@ public class Dialog implements Window.Callback, DialogInterface, android.view.Ke
 					return; // AOSP: dismissing a dialog that is not showing does nothing
 				nativeClose(nativePtr);
 				mShowing = false;
+				tlRegisterShowing(false);
 				onStop();
 				if (onDismissListener != null)
 					onDismissListener.onDismiss(Dialog.this);
@@ -351,5 +353,21 @@ public class Dialog implements Window.Callback, DialogInterface, android.view.Ke
 
 	public boolean onKeyShortcut(int keyCode, android.view.KeyEvent event) {
 		return false;
+	}
+	/* teslalinux: the dialogs currently showing (view dump / probes walk their decors like the activity's) */
+	private static final java.util.List<Dialog> tlShowingDialogs = new java.util.ArrayList<>();
+
+	public static java.util.List<Dialog> tlShowingDialogs() {
+		synchronized (tlShowingDialogs) {
+			return new java.util.ArrayList<>(tlShowingDialogs);
+		}
+	}
+
+	private void tlRegisterShowing(boolean showing) {
+		synchronized (tlShowingDialogs) {
+			tlShowingDialogs.remove(this);
+			if (showing)
+				tlShowingDialogs.add(this);
+		}
 	}
 }

@@ -401,11 +401,15 @@ public final class InputMethodManager {
 	/** A key of the on-screen keyboard: committed like an IME's commitText (main thread). */
 	private static void tlOskText(String text) {
 		InputConnection ic = sServedConnection;
+		if (TL_DEBUG_IME)
+			android.util.Log.i("InputMethodManager", "[ime] osk text '" + text + "' ic=" + (ic != null ? ic.getClass().getName() : "null"));
 		if (ic == null)
 			return;
 		ic.beginBatchEdit();
 		ic.commitText(text, 1);
 		ic.endBatchEdit();
+		if (TL_DEBUG_IME)
+			android.util.Log.i("InputMethodManager", "[ime] text before cursor now '" + ic.getTextBeforeCursor(50, 0) + "'");
 	}
 
 	/** Backspace: the character before the cursor, or the selection (AOSP LatinIME's deleteSurroundingText path). */

@@ -283,6 +283,8 @@ static void tl_osk_key_clicked(GtkButton *button, gpointer data)
 {
 	const char *key = g_object_get_data(G_OBJECT(button), "osk-key");
 	JNIEnv *env = get_jni_env();
+	if (getenv("ATL_DEBUG_IME"))
+		fprintf(stderr, "[osk] key '%s' page=%d shift=%d\n", key, tl_osk_page, tl_osk_shift);
 	if (!strcmp(key, TL_OSK_BACKSPACE)) {
 		(*env)->CallStaticVoidMethod(env, tl_osk_imm_class, tl_osk_backspace);
 	} else if (!strcmp(key, TL_OSK_ENTER)) {
@@ -328,6 +330,8 @@ static GtkWidget *tl_osk_make_key(const char *key)
 	char *shown = NULL;
 	if (!strcmp(key, TL_OSK_SPACE))
 		label = " ";
+	else if (!strcmp(key, TL_OSK_GLOBE))
+		label = tl_osk_page == 2 ? "EN" : "×¢×"; /* the language the key switches to */
 	else if (!strcmp(key, TL_OSK_ENTER)) {
 		int action = tl_osk_ime_options & 0xff; /* EditorInfo.IME_MASK_ACTION */
 		if (action == 3) label = "Search";

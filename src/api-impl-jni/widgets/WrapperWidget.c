@@ -307,6 +307,32 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 	snapshot_in_progress--;
 }
 
+/* tl_window_attach: AOSP dispatchAttachedToWindow/dispatchDetachedFromWindow happen when the view
+ * enters or leaves a window's hierarchy; GTK's root/unroot are exactly that */
+static void map_cb(WrapperWidget *wrapper, jmethodID method);
+static void unmap_cb(WrapperWidget *wrapper, jmethodID method);
+static gboolean wrapper_has_jobject(WrapperWidget *wrapper)
+{
+	if (!wrapper->jobj)
+		return FALSE;
+	JNIEnv *env = get_jni_env();
+	return !(*env)->IsSameObject(env, wrapper->jobj, NULL);
+}
+static void wrapper_widget_root(GtkWidget *widget)
+{
+	GTK_WIDGET_CLASS(wrapper_widget_parent_class)->root(widget);
+	WrapperWidget *wrapper = WRAPPER_WIDGET(widget);
+	if (wrapper_has_jobject(wrapper))
+		map_cb(wrapper, handle_cache.view.onAttachedToWindow);
+}
+static void wrapper_widget_unroot(GtkWidget *widget)
+{
+	WrapperWidget *wrapper = WRAPPER_WIDGET(widget);
+	if (wrapper_has_jobject(wrapper))
+		unmap_cb(wrapper, handle_cache.view.onDetachedFromWindow);
+	GTK_WIDGET_CLASS(wrapper_widget_parent_class)->unroot(widget);
+}
+
 static void wrapper_widget_class_init(WrapperWidgetClass *class)
 {
 	GObjectClass *object_class = G_OBJECT_CLASS(class);
@@ -318,6 +344,8 @@ static void wrapper_widget_class_init(WrapperWidgetClass *class)
 	widget_class->measure = wrapper_widget_measure;
 	widget_class->size_allocate = wrapper_widget_allocate;
 	widget_class->snapshot = wrapper_widget_snapshot;
+	widget_class->root = wrapper_widget_root;     /* tl_window_attach */
+	widget_class->unroot = wrapper_widget_unroot;
 
 	object_class->set_property = wrapper_widget_set_property;
 	object_class->get_property = wrapper_widget_get_property;
@@ -612,8 +640,9 @@ void wrapper_widget_set_jobject(WrapperWidget *wrapper, JNIEnv *env, jobject job
 		gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
 		gtk_widget_set_focusable(GTK_WIDGET(wrapper), TRUE);
 	}
-	g_signal_connect(wrapper, "map", G_CALLBACK(map_cb), handle_cache.view.onAttachedToWindow);
-	g_signal_connect(wrapper, "unmap", G_CALLBACK(unmap_cb), handle_cache.view.onDetachedFromWindow);
+	/* tl_window_attach: attach/detach follow the root/unroot vfuncs (in a window), not map/unmap */
+	if (gtk_widget_get_root(GTK_WIDGET(wrapper)))
+		map_cb(wrapper, handle_cache.view.onAttachedToWindow);
 }
 
 void wrapper_widget_set_layout_params(WrapperWidget *wrapper, int width, int height)

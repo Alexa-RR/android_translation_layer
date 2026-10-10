@@ -40,7 +40,8 @@
 #endif
 
 GtkWidget *window;
-GtkWidget *tl_main_overlay; /* tl_dialog_overlay: activity content below, dialog layers above */
+GtkWidget *tl_main_overlay;
+GtkWidget *tl_activity_stack; /* tl_window_attach */ /* tl_dialog_overlay: activity content below, dialog layers above */
 char *apk_path;
 
 // standard Gtk Application stuff, more or less
@@ -610,6 +611,11 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 	}
 	tl_main_overlay = gtk_overlay_new();
 	gtk_window_set_child(GTK_WINDOW(window), tl_main_overlay);
+	/* tl_window_attach: activity decors are pages of a stack; stopped activities keep their (hidden) window */
+	tl_activity_stack = gtk_stack_new();
+	gtk_stack_set_hhomogeneous(GTK_STACK(tl_activity_stack), FALSE);
+	gtk_stack_set_vhomogeneous(GTK_STACK(tl_activity_stack), FALSE);
+	gtk_overlay_set_child(GTK_OVERLAY(tl_main_overlay), tl_activity_stack);
 
 	const char *disable_decoration_env = getenv("ATL_DISABLE_WINDOW_DECORATIONS");
 	gboolean decorated;

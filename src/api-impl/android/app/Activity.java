@@ -229,6 +229,9 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 
 		destroyed = true;
 		dispatchActivityDestroyed();
+		/* AOSP: the activity's window is removed with it (tl_window_attach: its decor page leaves the stack) */
+		if (window != null && window.native_window != 0 && window.getDecorView() != null)
+			window.tlRemoveRoot(window.native_window, window.getDecorView().widget);
 		return;
 	}
 

@@ -248,8 +248,10 @@ JNIEXPORT jlong JNICALL Java_android_view_SurfaceView_native_1constructor(JNIEnv
 	callback_data->this_class = _REF((*env)->FindClass(env, "android/view/SurfaceView"));
 
 	g_signal_connect(dummy, "resize", G_CALLBACK(on_resize), callback_data);
-	g_signal_connect(dummy, "realize", G_CALLBACK(on_realize), callback_data);
-	g_signal_connect(dummy, "unrealize", G_CALLBACK(on_unrealize), callback_data);
+	/* AOSP: the surface exists while the view is shown in a visible window: GTK map/unmap (tl_window_attach
+	 * keeps stopped activities' views realized, so realize/unrealize no longer follow visibility) */
+	g_signal_connect(dummy, "map", G_CALLBACK(on_realize), callback_data);
+	g_signal_connect(dummy, "unmap", G_CALLBACK(on_unrealize), callback_data);
 
 	return _INTPTR(graphics_offload);
 }

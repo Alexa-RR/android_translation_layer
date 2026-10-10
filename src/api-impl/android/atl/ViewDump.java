@@ -54,6 +54,21 @@ public final class ViewDump {
 						String[] parts = command.trim().split(" ");
 						float size = parts.length > 1 ? Float.parseFloat(parts[1]) : 44f;
 						textProbe(size);
+					} else if (command.startsWith("fragments")) {
+						// "fragments": the activity's support FragmentManager dump (states, child managers, back stack)
+						try {
+							Object fm = activity.getClass().getMethod("getSupportFragmentManager").invoke(activity);
+							java.io.StringWriter sw = new java.io.StringWriter();
+							fm.getClass().getMethod("dump", String.class, java.io.FileDescriptor.class, java.io.PrintWriter.class, String[].class)
+							  .invoke(fm, "", null, new java.io.PrintWriter(sw), null);
+							for (String l : sw.toString().split("\n"))
+								Log.i(TAG, "fragments: " + l);
+						} catch (Exception e) {
+							Log.i(TAG, "fragments: " + e);
+						}
+					} else if (command.startsWith("textfields")) {
+						// "textfields": every Compose text field core node (size, layout result, text) in every compose root
+						composeTextFields(decor);
 					} else if (command.startsWith("hit ")) {
 						// "hit X Y": what Compose's own hit test returns at a window position (per compose root)
 						String[] parts = command.trim().split(" ");
@@ -340,6 +355,112 @@ public final class ViewDump {
 	}
 
 	/** Runs LayoutNode.hitTest of every attached compose root at a window position and logs the hit nodes. */
+	/** A Compose text field core node: focus, layout result size, paragraph size, text and style. */
+	private static void appendTextFieldInfo(StringBuilder sb, Object node) {
+	/* the text field's layout: size, text and focus (a zero size means nothing can be drawn) */
+	try {
+		Object tls = null, focused = null, legacy = null;
+		for (Class<?> c = node.getClass(); c != null; c = c.getSuperclass()) {
+			for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+				f.setAccessible(true);
+				if (f.getName().equals("textLayoutState")) tls = f.get(node);
+				if (f.getName().equals("isFocused")) focused = f.get(node);
+				if (f.getName().equals("state") || f.getName().equals("legacyTextFieldState")) legacy = f.get(node);
+			}
+		}
+		if (legacy != null) {
+			tls = legacy;
+			try { focused = call(legacy, "getHasFocus"); } catch (Exception ignored) { }
+			try { sb.append(" legacyText='").append(call(call(legacy, "getTextDelegate"), "getText")).append("'"); } catch (Exception ignored) { }
+		}
+		sb.append(" focused=").append(focused);
+		Object lr = tls != null ? call(tls, "getLayoutResult") : null;
+		if (lr != null && lr.getClass().getSimpleName().contains("Proxy"))
+			lr = call(lr, "getValue");
+		if (lr != null) {
+			Object size = call(lr, "getSize-YbymL2g", "getSize");
+			long sz = size instanceof Long ? (Long) size : 0L;
+			sb.append(" layout=").append((int) (sz >> 32)).append('x').append((int) (sz & 0xffffffffL));
+			Object mp = call(lr, "getMultiParagraph");
+			if (mp != null)
+				sb.append(" para=").append(call(mp, "getWidth")).append('x').append(call(mp, "getHeight")).append(" lines=").append(call(mp, "getLineCount"));
+			Object li = call(lr, "getLayoutInput");
+			if (li != null)
+				sb.append(" text='").append(call(li, "getText")).append("' style=").append(String.valueOf(call(li, "getStyle")).replaceAll("[\\s]+", " "));
+		} else {
+			sb.append(" layout=null");
+		}
+	} catch (Exception e) {
+		sb.append(" field?").append(e.getClass().getSimpleName()).append(':').append(e.getMessage());
+	}
+	}
+
+	/** Walks every compose root's layout tree and logs each text field core node. */
+	private static void composeTextFields(View root) {
+		java.util.List<View> owners = new java.util.ArrayList<>();
+		collectComposeViews(root, owners);
+		for (android.app.Dialog dlg : android.app.Dialog.tlShowingDialogs()) {
+			View dd = dlg.getWindow() != null ? dlg.getWindow().getDecorView() : null;
+			if (dd != null)
+				collectComposeViews(dd, owners);
+		}
+		for (View cv : owners) {
+			try {
+				int[] loc = new int[2];
+				cv.getLocationOnScreen(loc);
+				Object ln = call(cv, "getRoot");
+				StringBuilder sb = new StringBuilder();
+				walkTextFields(ln, 0, sb, cv.getWidth() + "x" + cv.getHeight() + "@" + loc[0] + "," + loc[1]);
+				if (sb.length() == 0)
+					Log.i(TAG, "textfields: none in compose root " + cv.getWidth() + "x" + cv.getHeight() + "@" + loc[0] + "," + loc[1]);
+				else
+					Log.i(TAG, sb.toString());
+			} catch (Exception e) {
+				Log.i(TAG, "textfields: " + e);
+			}
+		}
+	}
+
+	private static void collectComposeViews(View v, java.util.List<View> out) {
+		if (v.getClass().getName().endsWith("AndroidComposeView"))
+			out.add(v);
+		if (v instanceof ViewGroup) {
+			ViewGroup g = (ViewGroup) v;
+			for (int i = 0; i < g.getChildCount(); i++)
+				collectComposeViews(g.getChildAt(i), out);
+		}
+	}
+
+	private static void walkTextFields(Object ln, int depth, StringBuilder sb, String owner) throws Exception {
+		if (ln == null || depth > 80)
+			return;
+		Object nodes = call(ln, "getNodes$androidx_compose_ui_ui", "getNodes$ui_release", "getNodes");
+		Object n = nodes != null ? call(nodes, "getHead$androidx_compose_ui_ui", "getHead$ui_release", "getHead") : null;
+		for (int i = 0; n != null && i < 64; i++) {
+			String cn = n.getClass().getSimpleName();
+			if (cn.contains("TextField") && !cn.contains("Semantics") || cn.startsWith("CoreTextFieldSemanticsModifierNode")) {
+				sb.append("textfield in ").append(owner).append(' ').append(cn).append(" node ").append(call(ln, "getWidth")).append('x').append(call(ln, "getHeight"))
+				  .append(" depth=").append(depth).append(" placed=").append(call(ln, "isPlaced", "isPlaced$androidx_compose_ui_ui"));
+				try {
+					Object coord = call(ln, "getCoordinates");
+					Class<?> lc = Class.forName("androidx.compose.ui.layout.LayoutCoordinates", true, ln.getClass().getClassLoader());
+					Object b = Class.forName("androidx.compose.ui.layout.LayoutCoordinatesKt", true, ln.getClass().getClassLoader()).getMethod("boundsInRoot", lc).invoke(null, coord);
+					sb.append(" bounds=").append(b);
+				} catch (Exception e) {
+					sb.append(" bounds?").append(e.getClass().getSimpleName());
+				}
+				appendTextFieldInfo(sb, n);
+				sb.append(" | ");
+			}
+			n = call(n, "getChild$androidx_compose_ui_ui", "getChild$ui_release", "getChild");
+		}
+		Object children = call(ln, "getChildren$androidx_compose_ui_ui", "getChildren$ui_release", "getChildren", "get_children$androidx_compose_ui_ui", "get_children$ui_release");
+		if (children instanceof java.util.List) {
+			for (Object c : (java.util.List<?>) children)
+				walkTextFields(c, depth + 1, sb, owner);
+		}
+	}
+
 	static void composeHitTest(View root, float x, float y) {
 		java.util.ArrayList<View> composeViews = new java.util.ArrayList<>();
 		collectByName(root, "AndroidComposeView", composeViews);
@@ -447,6 +568,8 @@ public final class ViewDump {
 					} catch (Exception e) {
 						sb.append("@?").append(e.getClass().getSimpleName());
 					}
+					if (node.getClass().getSimpleName().startsWith("TextFieldCoreModifierNode"))
+						appendTextFieldInfo(sb, node);
 					if (node.getClass().getSimpleName().equals("AnchoredDraggableNode")) {
 						try {
 							java.lang.reflect.Field sf = null;
