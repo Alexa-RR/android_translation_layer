@@ -318,4 +318,8 @@ public class Layout {
 			return area.contains(segmentBounds);
 		}
 	};
+	/** AOSP: the width of a run of text; the direction heuristic changes shaping only for bidi text, which Pango resolves itself. */
+	public static float getDesiredWidth(CharSequence source, int start, int end, TextPaint paint, TextDirectionHeuristic textDir) {
+		return getDesiredWidth(source, start, end, paint);
+	}
 }

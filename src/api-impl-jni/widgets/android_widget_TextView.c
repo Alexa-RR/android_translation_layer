@@ -121,6 +121,18 @@ JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCompoundDrawables
 	}
 }
 
+/* ---- teslalinux: compound padding (tl_textview_compound) ---- */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCompoundPadding(JNIEnv *env, jobject this, jlong widget_ptr, jint left, jint right)
+{
+	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
+	GtkWidget *child = GTK_IS_BOX(widget) ? gtk_widget_get_first_child(widget) : widget;
+	if (!child)
+		return;
+	gboolean rtl = gtk_widget_get_direction(child) == GTK_TEXT_DIR_RTL;
+	gtk_widget_set_margin_start(child, rtl ? right : left);
+	gtk_widget_set_margin_end(child, rtl ? left : right);
+}
+
 /* ---- teslalinux: text gravity (tl_textview_gravity) ---- */
 JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setGravity(JNIEnv *env, jobject this, jlong widget_ptr, jint gravity)
 {

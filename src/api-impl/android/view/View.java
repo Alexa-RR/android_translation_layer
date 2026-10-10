@@ -3556,4 +3556,76 @@ public class View implements Drawable.Callback {
 	public int tlLastHeightMeasureSpec() {
 		return oldHeightMeasureSpec;
 	}
+	/** AOSP: the drawable state of a checked view (CompoundButton, Checkable items). */
+	protected static final int[] CHECKED_STATE_SET = new int[] {com.android.internal.R.attr.state_checked};
+	/** AOSP: the autofill type of a view (TOGGLE for compound buttons, TEXT for editors); plain views have none. */
+	@android.annotation.IntDef(prefix = {"AUTOFILL_TYPE_"}, value = {AUTOFILL_TYPE_NONE, AUTOFILL_TYPE_TEXT, AUTOFILL_TYPE_TOGGLE, AUTOFILL_TYPE_LIST, AUTOFILL_TYPE_DATE})
+	@java.lang.annotation.Retention(java.lang.annotation.RetentionPolicy.SOURCE)
+	public @interface AutofillType {}
+
+	public @AutofillType int getAutofillType() {
+		return AUTOFILL_TYPE_NONE;
+	}
+
+	public android.view.autofill.AutofillValue getAutofillValue() {
+		return null;
+	}
+
+	/** AOSP: a view that is not autofillable ignores the value. */
+	public void autofill(android.view.autofill.AutofillValue value) {
+	}
+
+	/** AOSP: resolved layout direction is RTL. */
+	public boolean isLayoutRtl() {
+		return getLayoutDirection() == LAYOUT_DIRECTION_RTL;
+	}
+
+	/** AOSP: drawables get the resolved layout direction here; the base view has none to resolve. */
+	public void onResolveDrawables(int layoutDirection) {
+	}
+
+	/* AOSP accessibility population: the public methods delegate to the internal ones so a delegate can wrap them */
+	public void onInitializeAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
+		onInitializeAccessibilityEventInternal(event);
+	}
+
+	public void onInitializeAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent event) {
+		event.setSource(this);
+		event.setClassName(getAccessibilityClassName());
+		event.setPackageName(getContext().getPackageName());
+		event.setEnabled(isEnabled());
+		event.setContentDescription(getContentDescription());
+		event.setScrollX(getScrollX());
+		event.setScrollY(getScrollY());
+	}
+
+	public void onPopulateAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
+		onPopulateAccessibilityEventInternal(event);
+	}
+
+	public void onPopulateAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent event) {
+	}
+
+	public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+		onInitializeAccessibilityNodeInfoInternal(info);
+	}
+
+	public void onInitializeAccessibilityNodeInfoInternal(android.view.accessibility.AccessibilityNodeInfo info) {
+		android.graphics.Rect bounds = new android.graphics.Rect(0, 0, getWidth(), getHeight());
+		info.setBoundsInParent(bounds);
+		int[] location = new int[2];
+		getLocationOnScreen(location);
+		bounds.offset(location[0], location[1]);
+		info.setBoundsInScreen(bounds);
+		info.setVisibleToUser(isShown());
+		info.setPackageName(getContext().getPackageName());
+		info.setClassName(getAccessibilityClassName());
+		info.setContentDescription(getContentDescription());
+		info.setEnabled(isEnabled());
+		info.setClickable(isClickable());
+		info.setFocusable(isFocusable());
+		info.setFocused(isFocused());
+		info.setSelected(isSelected());
+		info.setLongClickable(isLongClickable());
+	}
 }

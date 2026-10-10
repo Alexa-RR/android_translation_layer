@@ -827,4 +827,18 @@ public class Paint {
 	public void setElegantTextHeight(boolean elegant) {
 		mElegantTextHeight = elegant;
 	}
+	/* AOSP (hidden): compatibility scaling for apps that run in screen-compatibility mode (factor 1 here) */
+	private boolean mHasCompatScaling;
+	private float mCompatScaling = 1f, mInvCompatScaling = 1f;
+
+	public void setCompatibilityScaling(float factor) {
+		if (factor == 1.0f) {
+			mHasCompatScaling = false;
+			mCompatScaling = mInvCompatScaling = 1.0f;
+		} else {
+			mHasCompatScaling = true;
+			mCompatScaling = factor;
+			mInvCompatScaling = 1.0f / factor;
+		}
+	}
 }

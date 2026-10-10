@@ -546,4 +546,34 @@ public class TextUtils {
 		builder.insert(0, start);
 		builder.append(end);
 	}
+	/**
+	 * AOSP (hidden): upper-cases a CharSequence for the locale, keeping its spans when asked. AOSP maps
+	 * span positions through ICU's case-mapping edits; here spans keep their offsets when the
+	 * conversion does not change the length (the only case in which they could be mapped exactly).
+	 */
+	public static CharSequence toUpperCase(java.util.Locale locale, CharSequence source, boolean copySpans) {
+		String upper = source.toString().toUpperCase(locale != null ? locale : java.util.Locale.getDefault());
+		if (!copySpans || !(source instanceof android.text.Spanned) || upper.length() != source.length())
+			return upper;
+		android.text.SpannableStringBuilder result = new android.text.SpannableStringBuilder(upper);
+		copySpansFrom((android.text.Spanned) source, 0, source.length(), Object.class, result, 0);
+		return result;
+	}
+	/** AOSP: copies the spans of a range of source into dest, clipped to the range and shifted by destoff. */
+	public static void copySpansFrom(android.text.Spanned source, int start, int end, Class kind, android.text.Spannable dest, int destoff) {
+		if (kind == null) {
+			kind = Object.class;
+		}
+		Object[] spans = source.getSpans(start, end, kind);
+		for (int i = 0; i < spans.length; i++) {
+			int st = source.getSpanStart(spans[i]);
+			int en = source.getSpanEnd(spans[i]);
+			int fl = source.getSpanFlags(spans[i]);
+			if (st < start)
+				st = start;
+			if (en > end)
+				en = end;
+			dest.setSpan(spans[i], st - start + destoff, en - start + destoff, fl);
+		}
+	}
 }

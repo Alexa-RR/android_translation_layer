@@ -627,4 +627,26 @@ public class TextView extends View {
 	}
 
 	private native void native_setGravity(long widget, int gravity);
+	/* teslalinux: compound padding (a CompoundButton's button, a Switch's track) keeps the GTK label clear of the drawable */
+	private int tlCompoundLeft, tlCompoundRight;
+
+	private native void native_setCompoundPadding(long widget, int left, int right);
+
+	protected void tlUpdateCompoundPadding() {
+		int l = getCompoundPaddingLeft();
+		int r = getCompoundPaddingRight();
+		if (l != tlCompoundLeft || r != tlCompoundRight) {
+			tlCompoundLeft = l;
+			tlCompoundRight = r;
+			native_setCompoundPadding(widget, l, r);
+		}
+	}
+	/** AOSP: the locale of the text paint. */
+	public java.util.Locale getTextLocale() {
+		return getPaint().getTextLocale();
+	}
+	/** AOSP (hidden): the horizontal space a subclass draws its own drawable in (CompoundButton's button). */
+	public int getHorizontalOffsetForDrawables() {
+		return 0;
+	}
 }

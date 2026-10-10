@@ -661,4 +661,6 @@ public abstract class Context {
 	}
 	/** AOSP: the name of the connectivity service (getSystemService). */
 	public static final String CONNECTIVITY_SERVICE = "connectivity";
+	/** AOSP: the autofill service name; this platform has no autofill service, so getSystemService returns null for it. */
+	public static final String AUTOFILL_MANAGER_SERVICE = "autofill";
 }
