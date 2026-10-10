@@ -372,6 +372,15 @@ public final class ViewDump {
 			tls = legacy;
 			try { focused = call(legacy, "getHasFocus"); } catch (Exception ignored) { }
 			try { sb.append(" legacyText='").append(call(call(legacy, "getTextDelegate"), "getText")).append("'"); } catch (Exception ignored) { }
+			for (java.lang.reflect.Field f : legacy.getClass().getDeclaredFields()) {
+				try {
+					if (f.getName().equals("isLayoutResultStale") || f.getName().equals("onValueChange") || f.getName().equals("inputSession")) {
+						f.setAccessible(true);
+						Object v = f.get(legacy);
+						sb.append(' ').append(f.getName()).append('=').append(v == null ? "null" : (v instanceof Boolean ? v : v.getClass().getName()));
+					}
+				} catch (Exception ignored) { }
+			}
 		}
 		sb.append(" focused=").append(focused);
 		Object lr = tls != null ? call(tls, "getLayoutResult") : null;

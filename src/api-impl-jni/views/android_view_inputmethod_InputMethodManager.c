@@ -331,7 +331,7 @@ static GtkWidget *tl_osk_make_key(const char *key)
 	if (!strcmp(key, TL_OSK_SPACE))
 		label = " ";
 	else if (!strcmp(key, TL_OSK_GLOBE))
-		label = tl_osk_page == 2 ? "EN" : "×¢×"; /* the language the key switches to */
+		label = tl_osk_page == 2 ? "EN" : "\xd7\xa2\xd7\x91"; /* the language the key switches to */
 	else if (!strcmp(key, TL_OSK_ENTER)) {
 		int action = tl_osk_ime_options & 0xff; /* EditorInfo.IME_MASK_ACTION */
 		if (action == 3) label = "Search";
