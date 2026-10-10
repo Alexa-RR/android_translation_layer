@@ -349,8 +349,9 @@ static GtkWidget *tl_osk_make_key(const char *key)
 		gtk_widget_set_size_request(b, 480, -1);
 	else if (!strcmp(key, TL_OSK_SHIFT) || !strcmp(key, TL_OSK_BACKSPACE) || !strcmp(key, TL_OSK_ENTER) || !strcmp(key, "?123") || !strcmp(key, "ABC"))
 		gtk_widget_set_size_request(b, 150, -1);
-	if (strcmp(key, TL_OSK_SPACE) && strcmp(key, "?123") && strcmp(key, "ABC") && !(tl_osk_page == 0 && tl_osk_shift)
-	    && !strcmp(key, TL_OSK_SHIFT) == 0 && strcmp(key, TL_OSK_BACKSPACE) && strcmp(key, TL_OSK_ENTER) && strcmp(key, TL_OSK_GLOBE))
+	gboolean special = !strcmp(key, TL_OSK_SPACE) || !strcmp(key, "?123") || !strcmp(key, "ABC") || !strcmp(key, TL_OSK_SHIFT)
+	                   || !strcmp(key, TL_OSK_BACKSPACE) || !strcmp(key, TL_OSK_ENTER) || !strcmp(key, TL_OSK_GLOBE);
+	if (!special)
 		gtk_widget_add_css_class(b, "tl-osk-letter");
 	g_object_set_data_full(G_OBJECT(b), "osk-key", g_strdup(key), g_free);
 	g_signal_connect(b, "clicked", G_CALLBACK(tl_osk_key_clicked), NULL);
