@@ -298,4 +298,8 @@ public final class Bitmap {
 			b.eraseColor(0xff000000);
 		return b;
 	}
+	/**
+	 * AOSP: indicates that the bitmap was created for an unknown pixel density; no density scaling is applied.
+	 */
+	public static final int DENSITY_NONE = 0;
 }

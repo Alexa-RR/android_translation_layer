@@ -16,6 +16,7 @@ struct _WrapperWidget {
 	jmethodID draw_method;
 	jmethodID measure_method;
 	jmethodID computeScroll_method;
+	gboolean tl_layout; /* tl_leaf_layout: class overrides onLayout/onSizeChanged */
 	int layout_width;
 	int layout_height;
 	int real_width;

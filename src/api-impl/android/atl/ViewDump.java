@@ -257,6 +257,31 @@ public final class ViewDump {
 		}
 		if (v instanceof android.widget.TextView)
 			sb.append(" tg=0x").append(Integer.toHexString(((android.widget.TextView) v).getGravity()));
+		for (Class<?> c = v.getClass(); c != null; c = c.getSuperclass()) {
+			if (c.getSimpleName().equals("SwitchCompat") || c.getSimpleName().equals("Switch")) {
+				// obfuscated builds rename the fields: list every drawable, int and boolean field of the class
+				for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+					try {
+						if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+							continue;
+						Class<?> t = f.getType();
+						if (t != int.class && t != boolean.class && t != float.class && !android.graphics.drawable.Drawable.class.isAssignableFrom(t))
+							continue;
+						f.setAccessible(true);
+						Object val = f.get(v);
+						if (val instanceof android.graphics.drawable.Drawable) {
+							android.graphics.drawable.Drawable d = (android.graphics.drawable.Drawable) val;
+							val = d.getClass().getSimpleName() + "(" + d.getIntrinsicWidth() + "x" + d.getIntrinsicHeight() + " b=" + d.getBounds().toShortString() + ")";
+						} else if (val == null) {
+							continue;
+						}
+						sb.append(' ').append(f.getName()).append('=').append(val);
+					} catch (Exception e) {
+					}
+				}
+				break;
+			}
+		}
 		if (v.getClass().getName().endsWith("AndroidComposeView")) {
 			android.content.res.Resources r = v.getContext().getResources();
 			sb.append(" res=").append(Integer.toHexString(System.identityHashCode(r))).append("/ui=0x").append(Integer.toHexString(r.getConfiguration().uiMode))

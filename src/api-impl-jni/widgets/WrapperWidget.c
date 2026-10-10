@@ -179,6 +179,14 @@ void wrapper_widget_allocate(GtkWidget *widget, int width, int height, int basel
 			gtk_widget_size_allocate(wrapper->child, &(GtkAllocation){.x = allocation.x, .y = allocation.y}, baseline);
 	} else {
 		gtk_widget_size_allocate(wrapper->child, &allocation, baseline);
+		/* tl_leaf_layout: AOSP delivers onSizeChanged/onLayout to every view */
+		extern int snapshot_in_progress;
+		if (wrapper->tl_layout && !snapshot_in_progress && wrapper->jobj) {
+			JNIEnv *env = get_jni_env();
+			(*env)->CallVoidMethod(env, wrapper->jobj, handle_cache.view.layoutInternal, width, height);
+			if ((*env)->ExceptionCheck(env))
+				(*env)->ExceptionDescribe(env);
+		}
 	}
 	if (wrapper->background)
 		gtk_widget_size_allocate(wrapper->background, &allocation, baseline);
@@ -585,6 +593,11 @@ void wrapper_widget_set_jobject(WrapperWidget *wrapper, JNIEnv *env, jobject job
 		_setOnTouchListener(env, jobj, GTK_WIDGET(wrapper));
 	}
 
+	/* tl_leaf_layout */
+	jmethodID on_layout_method = _METHOD(_CLASS(jobj), "onLayout", "(ZIIII)V");
+	jmethodID on_size_changed_method = _METHOD(_CLASS(jobj), "onSizeChanged", "(IIII)V");
+	wrapper->tl_layout = on_layout_method != handle_cache.view.onLayout
+	                     || on_size_changed_method != _METHOD(handle_cache.view.class, "onSizeChanged", "(IIII)V");
 	jmethodID computeScroll_method = _METHOD(_CLASS(jobj), "computeScroll", "()V");
 	if (computeScroll_method != handle_cache.view.computeScroll) {
 		wrapper->computeScroll_method = computeScroll_method;

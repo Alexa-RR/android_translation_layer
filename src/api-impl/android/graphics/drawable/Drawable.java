@@ -407,26 +407,29 @@ public class Drawable {
 				return null;
 			return new BitmapDrawable(resources, bm);
 		}
-		Path path = Paths.get(android.os.Environment.getExternalStorageDirectory().getPath(), file);
-		if (!Files.exists(path)) {
-			try (InputStream inputStream = resources.getAssets().openNonAsset(file)) {
-				if (inputStream != null) {
-					Files.createDirectories(path.getParent());
-					Files.copy(inputStream, path);
-				}
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
+		/* AOSP decodes the PNG with its npTc chunk and builds the NinePatchDrawable with the resource's
+		 * density and the chunk's padding; GDK decodes the asset stream directly (no copy to storage). */
+		int density = Bitmap.DENSITY_NONE;
+		if (value != null) {
+			if (value.density == TypedValue.DENSITY_DEFAULT)
+				density = android.util.DisplayMetrics.DENSITY_DEFAULT;
+			else if (value.density != TypedValue.DENSITY_NONE)
+				density = value.density;
 		}
-		return new NinePatchDrawable(path.toString());
+		android.graphics.NinePatch patch = android.graphics.NinePatch.tlDecode(is, density, file);
+		if (patch == null)
+			return null;
+		return new NinePatchDrawable(resources, patch);
 	}
 
 	public static Drawable createFromPath(String path) {
 		if (path == null)
 			return null;
 
-		if (path.endsWith(".9.png"))
-			return new NinePatchDrawable(path);
+		if (path.endsWith(".9.png")) {
+			android.graphics.NinePatch patch = android.graphics.NinePatch.tlDecodeFile(path);
+			return patch != null ? new NinePatchDrawable(null, patch) : null;
+		}
 		long paintable = native_paintable_from_path(path);
 		return new Drawable(paintable);
 	}
@@ -593,4 +596,32 @@ public class Drawable {
 
 	/* AOSP: visibility state (setVisible/isVisible); drawables start visible */
 	private boolean mVisible = true;
+	/**
+	 * AOSP: scales a pixel value between densities; a size never rounds to 0.
+	 * @hide
+	 */
+	public static int scaleFromDensity(int pixels, int sourceDensity, int targetDensity, boolean isSize) {
+		if (pixels == 0 || sourceDensity == targetDensity) {
+			return pixels;
+		}
+
+		final float result = pixels * targetDensity / (float) sourceDensity;
+		if (!isSize) {
+			return (int) result;
+		}
+
+		final int rounded = Math.round(result);
+		if (rounded != 0) {
+			return rounded;
+		} else if (pixels > 0) {
+			return 1;
+		} else {
+			return -1;
+		}
+	}
+
+	/** @hide */
+	public static float scaleFromDensity(float pixels, int sourceDensity, int targetDensity) {
+		return pixels * targetDensity / sourceDensity;
+	}
 }

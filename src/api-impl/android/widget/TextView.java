@@ -649,4 +649,10 @@ public class TextView extends View {
 	public int getHorizontalOffsetForDrawables() {
 		return 0;
 	}
+	/** AOSP TextView.onMeasure counts the compound padding; the GTK label carries it as margins, so apply it before the native measure. */
+	@Override
+	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+		tlUpdateCompoundPadding();
+		super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+	}
 }

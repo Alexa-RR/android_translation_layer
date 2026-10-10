@@ -18,6 +18,7 @@ srcs = [
 	'android/content/LocusId.java',
 	'android/content/res/FontResourcesParser.java',
 	'android/graphics/LeakyTypefaceStorage.java',
+	'android/graphics/NinePatch.java',
 	'android/graphics/RecordingCanvas.java',
 	'android/graphics/RegionIterator.java',
 	'android/graphics/RenderEffect.java',
