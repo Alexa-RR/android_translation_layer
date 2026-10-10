@@ -42,3 +42,60 @@ JNIEXPORT void JNICALL Java_android_view_ViewTreeObserver_native_1set_1have_1glo
 		exit(1);
 	}
 }
+
+/* ---- teslalinux: Choreographer vsync from the GdkFrameClock (tl_vsync) ---- */
+static jobject tl_vsync_choreographer = NULL; /* global ref of the main looper's Choreographer */
+static jmethodID tl_vsync_method = NULL;
+static gboolean tl_vsync_pending = FALSE;
+static GdkFrameClock *tl_vsync_clock = NULL;
+static gulong tl_vsync_handler = 0;
+
+static void tl_on_frame_update(GdkFrameClock *clock, gpointer data)
+{
+	if (!tl_vsync_pending || !tl_vsync_choreographer)
+		return;
+	tl_vsync_pending = FALSE;
+	JNIEnv *env = get_jni_env();
+	jlong frame_time_ns = (jlong)gdk_frame_clock_get_frame_time(clock) * 1000;
+	if (getenv("ATL_DEBUG_VSYNC")) {
+		static int n = 0;
+		static gint64 t0 = 0;
+		if (n == 0)
+			t0 = g_get_monotonic_time();
+		if (++n % 120 == 0) {
+			gint64 t = g_get_monotonic_time();
+			fprintf(stderr, "[vsync] %d frames, %.1f Hz over the last 120\n", n, 120.0 * 1000000.0 / (double)(t - t0));
+			t0 = t;
+		}
+	}
+	(*env)->CallVoidMethod(env, tl_vsync_choreographer, tl_vsync_method, frame_time_ns);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
+JNIEXPORT jboolean JNICALL Java_android_view_Choreographer_nativeScheduleVsync(JNIEnv *env, jobject this)
+{
+	static int calls = 0;
+	GdkFrameClock *clock = window ? gtk_widget_get_frame_clock(window) : NULL;
+	if (getenv("ATL_DEBUG_VSYNC") && ++calls <= 3)
+		fprintf(stderr, "[vsync] scheduleVsync #%d window=%p clock=%p\n", calls, (void *)window, (void *)clock);
+	if (!clock)
+		return JNI_FALSE;
+	if (tl_vsync_clock != clock) {
+		if (tl_vsync_clock) {
+			g_signal_handler_disconnect(tl_vsync_clock, tl_vsync_handler);
+			g_object_unref(tl_vsync_clock);
+		}
+		tl_vsync_clock = g_object_ref(clock);
+		tl_vsync_handler = g_signal_connect(clock, "update", G_CALLBACK(tl_on_frame_update), NULL);
+	}
+	if (!tl_vsync_choreographer || !(*env)->IsSameObject(env, tl_vsync_choreographer, this)) {
+		if (tl_vsync_choreographer)
+			(*env)->DeleteGlobalRef(env, tl_vsync_choreographer);
+		tl_vsync_choreographer = (*env)->NewGlobalRef(env, this);
+		tl_vsync_method = _METHOD(_CLASS(this), "tlOnVsync", "(J)V");
+	}
+	tl_vsync_pending = TRUE;
+	gdk_frame_clock_request_phase(clock, GDK_FRAME_CLOCK_PHASE_UPDATE);
+	return JNI_TRUE;
+}

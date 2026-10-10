@@ -232,7 +232,8 @@ JNIEnv *create_vm(char *api_impl_jar, char *apk_classpath, char *framework_res_a
 	// ATLLoadedApp relies on the first element in atl.app.class.path being the main apk
 	options[2].optionString = construct_classpath("-Datl.app.class.path=", (char *[]){apk_classpath}, 1);
 	options[3].optionString = construct_classpath("-Datl.app.library.path=", (char *[]){api_impl_natives_dir, app_lib_dir}, 2);
-	options[4].optionString = "-Xcheck:jni";
+	/* tl_checkjni_opt: checked JNI is a debugging aid; the JIT option in its place is ART's default */
+	options[4].optionString = getenv("ATL_CHECK_JNI") ? "-Xcheck:jni" : "-Xusejit:true";
 	if (jdwp_port) {
 		strncat(jdwp_option_string, jdwp_port, 5); // 5 chars is enough for a port number, and won't overflow our array
 		options[option_counter++].optionString = "-XjdwpProvider:internal";

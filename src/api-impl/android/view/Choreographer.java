@@ -90,7 +90,8 @@ public final class Choreographer {
 		    }
 	    };
 	// Enable/disable vsync for animations and drawing.
-	private static final boolean USE_VSYNC = false;
+	/* teslalinux: the vsync comes from the toplevel's GdkFrameClock (native-choreographer-vsync.sh) */
+	private static final boolean USE_VSYNC = true;
 	// Enable/disable using the frame time instead of returning now.
 	private static final boolean USE_FRAME_TIME = false;
 	// Set a limit to warn about skipped frames.
@@ -403,6 +404,21 @@ public final class Choreographer {
 	private void scheduleFrameLocked(long now) {
 		if (!mFrameScheduled) {
 			mFrameScheduled = true;
+			if (USE_VSYNC && mLooper == Looper.getMainLooper()) {
+				// If running on the Looper thread, then schedule the vsync immediately,
+				// otherwise post a message to schedule the vsync from the UI thread
+				// as soon as possible.
+				if (isRunningOnLooperThreadLocked()) {
+					if (scheduleVsyncLocked())
+						return;
+					/* no frame clock yet (window not realized): the timer below paces this frame */
+				} else {
+					Message msg = mHandler.obtainMessage(MSG_DO_SCHEDULE_VSYNC);
+					msg.setAsynchronous(true);
+					mHandler.sendMessageAtFrontOfQueue(msg);
+					return;
+				}
+			}
 			final long nextFrameTime = Math.max(
 			    mLastFrameTimeNanos / NANOS_PER_MS + sFrameDelay, now);
 			if (DEBUG) {
@@ -559,8 +575,7 @@ public final class Choreographer {
 					doFrame(System.nanoTime(), 0);
 					break;
 				case MSG_DO_SCHEDULE_VSYNC:
-					Log.d(TAG, "VSYNC not supported!");
-					//doScheduleVsync();
+					doScheduleVsync();
 					break;
 				case MSG_DO_SCHEDULE_CALLBACK:
 					doScheduleCallback(msg.arg1);
@@ -672,4 +687,49 @@ public final class Choreographer {
 		if (fc != null) removeFrameCallback(fc);
 	}
 	public long getVsyncId() { return 0; }
+	/* teslalinux: AOSP's FrameDisplayEventReceiver over the toplevel's GTK frame clock */
+	private long mTimestampNanos;
+	private final Runnable mVsyncFrame = new Runnable() {
+		@Override
+		public void run() {
+			doFrame(mTimestampNanos, 0);
+		}
+	};
+
+	/** Requests one vsync from the frame clock; false when the toplevel has no frame clock yet. */
+	private boolean scheduleVsyncLocked() {
+		boolean ok = nativeScheduleVsync();
+		if (TL_DEBUG_VSYNC && tlVsyncLogged < 3) {
+			tlVsyncLogged++;
+			Log.i(TAG, "[vsync] scheduleVsyncLocked native=" + ok + " mainLooper=" + (mLooper == Looper.getMainLooper()));
+		}
+		return ok;
+	}
+	private static final boolean TL_DEBUG_VSYNC = System.getenv("ATL_DEBUG_VSYNC") != null;
+	private int tlVsyncLogged;
+
+	void doScheduleVsync() {
+		synchronized (mLock) {
+			if (mFrameScheduled && !scheduleVsyncLocked()) {
+				final long now = SystemClock.uptimeMillis();
+				Message msg = mHandler.obtainMessage(MSG_DO_FRAME);
+				msg.setAsynchronous(true);
+				mHandler.sendMessageAtTime(msg, Math.max(mLastFrameTimeNanos / NANOS_PER_MS + sFrameDelay, now));
+			}
+		}
+	}
+
+	/** The frame clock's update phase (main thread): AOSP FrameDisplayEventReceiver.onVsync. */
+	private void tlOnVsync(long timestampNanos) {
+		long now = System.nanoTime();
+		if (timestampNanos > now) {
+			timestampNanos = now;
+		}
+		mTimestampNanos = timestampNanos;
+		Message msg = Message.obtain(mHandler, mVsyncFrame);
+		msg.setAsynchronous(true);
+		mHandler.sendMessageAtTime(msg, timestampNanos / NANOS_PER_MS);
+	}
+
+	private native boolean nativeScheduleVsync();
 }
