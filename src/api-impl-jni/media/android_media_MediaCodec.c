@@ -49,9 +49,8 @@ JNIEXPORT jlong JNICALL Java_android_media_MediaCodec_native_1constructor(JNIEnv
 	const char *name = (*env)->GetStringUTFChars(env, codec_name, NULL);
 	const AVCodec *codec = avcodec_find_decoder_by_name(name);
 	if (!codec) {
-		/* tl_mediacodec: MediaCodec.createByCodecName turns this into an IOException */
-		(*env)->ReleaseStringUTFChars(env, codec_name, name);
-		return 0;
+		printf("Codec %s not found\n", name);
+		exit(0);
 	}
 	(*env)->ReleaseStringUTFChars(env, codec_name, name);
 	if (!codec)
@@ -80,7 +79,7 @@ JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1configure_1audio(JN
 	else if (nb_channels == 2)
 		codec_ctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
 	else {
-		av_channel_layout_default(&codec_ctx->ch_layout, nb_channels); /* AOSP: any channel count */
+		printf("MediaCodec: Unsupported number of channels %d\n", nb_channels);
 		exit(0);
 	}
 
@@ -193,8 +192,12 @@ static GdkTexture *import_drm_frame_desc_as_texture(const AVDRMFrameDescriptor *
 	GError *error = NULL;
 	GdkTexture *texture = gdk_dmabuf_texture_builder_build(builder, handle_dmabuftexture_destroy, drm_frame, &error);
 	if (error) {
-		fprintf(stderr, "Failed to build texture: %s\n", error->message);
-		exit(1);
+		/* tl_mediacodec_drop: AOSP drops a frame it cannot present; the app keeps running */
+		fprintf(stderr, "MediaCodec: cannot build the texture of a %dx%d frame (%s): frame dropped\n", width, height, error->message);
+		g_error_free(error);
+		g_object_unref(builder);
+		av_frame_free(&drm_frame);
+		return NULL;
 	}
 	g_object_unref(builder);
 	return texture;
@@ -396,8 +399,12 @@ static gboolean render_frame(void *data)
 		// Convert the VA-API frame into a DMA-BUF frame
 		ret = av_hwframe_map(drm_frame, frame, 0);
 		if (ret < 0) {
-			fprintf(stderr, "Failed to map frame: %s\n", av_err2str(ret));
-			exit(1);
+			/* tl_mediacodec_drop: the frame is skipped, the previous one stays on screen */
+			fprintf(stderr, "MediaCodec: cannot map a %dx%d frame (%s): frame dropped\n", frame->width, frame->height, av_err2str(ret));
+			av_frame_free(&drm_frame);
+			av_frame_free(&frame);
+			free(d);
+			return G_SOURCE_REMOVE;
 		}
 		av_frame_free(&frame);
 	} else {
@@ -407,7 +414,8 @@ static gboolean render_frame(void *data)
 	AVDRMFrameDescriptor *drm_frame_desc = (void *)drm_frame->data[0];
 
 	GdkTexture *texture = import_drm_frame_desc_as_texture(drm_frame_desc, drm_frame->width, drm_frame->height, drm_frame);
-	surface_view_widget_set_texture(d->surface_view_widget, texture, FALSE);
+	if (texture) /* tl_mediacodec_drop */
+		surface_view_widget_set_texture(d->surface_view_widget, texture, FALSE);
 	free(d);
 
 	return G_SOURCE_REMOVE;
@@ -494,32 +502,4 @@ JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1release(JNIEnv *env
 
 	avcodec_free_context(&ctx->codec);
 	free(ctx);
-}
-
-/* ---- teslalinux additions (tl_mediacodec) ---- */
-JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1flush(JNIEnv *env, jobject this, jlong codec)
-{
-	struct ATL_codec_context *ctx = _PTR(codec);
-	if (ctx && ctx->codec && avcodec_is_open(ctx->codec))
-		avcodec_flush_buffers(ctx->codec);
-}
-
-JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1setOutputSurface(JNIEnv *env, jobject this, jlong codec, jobject surface_obj)
-{
-	struct ATL_codec_context *ctx = _PTR(codec);
-	if (!ctx || !ctx->codec || ctx->codec->codec_type != AVMEDIA_TYPE_VIDEO)
-		return;
-	if (!surface_obj) {
-		ctx->video.surface_view_widget = NULL;
-		return;
-	}
-	ctx->video.surface_view_widget = SURFACE_VIEW_WIDGET(gtk_widget_get_first_child(_PTR(_GET_LONG_FIELD(surface_obj, "widget"))));
-}
-
-JNIEXPORT jboolean JNICALL Java_android_media_MediaCodecList_nativeHasDecoder(JNIEnv *env, jclass this, jstring codec_name)
-{
-	const char *name = (*env)->GetStringUTFChars(env, codec_name, NULL);
-	const AVCodec *codec = avcodec_find_decoder_by_name(name);
-	(*env)->ReleaseStringUTFChars(env, codec_name, name);
-	return codec != NULL;
 }
