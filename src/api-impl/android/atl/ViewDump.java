@@ -338,13 +338,107 @@ public final class ViewDump {
 					continue;
 				}
 				long packed = (((long) Float.floatToRawIntBits(lx)) << 32) | (Float.floatToRawIntBits(ly) & 0xffffffffL);
-				hit.invoke(layoutNode, packed, result, true, true);
+				Object[] args = new Object[4];
+				args[0] = packed;
+				args[1] = result;
+				for (int i = 2; i < 4; i++) // Compose 1.7: (isTouchEvent, isInLayer); 1.8: (pointerType=Touch, isInLayer)
+					args[i] = hit.getParameterTypes()[i] == int.class ? (Object) 1 : (Object) Boolean.TRUE;
+				hit.invoke(layoutNode, args);
 				StringBuilder sb = new StringBuilder("hit " + x + "," + y + " in " + cv.getWidth() + "x" + cv.getHeight() + " @" + loc[0] + "," + loc[1] + ": ");
 				int n = 0;
 				for (Object node : (java.util.List<?>) result) {
 					if (n++ > 24)
 						break;
-					sb.append(node.getClass().getSimpleName()).append(' ');
+					String nn = node.getClass().getSimpleName().length() <= 2 ? node.getClass().getName() : node.getClass().getSimpleName();
+					sb.append(nn);
+					try {
+						java.lang.reflect.Field ef = node.getClass().getDeclaredField("element");
+						ef.setAccessible(true);
+						Object el = ef.get(node);
+						if (el != null) {
+							sb.append('(').append(el.getClass().getSimpleName());
+							// an interop filter wraps a lambda that captured the AndroidViewHolder: show that view
+							try {
+								for (java.lang.reflect.Field lf : el.getClass().getDeclaredFields()) {
+									lf.setAccessible(true);
+									Object lv = lf.get(el);
+									if (lv == null) continue;
+									for (java.lang.reflect.Field cf : lv.getClass().getDeclaredFields()) {
+										cf.setAccessible(true);
+										Object cv2 = cf.get(lv);
+										if (cv2 instanceof View) {
+											View hv = (View) cv2;
+											sb.append(" view=").append(hv.getClass().getSimpleName()).append(' ').append(hv.getWidth()).append('x').append(hv.getHeight())
+											  .append(" md=").append(hv.getMeasuredWidth()).append('x').append(hv.getMeasuredHeight()).append(" vis=").append(hv.getVisibility());
+											if (hv instanceof android.view.ViewGroup && ((android.view.ViewGroup) hv).getChildCount() > 0) {
+												View c0 = ((android.view.ViewGroup) hv).getChildAt(0);
+												sb.append(" child=").append(c0.getClass().getSimpleName()).append(" vis=").append(c0.getVisibility()).append(' ').append(c0.getWidth()).append('x').append(c0.getHeight());
+											}
+										}
+									}
+								}
+							} catch (Exception e) {
+							}
+							sb.append(')');
+						}
+					} catch (Exception e) {
+					}
+					try {
+						java.lang.reflect.Field cf = null;
+						for (Class<?> c = node.getClass(); c != null && cf == null; c = c.getSuperclass()) {
+							try {
+								cf = c.getDeclaredField("coordinator");
+							} catch (NoSuchFieldException ignored) {
+							}
+						}
+						cf.setAccessible(true);
+						Object coord = cf.get(node);
+						Class<?> lc = Class.forName("androidx.compose.ui.layout.LayoutCoordinates", true, cv.getClass().getClassLoader());
+						Object rect = Class.forName("androidx.compose.ui.layout.LayoutCoordinatesKt", true, cv.getClass().getClassLoader())
+								.getMethod("boundsInRoot", lc).invoke(null, coord);
+						sb.append('@').append(rect);
+						try {
+							java.lang.reflect.Field lf = null;
+							for (Class<?> c = coord.getClass(); c != null && lf == null; c = c.getSuperclass()) {
+								try {
+									lf = c.getDeclaredField("layoutNode");
+								} catch (NoSuchFieldException ignored) {
+								}
+							}
+							lf.setAccessible(true);
+							Object ln = lf.get(coord);
+							StringBuilder chain = new StringBuilder();
+							Object n2 = ln;
+							for (int d = 0; d < 6 && n2 != null; d++) {
+								chain.append(d == 0 ? "#" : "<").append(call(n2, "getSemanticsId"));
+								n2 = call(n2, "getParent$androidx_compose_ui_ui", "getParent$ui_release", "getParent");
+							}
+							sb.append(" depth=").append(call(ln, "getDepth$androidx_compose_ui_ui", "getDepth$ui_release", "getDepth")).append(' ').append(chain);
+						} catch (Exception e) {
+							sb.append(" tree?").append(e.getClass().getSimpleName());
+						}
+					} catch (Exception e) {
+						sb.append("@?").append(e.getClass().getSimpleName());
+					}
+					if (node.getClass().getSimpleName().equals("AnchoredDraggableNode")) {
+						try {
+							java.lang.reflect.Field sf = null;
+							for (Class<?> c = node.getClass(); c != null && sf == null; c = c.getSuperclass()) {
+								try {
+									sf = c.getDeclaredField("state");
+								} catch (NoSuchFieldException ignored) {
+								}
+							}
+							sf.setAccessible(true);
+							Object st = sf.get(node);
+							sb.append(" state{cur=").append(call(st, "getCurrentValue")).append(" target=").append(call(st, "getTargetValue"))
+							  .append(" settled=").append(call(st, "getSettledValue")).append(" offset=").append(call(st, "getOffset"))
+							  .append(" animating=").append(call(st, "isAnimationRunning")).append('}');
+						} catch (Exception e) {
+							sb.append(" state?").append(e);
+						}
+					}
+					sb.append(' ');
 				}
 				if (n == 0)
 					sb.append("(nothing)");

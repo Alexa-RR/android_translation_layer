@@ -138,9 +138,12 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	public boolean dispatchTouchEvent(MotionEvent event) {
 		if (System.getenv("ATL_DEBUG_TOUCH") != null)
 			android.util.Log.i("ViewGroup", "[touch] dispatchTouchEvent " + getClass().getName() + " action=" + event.getActionMasked() + " at " + event.getX() + "," + event.getY() + " size " + getWidth() + "x" + getHeight());
-		if (native_dispatchTouchEvent(widget, event, event.getX(), event.getY()))
-			return true;
-		return super.dispatchTouchEvent(event);
+		boolean tlHandled = native_dispatchTouchEvent(widget, event, event.getX(), event.getY());
+		if (!tlHandled)
+			tlHandled = super.dispatchTouchEvent(event);
+		if (System.getenv("ATL_DEBUG_TOUCH") != null)
+			android.util.Log.i("ViewGroup", "[touch] dispatchTouchEvent " + getClass().getName() + " action=" + event.getActionMasked() + " -> " + tlHandled);
+		return tlHandled;
 	}
 
 	protected boolean addViewInLayout(View child, int index, LayoutParams params) {

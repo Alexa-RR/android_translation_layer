@@ -1852,17 +1852,21 @@ public class View implements Drawable.Callback {
 		return true;
 	}
 
+	/**
+	 * AOSP: marks this view for a new measure/layout pass and asks the parent to do the same, through
+	 * the parent's own requestLayout() (overridden by RecyclerView, Compose's AndroidViewsHandler and
+	 * others) unless the parent already has a layout pending.
+	 */
 	public void requestLayout() {
 		native_requestLayout(widget);
-		View view = this;
-		while (!view.layoutRequested) {
-			view.layoutRequested = true;
-			if (view.parent instanceof View)
-				view = (View)view.parent;
-			else
-				break;
-		}
-	};
+		layoutRequested = true;
+		if (TL_DEBUG_LAYOUT && parent != null && parent.getClass().getSimpleName().equals("AndroidViewsHandler"))
+			android.util.Log.i("View", "[layout] requestLayout reaches the compose views handler", new Throwable());
+		if (parent instanceof View && !((View) parent).isLayoutRequested())
+			((View) parent).requestLayout();
+	}
+
+	private static final boolean TL_DEBUG_LAYOUT = System.getenv("ATL_DEBUG_LAYOUT") != null;
 
 	public void setOverScrollMode(int mode) {}
 
