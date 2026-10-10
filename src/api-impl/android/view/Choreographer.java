@@ -457,7 +457,10 @@ public final class Choreographer {
 					Log.d(TAG, "Frame time appears to be going backwards.  May be due to a "
 					           + "previously skipped frame.  Waiting for next vsync.");
 				}
-				//scheduleVsyncLocked();
+				/* AOSP: wait for the next vsync. ATL had dropped this request, so a frame time that stepped
+				 * backwards (frame clock time vs the jitter-adjusted System.nanoTime base) left the frame
+				 * marked scheduled with no vsync coming: every later Compose recomposition waited forever. */
+				scheduleVsyncLocked();
 				return;
 			}
 			mFrameScheduled = false;

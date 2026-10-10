@@ -66,6 +66,123 @@ public final class ViewDump {
 						} catch (Exception e) {
 							Log.i(TAG, "fragments: " + e);
 						}
+					} else if (command.startsWith("choreo")) {
+						// "choreo": does a Choreographer frame callback fire? plus the scheduler's internal state
+						try {
+							final android.view.Choreographer ch = android.view.Choreographer.getInstance();
+							StringBuilder sb = new StringBuilder("choreo: ");
+							for (String fn : new String[] { "mFrameScheduled", "mCallbacksRunning", "mLastFrameTimeNanos", "mFrameIntervalNanos", "USE_VSYNC", "mVsyncScheduled" }) {
+								try { java.lang.reflect.Field f = android.view.Choreographer.class.getDeclaredField(fn); f.setAccessible(true); sb.append(fn).append('=').append(f.get(ch)).append(' '); } catch (Throwable ignored) { }
+							}
+							Log.i(TAG, sb.toString());
+							final long t0 = android.os.SystemClock.uptimeMillis();
+							ch.postFrameCallback(new android.view.Choreographer.FrameCallback() {
+								@Override public void doFrame(long frameTimeNanos) {
+									Log.i(TAG, "choreo: frame callback fired after " + (android.os.SystemClock.uptimeMillis() - t0) + " ms");
+								}
+							});
+							new Handler(Looper.getMainLooper()).postDelayed(new Runnable() { @Override public void run() { Log.i(TAG, "choreo: handler post fired after " + (android.os.SystemClock.uptimeMillis() - t0) + " ms"); } }, 1);
+						} catch (Throwable e) {
+							Log.i(TAG, "choreo: " + e);
+						}
+					} else if (command.startsWith("composestate")) {
+						// "composestate": lifecycle owner state of each compose owner view and the running recomposers
+						try {
+							java.util.List<View> owners = new java.util.ArrayList<>();
+							collectComposeViews(decor, owners);
+							for (View o : owners) {
+								StringBuilder sb = new StringBuilder("composestate: owner ").append(o.getWidth()).append('x').append(o.getHeight());
+								try {
+									ClassLoader cl = o.getClass().getClassLoader();
+									Class<?> vtlo = Class.forName("androidx.lifecycle.ViewTreeLifecycleOwner", true, cl);
+									Object lo = vtlo.getMethod("get", View.class).invoke(null, o);
+									sb.append(" lifecycleOwner=").append(lo == null ? "null" : lo.getClass().getName());
+									if (lo != null) {
+										Object lc = lo.getClass().getMethod("getLifecycle").invoke(lo);
+										sb.append(" state=").append(lc.getClass().getMethod("getCurrentState").invoke(lc));
+									}
+								} catch (Throwable t) { sb.append(" lifecycle? ").append(t); }
+								try {
+									// the window recomposer this owner composes under (AOSP: found on the window's root view)
+									Class<?> wr = Class.forName("androidx.compose.ui.platform.WindowRecomposer_androidKt", true, o.getClass().getClassLoader());
+									Object ctx = wr.getMethod("findViewTreeCompositionContext", View.class).invoke(null, o);
+									sb.append(" recomposer=").append(ctx == null ? "null" : ctx.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(ctx)));
+									if (ctx != null) {
+										for (java.lang.reflect.Method m : ctx.getClass().getMethods()) {
+											if (m.getName().equals("getHasPendingWork") || m.getName().equals("getChangeCount"))
+												sb.append(' ').append(m.getName()).append('=').append(m.invoke(ctx));
+											if (m.getName().equals("getState") || m.getName().equals("getCurrentState")) {
+												Object st = m.invoke(ctx);
+												Object val = st;
+												// the app shades kotlinx.coroutines: find the StateFlow.value getter by its result type
+												Class<?> stateCls = Class.forName("androidx.compose.runtime.Recomposer$State", true, ctx.getClass().getClassLoader());
+												for (java.lang.reflect.Method vm : st.getClass().getMethods()) {
+													if (vm.getParameterCount() != 0 || vm.getReturnType() == void.class || vm.getDeclaringClass() == Object.class) continue;
+													try { Object r = vm.invoke(st); if (stateCls.isInstance(r)) { val = r; break; } } catch (Throwable ignored) { }
+												}
+												sb.append(' ').append(m.getName()).append('=').append(val);
+											}
+										}
+									}
+									View root = o.getRootView();
+									sb.append(" rootView=").append(root == null ? "null" : root.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(root)));
+									int depth = 0; android.view.ViewParent pp = o.getParent();
+									while (pp != null) { depth++; pp = pp.getParent(); }
+									sb.append(" parentDepth=").append(depth).append(" decor=").append(decor == null ? "null" : decor.getClass().getSimpleName() + "@" + Integer.toHexString(System.identityHashCode(decor)));
+								} catch (Throwable t) { sb.append(" recomposer? ").append(t); }
+								try {
+									Object cc = o.getClass().getMethod("getCompositionContext").invoke(o);
+									sb.append(" compositionContext=").append(cc == null ? "null" : cc.getClass().getName());
+									if (cc != null) {
+										for (java.lang.reflect.Method m : cc.getClass().getMethods()) {
+											if (m.getName().equals("getHasPendingWork") || m.getName().equals("getCurrentState")) {
+												sb.append(' ').append(m.getName()).append('=').append(m.invoke(cc));
+											}
+										}
+									}
+								} catch (Throwable t) { sb.append(" cc? ").append(t); }
+								Log.i(TAG, sb.toString());
+							}
+							ClassLoader cl = owners.isEmpty() ? ViewDump.class.getClassLoader() : owners.get(0).getClass().getClassLoader();
+							try {
+								Class<?> snap = Class.forName("androidx.compose.runtime.snapshots.Snapshot", true, cl);
+								Object sc = snap.getField("Companion").get(null);
+								Object cur = sc.getClass().getMethod("getCurrent").invoke(sc);
+								Log.i(TAG, "composestate: main-thread snapshot " + cur.getClass().getName() + " id=" + snap.getMethod("getId").invoke(cur) + " readOnly=" + snap.getMethod("getReadOnly").invoke(cur));
+							} catch (Throwable t) { Log.i(TAG, "composestate: snapshot? " + t); }
+							Class<?> rc = Class.forName("androidx.compose.runtime.Recomposer", true, cl);
+							Object companion = rc.getField("Companion").get(null);
+							Object flow = companion.getClass().getMethod("getRunningRecomposers").invoke(companion);
+							Object set = Class.forName("kotlinx.coroutines.flow.StateFlow", true, cl).getMethod("getValue").invoke(flow);
+							for (Object info : (Iterable<?>) set) {
+								StringBuilder sb = new StringBuilder("composestate: recomposer ");
+								for (java.lang.reflect.Method m : info.getClass().getMethods()) {
+									if (m.getName().equals("getHasPendingWork") || m.getName().equals("getChangeCount")) {
+										sb.append(m.getName()).append('=').append(m.invoke(info)).append(' ');
+									}
+									if (m.getName().equals("getState")) {
+										Object sf = m.invoke(info);
+										sb.append("state=").append(Class.forName("kotlinx.coroutines.flow.StateFlow", true, cl).getMethod("getValue").invoke(sf)).append(' ');
+									}
+								}
+								Log.i(TAG, sb.toString());
+							}
+						} catch (Throwable e) {
+							Log.i(TAG, "composestate: " + e);
+						}
+					} else if (command.startsWith("composeapply")) {
+						// "composeapply": Snapshot.sendApplyNotifications() by hand (does a pending state change then recompose?)
+						try {
+							java.util.List<View> owners = new java.util.ArrayList<>();
+							collectComposeViews(decor, owners);
+							ClassLoader cl = owners.isEmpty() ? ViewDump.class.getClassLoader() : owners.get(0).getClass().getClassLoader();
+							Class<?> snap = Class.forName("androidx.compose.runtime.snapshots.Snapshot", true, cl);
+							Object companion = snap.getField("Companion").get(null);
+							companion.getClass().getMethod("sendApplyNotifications").invoke(companion);
+							Log.i(TAG, "composeapply: sent");
+						} catch (Exception e) {
+							Log.i(TAG, "composeapply: " + e);
+						}
 					} else if (command.startsWith("textfields")) {
 						// "textfields": every Compose text field core node (size, layout result, text) in every compose root
 						composeTextFields(decor);
@@ -372,9 +489,59 @@ public final class ViewDump {
 			tls = legacy;
 			try { focused = call(legacy, "getHasFocus"); } catch (Exception ignored) { }
 			try { sb.append(" legacyText='").append(call(call(legacy, "getTextDelegate"), "getText")).append("'"); } catch (Exception ignored) { }
+			// the BasicTextField(String) wrapper's captured objects: its local TextFieldValue state and the app callback
+			try {
+				java.lang.reflect.Field of = legacy.getClass().getDeclaredField("onValueChangeOriginal");
+				of.setAccessible(true);
+				Object orig = of.get(legacy);
+				if (orig != null) {
+					for (java.lang.reflect.Field f : orig.getClass().getDeclaredFields()) {
+						f.setAccessible(true);
+						Object v = f.get(orig);
+						String desc = v == null ? "null" : v.getClass().getName();
+						try {
+							if (v != null && Class.forName("androidx.compose.runtime.State", true, v.getClass().getClassLoader()).isInstance(v))
+								desc += "{" + call(v, "getValue") + "}";
+						} catch (Throwable ignored) { }
+						sb.append(" wrapper.").append(f.getName()).append('=').append(desc);
+						// the app callback's own captures (two levels): names the screen's handler / view model
+						if (v != null && !desc.startsWith("androidx.")) {
+							for (java.lang.reflect.Field g : v.getClass().getDeclaredFields()) {
+								try {
+									g.setAccessible(true);
+									Object w = g.get(v);
+									sb.append(" cb.").append(g.getName()).append('=').append(w == null ? "null" : w.getClass().getName());
+									if (w != null && !(w instanceof Number) && !(w instanceof String)) {
+										for (java.lang.reflect.Field h : w.getClass().getDeclaredFields()) {
+											try {
+												h.setAccessible(true);
+												Object x = h.get(w);
+												sb.append(" cb2.").append(h.getName()).append('=').append(x == null ? "null" : x.getClass().getName());
+											} catch (Throwable ignored) { }
+										}
+									}
+								} catch (Throwable ignored) { }
+							}
+						}
+					}
+				}
+				java.lang.reflect.Field pf = legacy.getClass().getDeclaredField("processor");
+				pf.setAccessible(true);
+				Object proc = pf.get(legacy);
+				sb.append(" buffer='").append(call(call(proc, "toTextFieldValue"), "getText")).append("'");
+			} catch (Throwable t) { sb.append(" wrapper? ").append(t); }
+			// the node's own flags (enabled, readOnly, ...): a disabled field must not be focusable
+			for (java.lang.reflect.Field f : node.getClass().getDeclaredFields()) {
+				try {
+					if (f.getType() == boolean.class) {
+						f.setAccessible(true);
+						sb.append(' ').append(f.getName()).append('=').append(f.getBoolean(node));
+					}
+				} catch (Exception ignored) { }
+			}
 			for (java.lang.reflect.Field f : legacy.getClass().getDeclaredFields()) {
 				try {
-					if (f.getName().equals("isLayoutResultStale") || f.getName().equals("onValueChange") || f.getName().equals("inputSession")) {
+					if (f.getName().equals("isLayoutResultStale") || f.getName().equals("onValueChange") || f.getName().equals("onValueChangeOriginal") || f.getName().equals("inputSession")) {
 						f.setAccessible(true);
 						Object v = f.get(legacy);
 						sb.append(' ').append(f.getName()).append('=').append(v == null ? "null" : (v instanceof Boolean ? v : v.getClass().getName()));
