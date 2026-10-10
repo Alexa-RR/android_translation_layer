@@ -210,14 +210,64 @@ bool atl_propagate_synthetic_motionevent(GtkWidget *widget, jobject motionevent,
 	return handled_event;
 }
 
+/* tl_pick_trace: why the pick stopped where it did (ATL_DEBUG_TOUCH) */
+static const char *tl_pick_java_class(GtkWidget *w)
+{
+	static char buf[128];
+	GtkWidget *wrapper = WRAPPER_IS_WIDGET(w) ? w : gtk_widget_get_parent(w);
+	if (!wrapper || !WRAPPER_IS_WIDGET(wrapper) || !WRAPPER_WIDGET(wrapper)->jobj)
+		return "-";
+	JNIEnv *env = get_jni_env();
+	jclass cls = (*env)->GetObjectClass(env, WRAPPER_WIDGET(wrapper)->jobj);
+	jmethodID get_name = (*env)->GetMethodID(env, (*env)->GetObjectClass(env, cls), "getName", "()Ljava/lang/String;");
+	jstring name = (*env)->CallObjectMethod(env, cls, get_name);
+	const char *str = (*env)->GetStringUTFChars(env, name, NULL);
+	g_strlcpy(buf, str, sizeof(buf));
+	(*env)->ReleaseStringUTFChars(env, name, str);
+	return buf;
+}
+static void tl_pick_trace(GtkWidget *picked, double x, double y, GtkWidget *from)
+{
+	graphene_point_t p;
+	if (!gtk_widget_compute_point(from, picked, &GRAPHENE_POINT_INIT(x, y), &p))
+		p = GRAPHENE_POINT_INIT(-1, -1);
+	fprintf(stderr, "[touch]   picked %s java=%s alloc=%dx%d local=%.0f,%.0f contains=%d children:%c", G_OBJECT_TYPE_NAME(picked), tl_pick_java_class(picked),
+	        gtk_widget_get_width(picked), gtk_widget_get_height(picked), p.x, p.y, gtk_widget_contains(picked, p.x, p.y), 10);
+	for (GtkWidget *c = gtk_widget_get_first_child(picked); c; c = gtk_widget_get_next_sibling(c)) {
+		graphene_point_t cp;
+		gboolean ok = gtk_widget_compute_point(picked, c, &p, &cp);
+		fprintf(stderr, "[touch]     child %s java=%s alloc=%dx%d target=%d sensitive=%d mapped=%d visible=%d local=%.0f,%.0f contains=%d%c", G_OBJECT_TYPE_NAME(c), tl_pick_java_class(c),
+		        gtk_widget_get_width(c), gtk_widget_get_height(c), gtk_widget_get_can_target(c), gtk_widget_is_sensitive(c), gtk_widget_get_mapped(c), gtk_widget_get_visible(c),
+		        ok ? cp.x : -1.0, ok ? cp.y : -1.0, ok ? gtk_widget_contains(c, cp.x, cp.y) : -1, 10);
+	}
+}
+
 JNIEXPORT jboolean JNICALL Java_android_view_ViewGroup_native_1dispatchTouchEvent(JNIEnv *env, jobject this, jlong widget_ptr, jobject motion_event, jdouble x, jdouble y)
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
-	GtkWidget *picked_child = gtk_widget_pick(widget, x, y, GTK_PICK_DEFAULT);
-	if (getenv("ATL_DEBUG_TOUCH"))
-		fprintf(stderr, "[touch] native_dispatchTouchEvent on %s (%dx%d) at %.0f,%.0f picks %s%c", G_OBJECT_TYPE_NAME(widget), gtk_widget_get_width(widget), gtk_widget_get_height(widget), x, y, picked_child ? G_OBJECT_TYPE_NAME(picked_child) : "nothing", 10);
-	if (!picked_child)
-		return false;
-
-	return atl_propagate_synthetic_motionevent(picked_child, motion_event, widget);
+	/* tl_next_child: AOSP tries the children under the point one after the other, topmost first */
+	GtkWidget *hidden[8];
+	gboolean hidden_target[8];
+	int hidden_n = 0;
+	bool handled = false;
+	for (int attempt = 0; attempt < 8; attempt++) {
+		GtkWidget *picked_child = gtk_widget_pick(widget, x, y, GTK_PICK_DEFAULT);
+		if (getenv("ATL_DEBUG_TOUCH"))
+			fprintf(stderr, "[touch] native_dispatchTouchEvent on %s (%dx%d) at %.0f,%.0f picks %s (attempt %d)%c", G_OBJECT_TYPE_NAME(widget), gtk_widget_get_width(widget), gtk_widget_get_height(widget), x, y, picked_child ? G_OBJECT_TYPE_NAME(picked_child) : "nothing", attempt, 10);
+		if (!picked_child || picked_child == widget)
+			break;
+		if (getenv("ATL_DEBUG_TOUCH"))
+			tl_pick_trace(picked_child, x, y, widget);
+		handled = atl_propagate_synthetic_motionevent(picked_child, motion_event, widget);
+		if (handled)
+			break;
+		/* this child declined: hide it from the pick and look for the next one under the point */
+		hidden[hidden_n] = picked_child;
+		hidden_target[hidden_n] = gtk_widget_get_can_target(picked_child);
+		hidden_n++;
+		gtk_widget_set_can_target(picked_child, FALSE);
+	}
+	for (int i = 0; i < hidden_n; i++)
+		gtk_widget_set_can_target(hidden[i], hidden_target[i]);
+	return handled;
 }

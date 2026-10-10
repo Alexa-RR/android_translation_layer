@@ -616,6 +616,7 @@ void wrapper_widget_set_jobject(WrapperWidget *wrapper, JNIEnv *env, jobject job
 	jmethodID ontouchevent_method = _METHOD(_CLASS(jobj), "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
 	jmethodID dispatchtouchevent_method = _METHOD(_CLASS(jobj), "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z");
 	wrapper->custom_dispatch_touch = (dispatchtouchevent_method != handle_cache.view.dispatchTouchEvent && dispatchtouchevent_method != handle_cache.view_group.dispatchTouchEvent);
+	wrapper->tl_touch_target = ontouchevent_method != handle_cache.view.onTouchEvent || wrapper->custom_dispatch_touch; /* tl_javawidget_contains */
 	if (ontouchevent_method != handle_cache.view.onTouchEvent || wrapper->custom_dispatch_touch
 	    || performClick_method != handle_cache.view.performClick) {
 		_setOnTouchListener(env, jobj, GTK_WIDGET(wrapper));

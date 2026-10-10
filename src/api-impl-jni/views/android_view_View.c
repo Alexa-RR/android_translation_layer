@@ -600,9 +600,25 @@ static void java_widget_dispose(GObject *java_widget)
 	}
 }
 static void java_widget_init(JavaWidget *java_widget) {}
+/* tl_javawidget_contains: a touch-handling view's laid-out bounds, not the lazy GTK allocation */
+static gboolean java_widget_contains(GtkWidget *widget, double x, double y)
+{
+	GtkWidget *parent = gtk_widget_get_parent(widget);
+	int width = gtk_widget_get_width(widget);
+	int height = gtk_widget_get_height(widget);
+	if (parent && WRAPPER_IS_WIDGET(parent) && WRAPPER_WIDGET(parent)->tl_touch_target) {
+		WrapperWidget *wrapper = WRAPPER_WIDGET(parent);
+		if (wrapper->real_width > width)
+			width = wrapper->real_width;
+		if (wrapper->real_height > height)
+			height = wrapper->real_height;
+	}
+	return x >= 0 && y >= 0 && x < width && y < height;
+}
 static void java_widget_class_init(JavaWidgetClass *class)
 {
 	G_OBJECT_CLASS(class)->dispose = java_widget_dispose;
+	GTK_WIDGET_CLASS(class)->contains = java_widget_contains;
 }
 G_DEFINE_TYPE(JavaWidget, java_widget, GTK_TYPE_WIDGET)
 
