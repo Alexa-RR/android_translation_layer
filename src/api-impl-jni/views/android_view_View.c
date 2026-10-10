@@ -347,12 +347,32 @@ static gboolean scroll_cb(GtkEventControllerScroll *controller, gdouble dx, gdou
 	return ret;
 }
 
+/* tl_hover_raw: the pointer's position in the toplevel (AOSP raw coordinates), from the current
+ * event when there is one, else from the widget-relative position of the callback */
+static void tl_hover_raw(GtkEventController *controller, double x, double y, double *raw_x, double *raw_y)
+{
+	GdkEvent *event = gtk_event_controller_get_current_event(controller);
+	if (event) {
+		gdk_event_get_position(event, raw_x, raw_y);
+		return;
+	}
+	GtkWidget *widget = gtk_event_controller_get_widget(controller);
+	GtkRoot *root = widget ? gtk_widget_get_root(widget) : NULL;
+	graphene_point_t p;
+	if (root && gtk_widget_compute_point(widget, GTK_WIDGET(root), &GRAPHENE_POINT_INIT(x, y), &p)) {
+		*raw_x = p.x;
+		*raw_y = p.y;
+	} else {
+		*raw_x = x;
+		*raw_y = y;
+	}
+}
+
 static void hover_enter_cb(GtkEventControllerMotion *controller, double x, double y, WrapperWidget *wrapper)
 {
 	double raw_x;
 	double raw_y;
-	GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
-	gdk_event_get_position(event, &raw_x, &raw_y);
+	tl_hover_raw(GTK_EVENT_CONTROLLER(controller), x, y, &raw_x, &raw_y);
 	wrapper->hover_exit_pending = FALSE;
 	wrapper->hover_x = x;
 	wrapper->hover_y = y;
@@ -371,8 +391,7 @@ static void hover_motion_cb(GtkEventControllerMotion *controller, double x, doub
 {
 	double raw_x;
 	double raw_y;
-	GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
-	gdk_event_get_position(event, &raw_x, &raw_y);
+	tl_hover_raw(GTK_EVENT_CONTROLLER(controller), x, y, &raw_x, &raw_y);
 	wrapper->hover_x = x;
 	wrapper->hover_y = y;
 	call_hover_callback(wrapper->jobj, ACTION_HOVER_MOVE, x, y, raw_x, raw_y);

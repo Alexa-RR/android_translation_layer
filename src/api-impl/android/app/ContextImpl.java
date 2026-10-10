@@ -373,6 +373,10 @@ public final class ContextImpl extends Context {
 					new Handler(Looper.getMainLooper()).post(runnable);
 				}
 				return;
+			} else if (intent.getData() != null && (className = tlResolveViewIntent(intent)) != null) {
+				/* AOSP: the app's own activities' intent filters resolve a view intent (deep link) before
+				 * anything external gets to open it */
+				Slog.i(TAG, "startActivity: " + intent.getData() + " resolved to " + className);
 			} else if (intent.getData() != null) {
 				Slog.i(TAG, "starting extern activity with intent: " + intent);
 				if (intent.getData().getScheme().equals("content")) {
@@ -403,14 +407,15 @@ public final class ContextImpl extends Context {
 		}
 		final String className_ = className;
 		final Intent intent_ = intent;
+		/* AOSP singleTask/singleInstance (and FLAG_ACTIVITY_SINGLE_TOP): an existing instance gets onNewIntent */
+		final boolean tlSingle_ = tlResumesExisting(className, intent);
 		new Handler(Looper.getMainLooper()).post(new Runnable() {
 			@Override
 			public void run() {
 				try {
-					if ((intent_.getFlags() & Intent.FLAG_ACTIVITY_CLEAR_TOP) != 0 && intent_.getComponent() != null) {
+					if (((intent_.getFlags() & Intent.FLAG_ACTIVITY_CLEAR_TOP) != 0 && intent_.getComponent() != null) || tlSingle_) {
 						boolean found = Activity.nativeResumeActivity(
-						    ContextImpl.this.atl_loaded_app.loadClass(intent_.getComponent().getClassName())
-							.asSubclass(Activity.class),
+						    ContextImpl.this.atl_loaded_app.loadClass(className_).asSubclass(Activity.class),
 						    intent_);
 						if (found)
 							return;
@@ -487,5 +492,33 @@ public final class ContextImpl extends Context {
 	@Override
 	public ATLLoadedApp get_atl_loaded_app() {
 		return atl_loaded_app;
+	}
+
+	/** AOSP PackageManager resolution of an implicit intent against this app's own activities (intent filters). */
+	private String tlResolveViewIntent(Intent intent) {
+		if (atl_loaded_app == null || atl_loaded_app.pkg == null)
+			return null;
+		String type = intent.resolveTypeIfNeeded(getContentResolver());
+		for (PackageParser.Activity activity : atl_loaded_app.pkg.activities) {
+			for (PackageParser.ActivityIntentInfo info : activity.intents) {
+				if (info.match(intent.getAction(), type, intent.getScheme(), intent.getData(), intent.getCategories(), TAG) >= 0)
+					return activity.className;
+			}
+		}
+		return null;
+	}
+
+	/** AOSP: singleTask/singleInstance activities and FLAG_ACTIVITY_SINGLE_TOP reuse a running instance (onNewIntent). */
+	private boolean tlResumesExisting(String className, Intent intent) {
+		if (className == null || atl_loaded_app == null || atl_loaded_app.pkg == null)
+			return false;
+		if ((intent.getFlags() & Intent.FLAG_ACTIVITY_SINGLE_TOP) != 0)
+			return true;
+		for (PackageParser.Activity activity : atl_loaded_app.pkg.activities) {
+			if (className.equals(activity.className) && activity.info != null)
+				return activity.info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_TASK
+				    || activity.info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_INSTANCE;
+		}
+		return false;
 	}
 }

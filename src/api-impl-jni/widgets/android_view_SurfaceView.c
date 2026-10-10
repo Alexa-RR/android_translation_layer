@@ -179,6 +179,7 @@ struct jni_callback_data {
 	jclass this_class;
 	gint resize_width;
 	gint resize_height;
+	guint destroy_source; /* tl_surface_destroy_order: pending surfaceDestroyed */
 };
 
 static gboolean on_resize_delayed(struct jni_callback_data *d)
@@ -213,17 +214,33 @@ static gboolean on_realize_delayed(struct jni_callback_data *d)
 }
 
 /* teslalinux: the widget lost its window -> the surface is gone (AOSP surfaceDestroyed) */
-static void on_unrealize(GtkWidget *self, struct jni_callback_data *d)
+/* tl_surface_destroy_order: AOSP destroys the surface once the window is hidden, after the window
+ * that replaced it has drawn (its surfaceCreated runs first, from the HIGH_IDLE+20 source) */
+static gboolean on_unrealize_delayed(struct jni_callback_data *d)
 {
+	d->destroy_source = 0;
 	JNIEnv *env = get_jni_env();
 	jmethodID surface_destroyed = _METHOD(handle_cache.surface_view.class, "surfaceDestroyed", "()V"); /* private: look it up on SurfaceView itself */
 	(*env)->CallVoidMethod(env, d->this, surface_destroyed);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
+	return G_SOURCE_REMOVE;
+}
+
+static void on_unrealize(GtkWidget *self, struct jni_callback_data *d)
+{
+	if (!d->destroy_source)
+		d->destroy_source = g_idle_add_full(G_PRIORITY_DEFAULT_IDLE, G_SOURCE_FUNC(on_unrealize_delayed), d, NULL);
 }
 
 static void on_realize(GtkWidget *self, struct jni_callback_data *d)
 {
+	if (d->destroy_source) {
+		/* shown again before the surface went: it stays, no destroyed/created pair */
+		g_source_remove(d->destroy_source);
+		d->destroy_source = 0;
+		return;
+	}
 	g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, G_SOURCE_FUNC(on_realize_delayed), d, NULL);
 }
 
@@ -246,6 +263,7 @@ JNIEXPORT jlong JNICALL Java_android_view_SurfaceView_native_1constructor(JNIEnv
 	callback_data->jvm = jvm;
 	callback_data->this = _REF(this);
 	callback_data->this_class = _REF((*env)->FindClass(env, "android/view/SurfaceView"));
+	callback_data->destroy_source = 0;
 
 	g_signal_connect(dummy, "resize", G_CALLBACK(on_resize), callback_data);
 	/* AOSP: the surface exists while the view is shown in a visible window: GTK map/unmap (tl_window_attach

@@ -975,4 +975,6 @@ public class Intent implements Parcelable {
 	public static final int FLAG_GRANT_WRITE_URI_PERMISSION = 0x00000002;
 	public static final int FLAG_GRANT_PERSISTABLE_URI_PERMISSION = 0x00000040;
 	public static final int FLAG_GRANT_PREFIX_URI_PERMISSION = 0x00000080;
+	/** AOSP: deliver to an existing top instance through onNewIntent instead of a new one. */
+	public static final int FLAG_ACTIVITY_SINGLE_TOP = 0x20000000;
 }
