@@ -1119,6 +1119,23 @@ public class View implements Drawable.Callback {
 			int resId = a.getResourceId(com.android.internal.R.styleable.View_stateListAnimator, 0);
 			setStateListAnimator(AnimatorInflater.loadStateListAnimator(context, resId));
 		}
+		/* AOSP View(Context, AttributeSet, int, int): the remaining view flags, from the attributes and the default style */
+		if (a.getBoolean(com.android.internal.R.styleable.View_clickable, false))
+			setClickable(true);
+		if (a.getBoolean(com.android.internal.R.styleable.View_longClickable, false))
+			setLongClickable(true);
+		if (a.getBoolean(com.android.internal.R.styleable.View_contextClickable, false))
+			setContextClickable(true);
+		if (a.hasValue(com.android.internal.R.styleable.View_contentDescription))
+			setContentDescription(a.getString(com.android.internal.R.styleable.View_contentDescription));
+		if (a.hasValue(com.android.internal.R.styleable.View_alpha))
+			setAlpha(a.getFloat(com.android.internal.R.styleable.View_alpha, 1.0f));
+		if (a.hasValue(com.android.internal.R.styleable.View_importantForAccessibility))
+			setImportantForAccessibility(a.getInt(com.android.internal.R.styleable.View_importantForAccessibility, IMPORTANT_FOR_ACCESSIBILITY_AUTO));
+		if (a.getBoolean(com.android.internal.R.styleable.View_focusableInTouchMode, false))
+			setFocusableInTouchMode(true);
+		if (a.hasValue(com.android.internal.R.styleable.View_duplicateParentState))
+			setDuplicateParentStateEnabled(a.getBoolean(com.android.internal.R.styleable.View_duplicateParentState, false));
 		a.recycle();
 		onCreateDrawableState(0);
 	}
@@ -1378,7 +1395,11 @@ public class View implements Drawable.Callback {
 
 	// --- stubs
 
-	public void setContentDescription(CharSequence contentDescription) {}
+	/** AOSP: the accessibility description of the view. */
+	public void setContentDescription(CharSequence contentDescription) {
+		tlContentDescription = contentDescription;
+	}
+	private CharSequence tlContentDescription;
 
 	public void setId(int id) {
 		this.id = id;
@@ -1392,7 +1413,13 @@ public class View implements Drawable.Callback {
 		atl_focusable = focusable;
 	}
 	public void setFocusable(int focusable) {}
-	public void setFocusableInTouchMode(boolean focusableInTouchMode) {}
+	/** AOSP: focusable in touch mode implies focusable. */
+	public void setFocusableInTouchMode(boolean focusableInTouchMode) {
+		tlFocusableInTouchMode = focusableInTouchMode;
+		if (focusableInTouchMode)
+			setFocusable(true);
+	}
+	private boolean tlFocusableInTouchMode;
 	public final boolean requestFocus() {
 		return requestFocus(View.FOCUS_DOWN);
 	}
@@ -1528,6 +1555,8 @@ public class View implements Drawable.Callback {
 		this.visibility = visibility;
 		native_setVisibility(widget, visibility, alpha, atl_enabled);
 		dispatchVisibilityChanged(this, visibility);
+		if (isAttachedToWindow()) // AOSP setFlags: the aggregated visibility follows while in a window
+			dispatchVisibilityAggregated(visibility == VISIBLE);
 	}
 
 	public void setPadding(int left, int top, int right, int bottom) {
@@ -2103,7 +2132,11 @@ public class View implements Drawable.Callback {
 
 	public void saveHierarchyState(SparseArray<Parcelable> array) {}
 
-	public void setDuplicateParentStateEnabled(boolean enabled) {}
+	/** AOSP: the view takes its drawable state from its parent (see getDrawableState). */
+	public void setDuplicateParentStateEnabled(boolean enabled) {
+		tlDuplicateParentState = enabled;
+	}
+	private boolean tlDuplicateParentState;
 
 	public boolean performClick() {
 		return callOnClick();
@@ -2217,7 +2250,24 @@ public class View implements Drawable.Callback {
 		return view;
 	}
 
-	public boolean isShown() { return true; }
+	/**
+	 * AOSP: visible, with every ancestor visible, and attached to a window. ATL's content view has
+	 * no parent view, so reaching a parentless view means attached-to-window decides.
+	 */
+	public boolean isShown() {
+		View current = this;
+		do {
+			if (current.getVisibility() != VISIBLE)
+				return false;
+			ViewParent parent = current.getParent();
+			if (parent == null)
+				return current.isAttachedToWindow();
+			if (!(parent instanceof View))
+				return true;
+			current = (View) parent;
+		} while (current != null);
+		return false;
+	}
 
 	public int getWindowVisibility() { return VISIBLE; }
 
@@ -2307,8 +2357,14 @@ public class View implements Drawable.Callback {
 			getViewTreeObserver().merge(floating_observer);
 			floating_observer = null;
 		}
+		/* AOSP dispatchAttachedToWindow: a shown view learns it is visible once it is in a window */
+		if (isShown())
+			onVisibilityAggregated(true);
 	}
 	protected void onDetachedFromWindow() {
+		/* AOSP dispatchDetachedFromWindow: a visible view becomes invisible when it leaves the window */
+		if (tlIsAggregatedVisible())
+			onVisibilityAggregated(false);
 		if (onAttachStateChangeListener != null) {
 			onAttachStateChangeListener.onViewDetachedFromWindow(this);
 		}
@@ -2611,7 +2667,10 @@ public class View implements Drawable.Callback {
 
 	public void setAnimation(Animation animation) {}
 
-	public boolean performAccessibilityAction(int action, Bundle arguments) { return false; }
+	/** AOSP: the action goes to performAccessibilityActionInternal (an accessibility delegate would see it first). */
+	public boolean performAccessibilityAction(int action, Bundle arguments) {
+		return performAccessibilityActionInternal(action, arguments);
+	}
 
 	public boolean isDirty() { return false; }
 
@@ -2642,7 +2701,9 @@ public class View implements Drawable.Callback {
 
 	public WindowInsets computeSystemWindowInsets(WindowInsets insets, Rect contentInsets) { return insets; }
 
-	public boolean isDuplicateParentStateEnabled() { return false; }
+	public boolean isDuplicateParentStateEnabled() {
+		return tlDuplicateParentState;
+	}
 
 	public void setBackgroundTintMode(PorterDuff.Mode tintMode) {}
 
@@ -3415,8 +3476,11 @@ public class View implements Drawable.Callback {
 	private boolean tlDispatchingSynthetic;
 	private TouchDelegate mTouchDelegate;
 
+	/* AOSP: context clickable (stylus button / mouse right button), set by setContextClickable or a context click listener */
+	private boolean tlContextClickable;
+
 	public boolean isContextClickable() {
-		return false;
+		return tlContextClickable;
 	}
 
 	/** AOSP: pressed with a hotspot for the background drawable. */
@@ -3627,5 +3691,144 @@ public class View implements Drawable.Callback {
 		info.setFocused(isFocused());
 		info.setSelected(isSelected());
 		info.setLongClickable(isLongClickable());
+	}
+	/* AOSP: accessibility importance modes */
+	public static final int IMPORTANT_FOR_ACCESSIBILITY_AUTO = 0x00000000;
+	public static final int IMPORTANT_FOR_ACCESSIBILITY_YES = 0x00000001;
+	public static final int IMPORTANT_FOR_ACCESSIBILITY_NO = 0x00000002;
+	public static final int IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS = 0x00000004;
+
+	/**
+	 * AOSP: whether the layout direction can be resolved (INHERIT with no parent cannot). ATL resolves
+	 * every view's direction (getLayoutDirection/isLayoutDirectionResolved), so it always can.
+	 */
+	public boolean canResolveLayoutDirection() {
+		return true;
+	}
+
+	/* AOSP aggregated visibility: a view learns whether it is actually visible (own visibility, ancestors, window) */
+	private boolean tlAggregatedVisible;
+
+	/**
+	 * AOSP: called when the user-visibility of this View has changed, whether through its own
+	 * visibility, an ancestor's, or the window's. The background drawable follows it; ProgressBar
+	 * starts and stops its indeterminate animation here.
+	 */
+	public void onVisibilityAggregated(boolean isVisible) {
+		tlAggregatedVisible = isVisible;
+		final android.graphics.drawable.Drawable dr = getBackground();
+		if (dr != null && isVisible != dr.isVisible()) {
+			dr.setVisible(isVisible, false);
+		}
+		final android.graphics.drawable.Drawable fg = getForeground();
+		if (fg != null && isVisible != fg.isVisible()) {
+			fg.setVisible(isVisible, false);
+		}
+	}
+
+	/** AOSP: delivers the aggregated visibility to this view (ViewGroup continues to its children). */
+	public boolean dispatchVisibilityAggregated(boolean isVisible) {
+		final boolean thisVisible = getVisibility() == VISIBLE;
+		if (thisVisible || !isVisible) {
+			onVisibilityAggregated(isVisible);
+		}
+		return thisVisible && isVisible;
+	}
+
+	/** teslalinux: the last aggregated visibility this view was told about. */
+	boolean tlIsAggregatedVisible() {
+		return tlAggregatedVisible;
+	}
+
+	/**
+	 * AOSP: performs an accessibility action on this view; the standard actions map to the view's
+	 * own click/focus/selection behaviour. Accessibility focus needs an accessibility service, which
+	 * this platform has none of, so those actions report failure the way AOSP does without one.
+	 */
+	public boolean performAccessibilityActionInternal(int action, android.os.Bundle arguments) {
+		switch (action) {
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK: {
+				if (isClickable()) {
+					performClickInternal();
+					return true;
+				}
+			} break;
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK: {
+				if (isLongClickable()) {
+					performLongClick();
+					return true;
+				}
+			} break;
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_FOCUS: {
+				if (!hasFocus()) {
+					// Get out of touch mode since accessibility
+					// wants to move focus around.
+					return requestFocus();
+				}
+			} break;
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_CLEAR_FOCUS: {
+				if (hasFocus()) {
+					clearFocus();
+					return !isFocused();
+				}
+			} break;
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_SELECT: {
+				if (!isSelected()) {
+					setSelected(true);
+					return isSelected();
+				}
+			} break;
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_CLEAR_SELECTION: {
+				if (isSelected()) {
+					setSelected(false);
+					return !isSelected();
+				}
+			} break;
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS:
+			case android.view.accessibility.AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS:
+				return false;
+			case com.android.internal.R.id.accessibilityActionShowOnScreen: {
+				if (isAttachedToWindow()) {
+					final android.graphics.Rect r = new android.graphics.Rect();
+					getDrawingRect(r);
+					return requestRectangleOnScreen(r, true);
+				}
+			} break;
+			case com.android.internal.R.id.accessibilityActionContextClick: {
+				if (isContextClickable()) {
+					performContextClick();
+					return true;
+				}
+			} break;
+		}
+		return false;
+	}
+	/** AOSP: a long click not tied to a touch position (the context menu anchors to the view). */
+	public boolean performLongClick() {
+		return performLongClick(Float.NaN, Float.NaN);
+	}
+	/* AOSP: a context click (stylus button, mouse right button) goes to the context click listener */
+	private OnContextClickListener tlOnContextClickListener;
+
+	public void setOnContextClickListener(OnContextClickListener l) {
+		if (!isContextClickable()) {
+			setContextClickable(true);
+		}
+		tlOnContextClickListener = l;
+	}
+
+	public boolean performContextClick() {
+		boolean handled = false;
+		if (tlOnContextClickListener != null) {
+			handled = tlOnContextClickListener.onContextClick(this);
+		}
+		return handled;
+	}
+	/** AOSP: interface definition for a callback to be invoked when a view is context clicked. */
+	public interface OnContextClickListener {
+		boolean onContextClick(View v);
+	}
+	public void setContextClickable(boolean contextClickable) {
+		tlContextClickable = contextClickable;
 	}
 }

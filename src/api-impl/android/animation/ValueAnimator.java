@@ -1735,4 +1735,6 @@ public class ValueAnimator extends Animator implements AnimationHandler.Animatio
 		 */
 		void onChanged(float scale);
 	}
+
+
 }

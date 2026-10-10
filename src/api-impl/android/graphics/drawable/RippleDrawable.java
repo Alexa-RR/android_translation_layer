@@ -175,7 +175,7 @@ public class RippleDrawable extends LayerDrawable {
 	@Override
 	public void draw(Canvas canvas) {
 		final ChildDrawable[] array = mLayerState.mChildren;
-		final int N = mLayerState.mNum;
+		final int N = mLayerState.mNumChildren;
 		for (int i = 0; i < N; i++) {
 			if (array[i].mId != R.id.mask)
 				array[i].mDrawable.draw(canvas);

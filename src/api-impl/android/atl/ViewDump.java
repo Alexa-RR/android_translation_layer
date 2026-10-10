@@ -257,6 +257,8 @@ public final class ViewDump {
 		}
 		if (v instanceof android.widget.TextView)
 			sb.append(" tg=0x").append(Integer.toHexString(((android.widget.TextView) v).getGravity()));
+		if (v instanceof android.widget.Checkable)
+			sb.append(" checked=").append(((android.widget.Checkable) v).isChecked());
 		for (Class<?> c = v.getClass(); c != null; c = c.getSuperclass()) {
 			if (c.getSimpleName().equals("SwitchCompat") || c.getSimpleName().equals("Switch")) {
 				// obfuscated builds rename the fields: list every drawable, int and boolean field of the class

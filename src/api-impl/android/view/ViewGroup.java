@@ -963,4 +963,17 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	}
 
 	private static int sDescendantTrace;
+	/** AOSP: the aggregated visibility continues to the visible children. */
+	@Override
+	public boolean dispatchVisibilityAggregated(boolean isVisible) {
+		isVisible = super.dispatchVisibilityAggregated(isVisible);
+		final int count = getChildCount();
+		for (int i = 0; i < count; i++) {
+			View child = getChildAt(i);
+			if (child.getVisibility() == VISIBLE) {
+				child.dispatchVisibilityAggregated(isVisible);
+			}
+		}
+		return isVisible;
+	}
 }

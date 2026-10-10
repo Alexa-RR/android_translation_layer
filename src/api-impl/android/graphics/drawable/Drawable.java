@@ -395,8 +395,10 @@ public class Drawable {
 			}
 		}
 
-		/* AOSP: an unknown tag is an error, not a null drawable */
-		throw new XmlPullParserException(parser.getPositionDescription() + ": invalid drawable tag " + parser.getName());
+		/* AOSP DrawableInflater: a tag that is not in the table is a Drawable class name */
+		Drawable drawable = tlInflateFromClass(resources, parser.getName(), parser);
+		drawable.inflate(resources, parser, attrs, theme);
+		return drawable;
 	}
 
 	public static Drawable createFromResourceStream(Resources resources, TypedValue value, InputStream is, String file,
@@ -623,5 +625,48 @@ public class Drawable {
 	/** @hide */
 	public static float scaleFromDensity(float pixels, int sourceDensity, int targetDensity) {
 		return pixels * targetDensity / sourceDensity;
+	}
+	/* AOSP DrawableInflater.inflateFromClass: constructors by class name, cached */
+	private static final java.util.HashMap<String, java.lang.reflect.Constructor<? extends Drawable>> tlConstructorMap = new java.util.HashMap<>();
+
+	private static Drawable tlInflateFromClass(android.content.res.Resources res, String className, org.xmlpull.v1.XmlPullParser parser) throws org.xmlpull.v1.XmlPullParserException {
+		try {
+			java.lang.reflect.Constructor<? extends Drawable> constructor;
+			synchronized (tlConstructorMap) {
+				constructor = tlConstructorMap.get(className);
+				if (constructor == null) {
+					ClassLoader loader = Drawable.class.getClassLoader();
+					Class<?> clazz;
+					try {
+						clazz = loader.loadClass(className);
+					} catch (ClassNotFoundException e) {
+						/* an app-defined drawable class lives in the app's class loader */
+						ClassLoader app = Thread.currentThread().getContextClassLoader();
+						if (app == null)
+							throw e;
+						clazz = app.loadClass(className);
+					}
+					constructor = clazz.asSubclass(Drawable.class).getConstructor();
+					tlConstructorMap.put(className, constructor);
+				}
+			}
+			return constructor.newInstance();
+		} catch (NoSuchMethodException e) {
+			final android.view.InflateException ie = new android.view.InflateException(parser.getPositionDescription() + ": Error inflating class " + className);
+			ie.initCause(e);
+			throw ie;
+		} catch (ClassCastException e) {
+			// If loaded class is not a Drawable subclass.
+			final android.view.InflateException ie = new android.view.InflateException(parser.getPositionDescription() + ": Class is not a Drawable " + className);
+			ie.initCause(e);
+			throw ie;
+		} catch (ClassNotFoundException e) {
+			/* AOSP: an unknown tag that is no class either is an invalid drawable tag */
+			throw new org.xmlpull.v1.XmlPullParserException(parser.getPositionDescription() + ": invalid drawable tag " + className);
+		} catch (Exception e) {
+			final android.view.InflateException ie = new android.view.InflateException(parser.getPositionDescription() + ": Error inflating class " + className);
+			ie.initCause(e);
+			throw ie;
+		}
 	}
 }
