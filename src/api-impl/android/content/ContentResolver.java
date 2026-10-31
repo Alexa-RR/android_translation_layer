@@ -13,6 +13,7 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -147,6 +148,13 @@ public class ContentResolver {
 			return provider.update(uri, values, selection, selectionArgs);
 		else
 			return 0;
+	}
+
+	public ContentProviderResult[] applyBatch(String authority, ArrayList<ContentProviderOperation> operations) throws OperationApplicationException {
+		ContentProvider provider = ContentProvider.atl_get_content_provider(authority);
+		if (provider == null)
+			throw new IllegalArgumentException("Unknown authority " + authority);
+		return provider.applyBatch(authority, operations);
 	}
 
 	public List getPersistedUriPermissions() {
