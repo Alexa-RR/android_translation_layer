@@ -150,6 +150,17 @@ public class ContentResolver {
 			return 0;
 	}
 
+	public final Bundle call(Uri uri, String method, String arg, Bundle extras) {
+		return call(uri.getAuthority(), method, arg, extras);
+	}
+
+	public final Bundle call(String authority, String method, String arg, Bundle extras) {
+		ContentProvider provider = ContentProvider.atl_get_content_provider(authority);
+		if (provider == null)
+			throw new IllegalArgumentException("Unknown authority " + authority);
+		return provider.call(authority, method, arg, extras);
+	}
+
 	public ContentProviderResult[] applyBatch(String authority, ArrayList<ContentProviderOperation> operations) throws OperationApplicationException {
 		ContentProvider provider = ContentProvider.atl_get_content_provider(authority);
 		if (provider == null)

@@ -9,6 +9,7 @@ import android.content.pm.ProviderInfo;
 import android.content.res.AssetFileDescriptor;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Bundle;
 import android.os.ParcelFileDescriptor;
 import java.io.FileNotFoundException;
 import java.util.ArrayList;
@@ -53,6 +54,14 @@ public abstract class ContentProvider {
 	}
 
 	public boolean onCreate() { return false; }
+
+	public Bundle call(String method, String arg, Bundle extras) {
+		return null;
+	}
+
+	public Bundle call(String authority, String method, String arg, Bundle extras) {
+		return call(method, arg, extras);
+	}
 
 	public Context getContext() {
 		return ATLLoadedApp.getPrimaryApplication().getApplication();
