@@ -387,6 +387,10 @@ public class Drawable {
 
 	public void setAutoMirrored(boolean mirrored) {}
 
+	public boolean isAutoMirrored() {
+		return false;
+	}
+
 	public void jumpToCurrentState() {}
 
 	public boolean setLayoutDirection(int layoutDirection) {
