@@ -226,6 +226,26 @@ public final class SQLiteConnection implements CancellationSignal.OnCancelListen
 			SQLiteCustomFunction function = mConfiguration.customFunctions.get(i);
 			nativeRegisterCustomFunction(mConnectionPtr, function);
 		}
+		// AOSP: the per-connection statements (execPerConnectionSQL)
+		tlExecutePerConnectionSqlFromConfiguration(0);
+	}
+
+	/** AOSP executePerConnectionSqlFromConfiguration: SELECTs and PRAGMAs only. */
+	private void tlExecutePerConnectionSqlFromConfiguration(int startIndex) {
+		for (int i = startIndex; i < mConfiguration.perConnectionSql.size(); i++) {
+			final android.util.Pair<String, Object[]> statement = mConfiguration.perConnectionSql.get(i);
+			final int type = android.database.DatabaseUtils.getSqlStatementType(statement.first);
+			switch (type) {
+				case android.database.DatabaseUtils.STATEMENT_SELECT:
+					executeForString(statement.first, statement.second, null);
+					break;
+				case android.database.DatabaseUtils.STATEMENT_PRAGMA:
+					execute(statement.first, statement.second, null);
+					break;
+				default:
+					throw new IllegalArgumentException("Unsupported configuration statement: " + statement);
+			}
+		}
 	}
 
 	private void dispose(boolean finalized) {
@@ -427,8 +447,10 @@ public final class SQLiteConnection implements CancellationSignal.OnCancelListen
 		                      != 0;
 		boolean localeChanged = !configuration.locale.equals(mConfiguration.locale);
 
-		// Update configuration parameters.
+		// Update configuration parameters (the per-connection statements added since run below).
+		final int oldPerConnectionSqlCount = mConfiguration.perConnectionSql.size();
 		mConfiguration.updateParametersFrom(configuration);
+		tlExecutePerConnectionSqlFromConfiguration(oldPerConnectionSqlCount);
 
 		// Update prepared statement cache size.
 		// sqlite.org: android.util.LruCache.resize() requires API level 21.

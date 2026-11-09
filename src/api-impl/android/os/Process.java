@@ -505,10 +505,8 @@ public class Process {
 	 * not have permission to modify the given thread, or to use the given
 	 * priority.
 	 */
-	public static final /*native*/ void setThreadPriority(int tid, int priority)
-	    throws IllegalArgumentException, SecurityException {
-		// TODO - this is clearly not critical
-	}
+	public static final native void setThreadPriority(int tid, int priority)
+	    throws IllegalArgumentException, SecurityException;
 
 	/**
 	 * Call with 'false' to cause future calls to {@link #setThreadPriority(int)} to
@@ -580,8 +578,8 @@ public class Process {
 	 *
 	 * @see #setThreadPriority(int, int)
 	 */
-	public static final /*native*/ void setThreadPriority(int priority)
-	    throws IllegalArgumentException, SecurityException {}
+	public static final native void setThreadPriority(int priority)
+	    throws IllegalArgumentException, SecurityException;
 
 	/**
 	 * Return the current priority of a thread, based on Linux priorities.
@@ -832,18 +830,44 @@ public class Process {
 
 	public static final native boolean is64Bit();
 
+	/** AOSP: SystemClock.uptimeMillis() when this process started. */
 	public static long getStartUptimeMillis() {
-		return 1000;
-	};
+		return SystemClock.uptimeMillis() - (SystemClock.elapsedRealtime() - getStartElapsedRealtime());
+	}
 
+	private static long sStartElapsedRealtime = -1;
+
+	/**
+	 * AOSP: SystemClock.elapsedRealtime() when this process started: the kernel's start time of
+	 * the process (/proc/self/stat field 22, clock ticks since boot).
+	 */
 	public static long getStartElapsedRealtime() {
-		return 1000;
-	};
+		if (sStartElapsedRealtime < 0) {
+			long start = SystemClock.elapsedRealtime();
+			try {
+				String stat = new String(java.nio.file.Files.readAllBytes(java.nio.file.Paths.get("/proc/self/stat")));
+				// the command name (field 2) may hold spaces: count fields after its closing ')'
+				String[] f = stat.substring(stat.lastIndexOf(')') + 2).trim().split(" +");
+				long ticks = Long.parseLong(f[22 - 3]);
+				long hz = android.system.Os.sysconf(android.system.OsConstants._SC_CLK_TCK);
+				if (hz > 0)
+					start = ticks * 1000 / hz;
+			} catch (Exception e) {
+				// /proc unavailable: the first query is the best known start
+			}
+			sStartElapsedRealtime = start;
+		}
+		return sStartElapsedRealtime;
+	}
 
 	/* teslalinux: Process additions */
 	public static boolean isApplicationUid(int uid) { return uid >= 10000; }
 	public static boolean isSdkSandbox() { return false; }
-	public static String myProcessName() { return "com.waze"; }
+	/** AOSP: the name of this process: the application's process name (its package name by default). */
+	public static String myProcessName() {
+		android.content.pm.ApplicationInfo ai = android.atl.ATLLoadedApp.getPrimaryApplication().pkg.applicationInfo;
+		return ai.processName != null ? ai.processName : ai.packageName;
+	}
 	public static boolean isSdkSandboxUid(int uid) { return false; }
 	/** AOSP (hidden): an invalid uid. */
 	public static final int INVALID_UID = -1;

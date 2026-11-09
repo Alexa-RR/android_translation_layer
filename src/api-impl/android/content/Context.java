@@ -431,9 +431,23 @@ public abstract class Context {
 		return checkCallingOrSelfPermission(permission);
 	}
 
-	public void registerComponentCallbacks(ComponentCallbacks callbacks) {}
+	/**
+	 * AOSP: a context's component callbacks are the application's (Context.registerComponentCallbacks
+	 * hands them to getApplicationContext(); Application keeps and dispatches them).
+	 */
+	public void registerComponentCallbacks(ComponentCallbacks callbacks) {
+		Context app = getApplicationContext();
+		if (app == null || app == this)
+			throw new IllegalStateException("registerComponentCallbacks on a context without an application");
+		app.registerComponentCallbacks(callbacks);
+	}
 
-	public void unregisterComponentCallbacks(ComponentCallbacks callbacks) {}
+	public void unregisterComponentCallbacks(ComponentCallbacks callbacks) {
+		Context app = getApplicationContext();
+		if (app == null || app == this)
+			throw new IllegalStateException("unregisterComponentCallbacks on a context without an application");
+		app.unregisterComponentCallbacks(callbacks);
+	}
 
 	public abstract boolean bindService(final Intent intent, final ServiceConnection serviceConnection, int flags);
 
@@ -510,7 +524,7 @@ public abstract class Context {
 		}
 		for (IntentFilter filter : receiverMap.keySet()) {
 			if (filter.matchAction(intent.getAction())) {
-				receiverMap.get(filter).onReceive(this, intent);
+				tlDeliverBroadcast(receiverMap.get(filter), intent);
 			}
 		}
 		ATLLoadedApp.getPrimaryApplication().receiveBroadcast(this, intent);
@@ -523,6 +537,7 @@ public abstract class Context {
 	public void unregisterReceiver(BroadcastReceiver receiver) {
 		while (receiverMap.values().remove(receiver))
 			;
+		tlReceiverSchedulers.remove(receiver);
 	}
 
 	public static final int CONTEXT_INCLUDE_CODE = 0x00000001;
@@ -567,12 +582,18 @@ public abstract class Context {
 
 	public abstract Context createDisplayContext(Display display);
 
+	/** AOSP: onReceive runs on scheduler's thread (the main thread when null). */
 	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, String broadcastPermission, Handler scheduler) {
-		return registerReceiver(receiver, filter);
+		Intent sticky = registerReceiver(receiver, filter);
+		if (receiver != null && scheduler != null)
+			tlReceiverSchedulers.put(receiver, scheduler);
+		return sticky;
 	}
 
+	/** AOSP: the names of the private files of this context's package (getFilesDir()). */
 	public String[] fileList() {
-		return new String[0];
+		String[] list = getFilesDir().list();
+		return list != null ? list : new String[0];
 	}
 
 	public void revokeUriPermission(Uri uri, int mode) {
@@ -634,12 +655,41 @@ public abstract class Context {
 			public void execute(Runnable r) { h.post(r); }
 		};
 	}
-	public Context createAttributionContext(String attributionTag) { return this; }
+	/** AOSP: a context whose operations are attributed to the tag (getAttributionTag/Source report it). */
+	public Context createAttributionContext(final String attributionTag) {
+		return new ContextWrapper(this) {
+			@Override
+			public String getAttributionTag() {
+				return attributionTag;
+			}
+
+			@Override
+			public android.content.AttributionSource getAttributionSource() {
+				return new android.content.AttributionSource(android.os.Process.myUid(), getPackageName(), attributionTag);
+			}
+		};
+	}
 	public Context createWindowContext(int type, android.os.Bundle options) { return this; }
 	public Context createWindowContext(android.view.Display display, int type, android.os.Bundle options) { return this; }
 	public Context createDeviceContext(int deviceId) { return this; }
-	public int getDeviceId() { return 0; }
-	public boolean isUiContext() { return true; }
+	/** AOSP Context.DEVICE_ID_DEFAULT: there are no virtual devices, every context is on the default one. */
+	public static final int DEVICE_ID_DEFAULT = 0;
+	/** AOSP Context.DEVICE_ID_INVALID */
+	public static final int DEVICE_ID_INVALID = -1;
+	public int getDeviceId() { return DEVICE_ID_DEFAULT; }
+	/**
+	 * AOSP: whether this context can show UI: activities (and input method services), and wrappers of
+	 * them; the application and service contexts are not UI contexts.
+	 */
+	public boolean isUiContext() {
+		if (this instanceof android.app.Activity || this instanceof android.inputmethodservice.InputMethodService)
+			return true;
+		if (this instanceof ContextWrapper) {
+			Context base = ((ContextWrapper) this).getBaseContext();
+			return base != null && base != this && base.isUiContext();
+		}
+		return false;
+	}
 	public String getOpPackageName() { return getPackageName(); }
 	public java.io.File getCodeCacheDir() { java.io.File f = new java.io.File(getCacheDir(), "code_cache"); f.mkdirs(); return f; }
 	public String getSystemServiceName(Class<?> serviceClass) { return serviceClass.getSimpleName(); }
@@ -650,8 +700,30 @@ public abstract class Context {
 	public int checkCallingOrSelfUriPermission(android.net.Uri uri, int modeFlags) { return android.content.pm.PackageManager.PERMISSION_GRANTED; }
 	public boolean bindServiceAsUser(Intent service, ServiceConnection conn, int flags, android.os.UserHandle user) { return bindService(service, conn, flags); }
 	public android.view.Display getDisplay() { return ((android.view.WindowManager) getSystemService("window")).getDefaultDisplay(); }
-	public void registerDeviceIdChangeListener(Executor executor, java.util.function.IntConsumer listener) {}
-	public void unregisterDeviceIdChangeListener(java.util.function.IntConsumer listener) {}
+	/*
+	 * AOSP: listeners for this context moving to another (virtual) device. ATL has no virtual
+	 * devices, so the device id never changes and registered listeners are never called; the
+	 * registration rules (no null, no duplicates) are AOSP's.
+	 */
+	private final java.util.ArrayList<java.util.function.IntConsumer> tlDeviceIdListeners = new java.util.ArrayList<>();
+	public void registerDeviceIdChangeListener(Executor executor, java.util.function.IntConsumer listener) {
+		if (executor == null)
+			throw new NullPointerException("executor must not be null");
+		if (listener == null)
+			throw new NullPointerException("listener must not be null");
+		synchronized (tlDeviceIdListeners) {
+			if (tlDeviceIdListeners.contains(listener))
+				throw new IllegalArgumentException("attempt to call registerDeviceIdChangeListener() on a previously registered listener");
+			tlDeviceIdListeners.add(listener);
+		}
+	}
+	public void unregisterDeviceIdChangeListener(java.util.function.IntConsumer listener) {
+		if (listener == null)
+			throw new NullPointerException("listener must not be null");
+		synchronized (tlDeviceIdListeners) {
+			tlDeviceIdListeners.remove(listener);
+		}
+	}
 	/* API 29/33 overloads: the executor variant dispatches the connection callbacks on that executor;
 	 * receiver export flags are meaningless in a single-process runtime and are ignored like options. */
 	public boolean bindService(Intent service, int flags, final java.util.concurrent.Executor executor, final ServiceConnection conn) {
@@ -686,4 +758,42 @@ public abstract class Context {
 	public static final String CONNECTIVITY_SERVICE = "connectivity";
 	/** AOSP: the autofill service name; this platform has no autofill service, so getSystemService returns null for it. */
 	public static final String AUTOFILL_MANAGER_SERVICE = "autofill";
+
+	/** the Handler each registered receiver asked to run on (registerReceiver with a scheduler) */
+	private static final java.util.Map<BroadcastReceiver, Handler> tlReceiverSchedulers = new ConcurrentHashMap<>();
+
+	/**
+	 * AOSP LoadedApk.ReceiverDispatcher: the broadcast reaches a registered receiver later, on its
+	 * scheduler (the main thread by default), as a copy of the sent intent, with a PendingResult the
+	 * receiver may take with goAsync(); one it leaves is finished after onReceive. A receiver
+	 * unregistered before delivery does not get it.
+	 */
+	private void tlDeliverBroadcast(final BroadcastReceiver receiver, Intent intent) {
+		if (receiver == null)
+			return;
+		Handler scheduler = tlReceiverSchedulers.get(receiver);
+		if (scheduler == null)
+			scheduler = new Handler(Looper.getMainLooper());
+		final Intent delivered = new Intent(intent);
+		final Context context = this;
+		scheduler.post(new Runnable() {
+			@Override
+			public void run() {
+				if (!receiverMap.containsValue(receiver))
+					return;
+				receiver.setPendingResult(new BroadcastReceiver.PendingResult(0, null, null,
+				    BroadcastReceiver.PendingResult.TYPE_REGISTERED, false, false, null,
+				    android.os.UserHandle.myUserId(), delivered.getFlags()));
+				try {
+					receiver.onReceive(context, delivered);
+				} finally {
+					BroadcastReceiver.PendingResult result = receiver.getPendingResult();
+					if (result != null) {
+						receiver.setPendingResult(null);
+						result.finish();
+					}
+				}
+			}
+		});
+	}
 }

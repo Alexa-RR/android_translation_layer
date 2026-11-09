@@ -493,11 +493,24 @@ public class Intent implements Parcelable {
 	private Intent selector;
 
 	public Intent() {}
+	/** AOSP: a copy of o; the extras, categories, bounds and selector are copied, not shared. */
 	public Intent(Intent o) {
 		this.action = o.action;
 		this.data = o.data;
-		this.extras = o.extras;
+		this.type = o.type;
+		this.tlIdentifier = o.tlIdentifier;
+		this.packageName = o.packageName;
 		this.component = o.component;
+		this.flags = o.flags;
+		this.tlContentUserHint = o.tlContentUserHint;
+		if (o.tlCategories != null)
+			this.tlCategories = new android.util.ArraySet<String>(o.tlCategories);
+		this.extras = o.extras != null ? new Bundle(o.extras) : new Bundle();
+		if (o.tlSourceBounds != null)
+			this.tlSourceBounds = new Rect(o.tlSourceBounds);
+		if (o.selector != null)
+			this.selector = new Intent(o.selector);
+		this.tlClipData = o.tlClipData;
 	}
 	public Intent(String action) {
 		this.action = action;
@@ -658,20 +671,25 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	/** AOSP: copies all extras of src into this intent. */
 	public Intent putExtras(Intent src) {
-		// FIXME HACK
-		this.extras = src.getExtras();
+		if (src.extras != null)
+			this.extras.putAll(src.extras);
 		return this;
 	}
 
+	/** AOSP: adds every mapping of extras to this intent's extras. */
 	public Intent putExtras(Bundle extras) {
-		// FIXME HACK
-		this.extras = extras;
+		this.extras.putAll(extras);
 		return this;
 	}
 
+	/**
+	 * AOSP: replaces the extras by a copy of the given ones. teslalinux: an intent here always has
+	 * an extras bundle (ATL's native intent serializer reads it), so null leaves an empty one.
+	 */
 	public Intent replaceExtras(Bundle extras) {
-		this.extras = extras;
+		this.extras = extras != null ? new Bundle(extras) : new Bundle();
 		return this;
 	}
 
@@ -750,7 +768,11 @@ public class Intent implements Parcelable {
 		return extras;
 	}
 
-	public Intent addCategory(String action) {
+	/** AOSP: adds a category (to the set of categories the intent's target must handle). */
+	public Intent addCategory(String category) {
+		if (tlCategories == null)
+			tlCategories = new android.util.ArraySet<String>();
+		tlCategories.add(category.intern());
 		return this;
 	}
 
@@ -811,8 +833,9 @@ public class Intent implements Parcelable {
 		return extras.getStringArrayList(name);
 	}
 
+	/** AOSP: the ClipData set with setClipData, or null. */
 	public ClipData getClipData() {
-		return null;
+		return tlClipData;
 	}
 
 	public static class ShortcutIconResource {
@@ -822,7 +845,11 @@ public class Intent implements Parcelable {
 		}
 	}
 
-	public void setExtrasClassLoader(ClassLoader loader) {}
+	/** AOSP: the class loader the extras unparcel Parcelables with. */
+	public void setExtrasClassLoader(ClassLoader loader) {
+		if (extras != null)
+			extras.setClassLoader(loader);
+	}
 	public Intent setClassName(Context packageContext, String className) {
 		setComponent(new ComponentName(packageContext, className));
 		return this;
@@ -832,8 +859,9 @@ public class Intent implements Parcelable {
 		return type;
 	}
 
+	/** AOSP: the categories, or null when there are none. */
 	public Set<String> getCategories() {
-		return Collections.emptySet();
+		return tlCategories;
 	}
 
 	public byte[] getByteArrayExtra(String name) {
@@ -849,8 +877,24 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	/** AOSP: a hash code over the fields filterEquals compares. */
 	public int filterHashCode() {
-		return 0;
+		int code = 0;
+		if (action != null)
+			code += action.hashCode();
+		if (data != null)
+			code += data.hashCode();
+		if (type != null)
+			code += type.hashCode();
+		if (tlIdentifier != null)
+			code += tlIdentifier.hashCode();
+		if (packageName != null)
+			code += packageName.hashCode();
+		if (component != null)
+			code += component.hashCode();
+		if (tlCategories != null)
+			code += tlCategories.hashCode();
+		return code;
 	}
 
 	public static Intent parseIntent(Resources res, XmlPullParser parser, AttributeSet attrs) {
@@ -877,17 +921,24 @@ public class Intent implements Parcelable {
 		return component;
 	}
 
-	public void setSourceBounds(Rect sourceBounds) {}
+	/** AOSP: the bounds of the sender (on screen) the intent was launched from; copied. */
+	public void setSourceBounds(Rect sourceBounds) {
+		tlSourceBounds = sourceBounds != null ? new Rect(sourceBounds) : null;
+	}
 
+	/** AOSP: the bounds set with setSourceBounds, or null. */
 	public Rect getSourceBounds() {
-		return null;
+		return tlSourceBounds;
 	}
 
 	public void setSelector(Intent selector) {
 		this.selector = selector;
 	}
 
-	public void setClipData(ClipData clip) {}
+	/** AOSP: the ClipData carried with the intent (for URI grants and rich content). */
+	public void setClipData(ClipData clip) {
+		tlClipData = clip;
+	}
 
 	public String resolveType(Context context) {
 		return type;
@@ -897,11 +948,17 @@ public class Intent implements Parcelable {
 		return selector;
 	}
 
+	/** AOSP: equal for intent resolution (action, data, type, identifier, package, component, categories). */
 	public boolean filterEquals(Intent other) {
+		if (other == null)
+			return false;
 		return Objects.equals(this.action, other.action)
-		    && Objects.equals(this.component, other.component)
 		    && Objects.equals(this.data, other.data)
-		    && Objects.equals(this.type, other.type);
+		    && Objects.equals(this.type, other.type)
+		    && Objects.equals(this.tlIdentifier, other.tlIdentifier)
+		    && Objects.equals(this.packageName, other.packageName)
+		    && Objects.equals(this.component, other.component)
+		    && Objects.equals(this.tlCategories, other.tlCategories);
 	}
 
 	public long[] getLongArrayExtra(String name) {
@@ -923,7 +980,13 @@ public class Intent implements Parcelable {
 	public CharSequence getCharSequenceExtra(String name) { android.os.Bundle b = getExtras(); return b == null ? null : b.getCharSequence(name); }
 	public Intent setIdentifier(String identifier) { tlIdentifier = identifier; return this; }
 	public String getIdentifier() { return tlIdentifier; }
-	public Intent cloneFilter() { Intent i = new Intent(this); i.tlIdentifier = tlIdentifier; return i; }
+	/** AOSP: a copy of only the fields intent matching uses (action, data, type, identifier, package, component, categories). */
+	public Intent cloneFilter() {
+		Intent i = new Intent(action, data);
+		i.type = type; i.tlIdentifier = tlIdentifier; i.packageName = packageName; i.component = component;
+		if (tlCategories != null) i.tlCategories = new android.util.ArraySet<String>(tlCategories);
+		return i;
+	}
 	@Override public Object clone() { return new Intent(this); }
 	public static Intent makeMainActivity(ComponentName mainActivity) {
 		Intent i = new Intent("android.intent.action.MAIN"); i.setComponent(mainActivity); i.addCategory("android.intent.category.LAUNCHER"); return i;
@@ -939,12 +1002,6 @@ public class Intent implements Parcelable {
 		return new Intent("android.intent.action.VIEW", android.net.Uri.parse(uri));
 	}
 	public String toUri(int flags) { return getDataString() != null ? getDataString() : ""; }
-	public void writeToParcel(android.os.Parcel out, int flags) {}
-	public int describeContents() { return 0; }
-	public static final android.os.Parcelable.Creator<Intent> CREATOR = new android.os.Parcelable.Creator<Intent>() {
-		public Intent createFromParcel(android.os.Parcel in) { return new Intent(); }
-		public Intent[] newArray(int size) { return new Intent[size]; }
-	};
 	/** AOSP toUri flags */
 	public static final int URI_INTENT_SCHEME = 1 << 0;
 	public static final int URI_ANDROID_APP_SCHEME = 1 << 1;
@@ -977,4 +1034,144 @@ public class Intent implements Parcelable {
 	public static final int FLAG_GRANT_PREFIX_URI_PERMISSION = 0x00000080;
 	/** AOSP: deliver to an existing top instance through onNewIntent instead of a new one. */
 	public static final int FLAG_ACTIVITY_SINGLE_TOP = 0x20000000;
+
+	/* AOSP fields ATL's Intent lacked */
+	private android.util.ArraySet<String> tlCategories;
+	private ClipData tlClipData;
+	private Rect tlSourceBounds;
+	private int tlContentUserHint = android.os.UserHandle.USER_CURRENT;
+
+	/** AOSP: removes a category. */
+	public void removeCategory(String category) {
+		if (tlCategories != null) {
+			tlCategories.remove(category);
+			if (tlCategories.size() == 0)
+				tlCategories = null;
+		}
+	}
+
+	/** AOSP (API 33): the Parcelable array extra when every item is an instance of clazz, else null. */
+	@SuppressWarnings("unchecked")
+	public <T> T[] getParcelableArrayExtra(String name, Class<T> clazz) {
+		return extras == null ? null : extras.getParcelableArray(name, clazz);
+	}
+
+	@Override
+	public int describeContents() {
+		return (extras != null) ? extras.describeContents() : 0;
+	}
+
+	/** AOSP Intent.writeToParcel (the original-intent slot is always empty here). */
+	@Override
+	public void writeToParcel(android.os.Parcel out, int flags) {
+		out.writeString8(action);
+		Uri.writeToParcel(out, data);
+		out.writeString8(type);
+		out.writeString8(tlIdentifier);
+		out.writeInt(this.flags);
+		out.writeString8(packageName);
+		ComponentName.writeToParcel(component, out);
+
+		if (tlSourceBounds != null) {
+			out.writeInt(1);
+			// Rect.writeToParcel
+			out.writeInt(tlSourceBounds.left);
+			out.writeInt(tlSourceBounds.top);
+			out.writeInt(tlSourceBounds.right);
+			out.writeInt(tlSourceBounds.bottom);
+		} else {
+			out.writeInt(0);
+		}
+
+		if (tlCategories != null) {
+			final int N = tlCategories.size();
+			out.writeInt(N);
+			for (int i = 0; i < N; i++) {
+				out.writeString8(tlCategories.valueAt(i));
+			}
+		} else {
+			out.writeInt(0);
+		}
+
+		if (selector != null) {
+			out.writeInt(1);
+			selector.writeToParcel(out, flags);
+		} else {
+			out.writeInt(0);
+		}
+
+		if (tlClipData != null) {
+			out.writeInt(1);
+			tlClipData.writeToParcel(out, flags);
+		} else {
+			out.writeInt(0);
+		}
+		out.writeInt(tlContentUserHint);
+		out.writeBundle(extras);
+		// mOriginalIntent: intents here are never redirected, so there is none
+		out.writeInt(0);
+	}
+
+	/** AOSP: an intent read from a parcel written by writeToParcel. */
+	protected Intent(android.os.Parcel in) {
+		readFromParcel(in);
+	}
+
+	/** AOSP Intent.readFromParcel. */
+	public void readFromParcel(android.os.Parcel in) {
+		setAction(in.readString8());
+		data = Uri.CREATOR.createFromParcel(in);
+		type = in.readString8();
+		tlIdentifier = in.readString8();
+		flags = in.readInt();
+		packageName = in.readString8();
+		component = ComponentName.readFromParcel(in);
+
+		if (in.readInt() != 0) {
+			tlSourceBounds = new Rect(in.readInt(), in.readInt(), in.readInt(), in.readInt());
+		} else {
+			tlSourceBounds = null;
+		}
+
+		int N = in.readInt();
+		if (N > 0) {
+			tlCategories = new android.util.ArraySet<String>();
+			for (int i = 0; i < N; i++) {
+				tlCategories.add(in.readString8().intern());
+			}
+		} else {
+			tlCategories = null;
+		}
+
+		if (in.readInt() != 0) {
+			selector = new Intent(in);
+		} else {
+			selector = null;
+		}
+
+		if (in.readInt() != 0) {
+			tlClipData = ClipData.CREATOR.createFromParcel(in);
+		} else {
+			tlClipData = null;
+		}
+		tlContentUserHint = in.readInt();
+		Bundle b = in.readBundle();
+		extras = b != null ? b : new Bundle();
+		if (in.readInt() != 0) {
+			// an original intent written by AOSP: read past it
+			new Intent(in);
+		}
+	}
+
+	public static final android.os.Parcelable.Creator<Intent> CREATOR = new android.os.Parcelable.Creator<Intent>() {
+		@Override
+		public Intent createFromParcel(android.os.Parcel in) {
+			return new Intent(in);
+		}
+
+		@Override
+		public Intent[] newArray(int size) {
+			return new Intent[size];
+		}
+	};
 }

@@ -118,6 +118,7 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
 	'src/api-impl-jni/debug/atl_viewdump.c',
 	'src/api-impl-jni/graphics/atl_region.c',
 	'src/api-impl-jni/graphics/atl_pathops.c',
+	'src/api-impl-jni/os/android_os_FileObserver.c',
 	'src/api-impl-jni/graphics/atl_gfx_path.c',
 	'src/api-impl-jni/graphics/atl_gfx_canvas.c',
 	'src/api-impl-jni/opengl/android_opengl_EGL14.c',

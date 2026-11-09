@@ -98,7 +98,27 @@ public class ComponentInfo extends PackageItemInfo {
    }
    return name;
 */
-		return null;
+		if (nonLocalizedLabel != null) {
+			return nonLocalizedLabel;
+		}
+		ApplicationInfo ai = applicationInfo;
+		CharSequence label;
+		if (labelRes != 0) {
+			label = pm.getText(packageName, labelRes, ai);
+			if (label != null) {
+				return label;
+			}
+		}
+		if (ai != null && ai.nonLocalizedLabel != null) {
+			return ai.nonLocalizedLabel;
+		}
+		if (ai != null && ai.labelRes != 0) {
+			label = pm.getText(packageName, ai.labelRes, ai);
+			if (label != null) {
+				return label;
+			}
+		}
+		return name;
 	}
 
 	/**
@@ -116,7 +136,7 @@ public class ComponentInfo extends PackageItemInfo {
 	 * @return The icon associated with this component.
 	 */
 	public final int getIconResource() {
-		return icon; // != 0 ? icon : applicationInfo.icon;
+		return icon != 0 ? icon : (applicationInfo != null ? applicationInfo.icon : 0);
 	}
 
 	/**
@@ -127,7 +147,7 @@ public class ComponentInfo extends PackageItemInfo {
 	 * @return The logo associated with this component.
 	 */
 	public final int getLogoResource() {
-		return logo; // != 0 ? logo : applicationInfo.logo;
+		return logo != 0 ? logo : (applicationInfo != null ? applicationInfo.logo : 0);
 	}
 
 	protected void dumpFront(Printer pw, String prefix) {
@@ -153,7 +173,7 @@ public class ComponentInfo extends PackageItemInfo {
 	 */
 	@Override
 	protected Drawable loadDefaultIcon(PackageManager pm) {
-		return null; // applicationInfo.loadIcon(pm);
+		return applicationInfo != null ? applicationInfo.loadIcon(pm) : null;
 	}
 
 	/**

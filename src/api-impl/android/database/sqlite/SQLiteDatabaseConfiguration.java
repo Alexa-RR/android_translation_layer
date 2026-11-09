@@ -150,6 +150,8 @@ public final class SQLiteDatabaseConfiguration {
 		foreignKeyConstraintsEnabled = other.foreignKeyConstraintsEnabled;
 		customFunctions.clear();
 		customFunctions.addAll(other.customFunctions);
+		perConnectionSql.clear();
+		perConnectionSql.addAll(other.perConnectionSql);
 	}
 
 	/**
@@ -174,4 +176,7 @@ public final class SQLiteDatabaseConfiguration {
 		}
 		return EMAIL_IN_DB_PATTERN.matcher(path).replaceAll("XX@YY");
 	}
+
+	/** AOSP: statements every connection executes when it opens (SQLiteDatabase.execPerConnectionSQL). */
+	public final ArrayList<android.util.Pair<String, Object[]>> perConnectionSql = new ArrayList<>();
 }

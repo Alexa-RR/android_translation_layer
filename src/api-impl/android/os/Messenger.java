@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2006 The Android Open Source Project
+ * Copyright (C) 2008 The Android Open Source Project
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,84 +17,76 @@
 package android.os;
 
 /**
- * Reference to a Handler, which others can use to send messages to it.
- * This allows for the implementation of message-based communication across
- * processes, by creating a Messenger pointing to a Handler in one process,
- * and handing that Messenger to another process.
+ * Reference to a Handler, which others can use to send messages to it (AOSP). Its binder is the
+ * Handler's IMessenger stub, so a Messenger rebuilt from that binder (a service's onBind, a
+ * parcel) reaches the same Handler.
  */
 public final class Messenger implements Parcelable {
-	private final IMessenger mTarget;
+    private final IMessenger mTarget;
 
-	/**
-	 * Create a new Messenger pointing to the given Handler.  Any Message
-	 * objects sent through this Messenger will appear in the Handler as if
-	 * {@link Handler#sendMessage(Message) Handler.sendMessage(Message)} had
-	 * been called directly.
-	 *
-	 * @param target The Handler that will receive sent messages.
-	 */
-	public Messenger(Handler target) {
-		mTarget = target.getIMessenger();
-	}
+    /** Create a new Messenger pointing to the given Handler. */
+    public Messenger(Handler target) {
+        mTarget = target.getIMessenger();
+    }
 
-	/**
-	 * Send a Message to this Messenger's Handler.
-	 *
-	 * @param message The Message to send.  Usually retrieved through
-	 * {@link Message#obtain() Message.obtain()}.
-	 *
-	 * @throws RemoteException Throws DeadObjectException if the target
-	 * Handler no longer exists.
-	 */
-	public void send(Message message) throws RemoteException {
-		mTarget.send(message);
-	}
+    /** Send a Message to this Messenger's Handler. */
+    public void send(Message message) throws RemoteException {
+        mTarget.send(message);
+    }
 
-	/**
-	 * Retrieve the IBinder that this Messenger is using to communicate with
-	 * its associated Handler.
-	 *
-	 * @return Returns the IBinder backing this Messenger.
-	 */
-	public IBinder getBinder() {
-		return null; // mTarget.asBinder();
-	}
+    /** Retrieve the IBinder that this Messenger is using to communicate with its associated Handler. */
+    public IBinder getBinder() {
+        return mTarget.asBinder();
+    }
 
-	/**
-	 * Comparison operator on two Messenger objects, such that true
-	 * is returned then they both point to the same Handler.
-	 */
-	public boolean equals(Object otherObj) {
-		/*if (otherObj == null) {
-		    return false;
-		}
-		try {
-		    return mTarget.asBinder().equals(((Messenger)otherObj)
-			    .mTarget.asBinder());
-		} catch (ClassCastException e) {
-		}*/
-		return false;
-	}
+    /** Comparison operator on two Messenger objects, such that true is returned then they both point to the same Handler. */
+    public boolean equals(Object otherObj) {
+        if (otherObj == null) {
+            return false;
+        }
+        try {
+            return mTarget.asBinder().equals(((Messenger) otherObj).mTarget.asBinder());
+        } catch (ClassCastException e) {
+        }
+        return false;
+    }
 
-	public int hashCode() {
-		return 0; // mTarget.asBinder().hashCode();
-	}
+    public int hashCode() {
+        return mTarget.asBinder().hashCode();
+    }
 
-	public int describeContents() {
-		return 0;
-	}
+    public int describeContents() {
+        return 0;
+    }
 
-	/**
-	 * Create a Messenger from a raw IBinder, which had previously been
-	 * retrieved with {@link #getBinder}.
-	 *
-	 * @param target The IBinder this Messenger should communicate with.
-	 */
-	public Messenger(IBinder target) {
-		mTarget = new IMessenger() {
-			@Override
-			public void send(Message msg) {
-			}
-		};
-	}
+    public void writeToParcel(Parcel out, int flags) {
+        out.writeStrongBinder(mTarget.asBinder());
+    }
+
+    public static final Parcelable.Creator<Messenger> CREATOR = new Parcelable.Creator<Messenger>() {
+        public Messenger createFromParcel(Parcel in) {
+            IBinder target = in.readStrongBinder();
+            return target != null ? new Messenger(target) : null;
+        }
+
+        public Messenger[] newArray(int size) {
+            return new Messenger[size];
+        }
+    };
+
+    /** Convenience function for writing either a Messenger or null pointer to a Parcel. */
+    public static void writeMessengerOrNullToParcel(Messenger messenger, Parcel out) {
+        out.writeStrongBinder(messenger != null ? messenger.mTarget.asBinder() : null);
+    }
+
+    /** Convenience function for reading either a Messenger or null pointer from a Parcel. */
+    public static Messenger readMessengerOrNullFromParcel(Parcel in) {
+        IBinder b = in.readStrongBinder();
+        return b != null ? new Messenger(b) : null;
+    }
+
+    /** Create a Messenger from a raw IBinder, which had previously been retrieved with {@link #getBinder}. */
+    public Messenger(IBinder target) {
+        mTarget = IMessenger.Stub.asInterface(target);
+    }
 }

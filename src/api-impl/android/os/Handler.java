@@ -695,8 +695,10 @@ public class Handler {
 		}
 	}
 
-	private final class MessengerImpl implements IMessenger {
+	/** AOSP: the binder behind Messengers of this Handler. */
+	private final class MessengerImpl extends IMessenger.Stub {
 		public void send(Message msg) {
+			msg.sendingUid = Binder.getCallingUid();
 			Handler.this.sendMessage(msg);
 		}
 	}

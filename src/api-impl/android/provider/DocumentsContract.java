@@ -121,24 +121,94 @@ public final class DocumentsContract {
 		    .build();
 	}
 
+	/*
+	 * AOSP: the document operations are calls (ContentResolver.call) to the DocumentsProvider of the
+	 * URI's authority; a missing provider or a failed operation logs and returns null/false, and a
+	 * provider's RuntimeException is rethrown, as for apps targeting O and later.
+	 */
+	private static android.os.Bundle tlCall(ContentResolver content, Uri uri, String method, android.os.Bundle in) {
+		return content.call(uri.getAuthority(), method, null, in);
+	}
+
+	private static void tlRethrow(Exception e) {
+		if (e instanceof RuntimeException && !(e instanceof IllegalArgumentException && e.getMessage() != null
+		                                       && e.getMessage().startsWith("Unknown authority")))
+			throw (RuntimeException) e;
+	}
+
 	public static Uri copyDocument(ContentResolver content, Uri sourceDocumentUri, Uri targetParentDocumentUri) {
-		throw new RuntimeException("DocumentsContract.copyDocument not implemented yet");
+		try {
+			final android.os.Bundle in = new android.os.Bundle();
+			in.putParcelable(EXTRA_URI, sourceDocumentUri);
+			in.putParcelable(EXTRA_TARGET_URI, targetParentDocumentUri);
+			final android.os.Bundle out = tlCall(content, sourceDocumentUri, METHOD_COPY_DOCUMENT, in);
+			return out.getParcelable(EXTRA_URI);
+		} catch (Exception e) {
+			android.util.Log.w(TAG, "Failed to copy document", e);
+			tlRethrow(e);
+			return null;
+		}
 	}
 
 	public static Uri createDocument(ContentResolver content, Uri parentDocumentUri, String mimeType, String displayName) {
-		throw new RuntimeException("DocumentsContract.createDocument not implemented yet");
+		try {
+			final android.os.Bundle in = new android.os.Bundle();
+			in.putParcelable(EXTRA_URI, parentDocumentUri);
+			in.putString(COLUMN_MIME_TYPE, mimeType);
+			in.putString(COLUMN_DISPLAY_NAME, displayName);
+			final android.os.Bundle out = tlCall(content, parentDocumentUri, METHOD_CREATE_DOCUMENT, in);
+			return out.getParcelable(EXTRA_URI);
+		} catch (Exception e) {
+			android.util.Log.w(TAG, "Failed to create document", e);
+			tlRethrow(e);
+			return null;
+		}
 	}
 
 	public static boolean deleteDocument(ContentResolver content, Uri documentUri) {
-		throw new RuntimeException("DocumentsContract.deleteDocument not implemented yet");
+		try {
+			final android.os.Bundle in = new android.os.Bundle();
+			in.putParcelable(EXTRA_URI, documentUri);
+			tlCall(content, documentUri, METHOD_DELETE_DOCUMENT, in);
+			return true;
+		} catch (Exception e) {
+			android.util.Log.w(TAG, "Failed to delete document", e);
+			tlRethrow(e);
+			return false;
+		}
 	}
 
 	public static Uri renameDocument(ContentResolver content, Uri documentUri, String displayName) {
-		throw new RuntimeException("DocumentsContract.renameDocument not implemented yet");
+		try {
+			final android.os.Bundle in = new android.os.Bundle();
+			in.putParcelable(EXTRA_URI, documentUri);
+			in.putString(COLUMN_DISPLAY_NAME, displayName);
+			final android.os.Bundle out = tlCall(content, documentUri, METHOD_RENAME_DOCUMENT, in);
+			final Uri outUri = out.getParcelable(EXTRA_URI);
+			return (outUri != null) ? outUri : documentUri;
+		} catch (Exception e) {
+			android.util.Log.w(TAG, "Failed to rename document", e);
+			tlRethrow(e);
+			return null;
+		}
 	}
 
 	public static boolean isChildDocument(ContentResolver content, Uri parentDocumentUri, Uri childDocumentUri) {
-		throw new RuntimeException("DocumentsContract.isChildDocument not implemented yet");
+		try {
+			final android.os.Bundle in = new android.os.Bundle();
+			in.putParcelable(EXTRA_URI, parentDocumentUri);
+			in.putParcelable(EXTRA_TARGET_URI, childDocumentUri);
+			final android.os.Bundle out = tlCall(content, parentDocumentUri, METHOD_IS_CHILD_DOCUMENT, in);
+			if (out == null)
+				throw new RuntimeException("Failed to get a response from isChildDocument query.");
+			if (!out.containsKey(EXTRA_RESULT))
+				throw new RuntimeException("Response did not include result field..");
+			return out.getBoolean(EXTRA_RESULT);
+		} catch (Exception e) {
+			android.util.Log.w(TAG, "Failed to create document", e);
+			tlRethrow(e);
+			return false;
+		}
 	}
 
 	public static Uri buildDocumentUri(String authority, String documentId) {
@@ -172,5 +242,39 @@ public final class DocumentsContract {
 		public static final int FLAG_PARTIAL = 1 << 13;
 		public static final int FLAG_SUPPORTS_METADATA = 1 << 14;
 		public static final int FLAG_DIR_BLOCKS_OPEN_DOCUMENT_TREE = 1 << 15;
+	}
+
+	private static final String TAG = "DocumentsContract";
+	/** AOSP (hidden): the target of copy/move/isChild calls */
+	public static final String EXTRA_TARGET_URI = "android.content.extra.TARGET_URI";
+	/* Document column names (AOSP DocumentsContract.Document) used in the call extras */
+	private static final String COLUMN_MIME_TYPE = "mime_type";
+	private static final String COLUMN_DISPLAY_NAME = "_display_name";
+
+	/** AOSP: the URI of the children of a document of a provider. */
+	public static Uri buildChildDocumentsUri(String authority, String parentDocumentId) {
+		return new Uri.Builder().scheme(ContentResolver.SCHEME_CONTENT).authority(authority)
+		    .appendPath(PATH_DOCUMENT).appendPath(parentDocumentId).appendPath(PATH_CHILDREN).build();
+	}
+
+	/** AOSP: the URI of a document tree (granted with ACTION_OPEN_DOCUMENT_TREE). */
+	public static Uri buildTreeDocumentUri(String authority, String documentId) {
+		return new Uri.Builder().scheme(ContentResolver.SCHEME_CONTENT).authority(authority)
+		    .appendPath(PATH_TREE).appendPath(documentId).build();
+	}
+
+	/** AOSP: removes a document from a parent (a document may be in several). */
+	public static boolean removeDocument(ContentResolver content, Uri documentUri, Uri parentDocumentUri) {
+		try {
+			final android.os.Bundle in = new android.os.Bundle();
+			in.putParcelable(EXTRA_URI, documentUri);
+			in.putParcelable(EXTRA_PARENT_URI, parentDocumentUri);
+			tlCall(content, documentUri, METHOD_REMOVE_DOCUMENT, in);
+			return true;
+		} catch (Exception e) {
+			android.util.Log.w(TAG, "Failed to remove document", e);
+			tlRethrow(e);
+			return false;
+		}
 	}
 }

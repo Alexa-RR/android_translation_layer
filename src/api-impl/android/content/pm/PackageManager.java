@@ -1671,9 +1671,17 @@ public class PackageManager {
 	 * @see #GET_META_DATA
 	 * @see #GET_SHARED_LIBRARY_FILES
 	 */
+	/** AOSP: the manifest's receiver of that class; NameNotFoundException when there is none. */
 	public ActivityInfo getReceiverInfo(ComponentName component,
 	                                    int flags) throws NameNotFoundException {
-		return null;
+		PackageParser.Package pkg = tlPackage(component.getPackageName());
+		if (pkg != null) {
+			for (PackageParser.Activity r : pkg.receivers) {
+				if (r.className.equals(component.getClassName()))
+					return r.info;
+			}
+		}
+		throw new NameNotFoundException(component.toString());
 	}
 
 	/**
@@ -2072,8 +2080,10 @@ public class PackageManager {
 	 * @return Returns an array of one or more packages assigned to the user
 	 * id, or null if there are no known packages with the given id.
 	 */
+	/** AOSP: the packages running as uid (this app's for its uid), or null. */
 	public String[] getPackagesForUid(int uid) {
-		return null;
+		PackageParser.Package pkg = ATLLoadedApp.getPrimaryApplication().pkg;
+		return uid == pkg.applicationInfo.uid ? new String[] {pkg.packageName} : null;
 	}
 
 	/**
@@ -2087,8 +2097,10 @@ public class PackageManager {
 	 * @return Returns a unique name for the given user id, or null if the
 	 * user id is not currently assigned.
 	 */
+	/** AOSP: the package name of an app uid, or null for an unknown uid. */
 	public String getNameForUid(int uid) {
-		return "example user";
+		String[] pkgs = getPackagesForUid(uid);
+		return pkgs != null ? pkgs[0] : null;
 	}
 
 	/**
@@ -2171,8 +2183,23 @@ public class PackageManager {
 	 * @return An array of FeatureInfo classes describing the features
 	 * that are available on the system, or null if there are none(!!).
 	 */
+	/**
+	 * AOSP: every feature hasSystemFeature reports, plus the OpenGL ES version entry (a FeatureInfo
+	 * without a name), the one ActivityManager's ConfigurationInfo reports.
+	 */
 	public FeatureInfo[] getSystemAvailableFeatures() {
-		return new FeatureInfo[0];
+		ArrayList<FeatureInfo> out = new ArrayList<>();
+		for (String name : tlKnownFeatures()) {
+			if (hasSystemFeature(name)) {
+				FeatureInfo fi = new FeatureInfo();
+				fi.name = name;
+				out.add(fi);
+			}
+		}
+		FeatureInfo gles = new FeatureInfo();
+		gles.reqGlEsVersion = new ConfigurationInfo().reqGlEsVersion;
+		out.add(gles);
+		return out.toArray(new FeatureInfo[0]);
 	}
 
 	/**
@@ -2423,9 +2450,28 @@ public class PackageManager {
 	 * @see #GET_INTENT_FILTERS
 	 * @see #GET_RESOLVED_FILTER
 	 */
+	/**
+	 * AOSP: the activities for the specific intents first (in order, each once), then the other
+	 * activities that handle intent.
+	 */
 	public List<ResolveInfo> queryIntentActivityOptions(
 	    ComponentName caller, Intent[] specifics, Intent intent, int flags) {
-		return null;
+		ArrayList<ResolveInfo> out = new ArrayList<>();
+		java.util.HashSet<String> seen = new java.util.HashSet<>();
+		if (specifics != null) {
+			for (Intent s : specifics) {
+				if (s == null)
+					continue;
+				ResolveInfo ri = resolveActivity(s, flags);
+				if (ri != null && ri.activityInfo != null && seen.add(ri.activityInfo.packageName + "/" + ri.activityInfo.name))
+					out.add(ri);
+			}
+		}
+		for (ResolveInfo ri : queryIntentActivities(intent, flags)) {
+			if (ri.activityInfo == null || seen.add(ri.activityInfo.packageName + "/" + ri.activityInfo.name))
+				out.add(ri);
+		}
+		return out;
 	}
 
 	/**
@@ -2488,8 +2534,10 @@ public class PackageManager {
 	 * @see #GET_INTENT_FILTERS
 	 * @see #GET_RESOLVED_FILTER
 	 */
+	/** AOSP: the best service for the intent (the first of queryIntentServices), or null. */
 	public ResolveInfo resolveService(Intent intent, int flags) {
-		return null;
+		List<ResolveInfo> list = queryIntentServices(intent, flags);
+		return list == null || list.isEmpty() ? null : list.get(0);
 	}
 
 	/**
@@ -2518,15 +2566,35 @@ public class PackageManager {
 		if (pkg == null) {
 			pkg = ATLLoadedApp.getPrimaryApplication().pkg;
 		}
+		// AOSP: an explicit intent names its one service; otherwise each service with a matching
+		// filter, once, best priority first
+		ComponentName explicit = intent.getComponent();
 		for (Service s : pkg.services) {
-			for (ServiceIntentInfo intentinfo : s.intents) {
-				if (s.getComponentName().equals(intent.getComponent()) || intentinfo.matchAction(intent.getAction())) {
+			if (explicit != null) {
+				if (s.getComponentName().equals(explicit)) {
 					ResolveInfo ri = new ResolveInfo();
 					ri.serviceInfo = s.info;
 					list.add(ri);
 				}
+				continue;
+			}
+			if (s.intents == null)
+				continue;
+			for (ServiceIntentInfo intentinfo : s.intents) {
+				if (intentinfo.match(intent.getAction(), intent.getType(), intent.getScheme(), intent.getData(), intent.getCategories(), "PackageManager") >= 0) {
+					ResolveInfo ri = new ResolveInfo();
+					ri.serviceInfo = s.info;
+					ri.priority = intentinfo.priority;
+					list.add(ri);
+					break;
+				}
 			}
 		}
+		java.util.Collections.sort(list, new java.util.Comparator<ResolveInfo>() {
+			public int compare(ResolveInfo a, ResolveInfo b) {
+				return Integer.compare(b.priority, a.priority);
+			}
+		});
 		return list;
 	}
 
@@ -2573,8 +2641,32 @@ public class PackageManager {
 	 * @see #GET_INTENT_FILTERS
 	 * @see #GET_RESOLVED_FILTER
 	 */
+	/** AOSP: the providers whose intent filters match (DocumentsProvider-style); empty when none. */
 	public List<ResolveInfo> queryIntentContentProviders(Intent intent, int flags) {
-		return null;
+		ArrayList<ResolveInfo> out = new ArrayList<>();
+		PackageParser.Package pkg = ATLLoadedApp.getPrimaryApplication().pkg;
+		for (PackageParser.Provider p : pkg.providers) {
+			if (intent.getComponent() != null) {
+				if (p.getComponentName().equals(intent.getComponent())) {
+					ResolveInfo ri = new ResolveInfo();
+					ri.providerInfo = p.info;
+					out.add(ri);
+				}
+				continue;
+			}
+			if (p.intents == null)
+				continue;
+			for (PackageParser.ProviderIntentInfo ii : p.intents) {
+				if (ii.match(intent.getAction(), intent.getType(), intent.getScheme(), intent.getData(), intent.getCategories(), "PackageManager") >= 0) {
+					ResolveInfo ri = new ResolveInfo();
+					ri.providerInfo = p.info;
+					ri.priority = ii.priority;
+					out.add(ri);
+					break;
+				}
+			}
+		}
+		return out;
 	}
 
 	/**
@@ -2698,8 +2790,9 @@ public class PackageManager {
 	 *
 	 * @see #getActivityIcon(Intent)
 	 */
+	/** AOSP: the activity's icon, else the application's, else the default icon. */
 	public Drawable getActivityIcon(ComponentName activityName) throws NameNotFoundException {
-		return null;
+		return getActivityInfo(activityName, 0).loadIcon(this);
 	}
 
 	/**
@@ -3221,8 +3314,15 @@ public class PackageManager {
 	 *
 	 * @param packageName The name of the package to query
 	 */
+	/**
+	 * AOSP: the package that installed packageName, or null when it was not installed by an
+	 * installer app (adb/side-loaded). ATL installs apps with tools/apps/install-app.sh, so there is
+	 * no installer package; an unknown package is an IllegalArgumentException.
+	 */
 	public String getInstallerPackageName(String packageName) {
-		return "com.example.installer";
+		if (tlPackage(packageName) == null)
+			throw new IllegalArgumentException("Unknown package: " + packageName);
+		return null;
 	}
 
 	/**
@@ -3521,8 +3621,14 @@ public class PackageManager {
 	 *                 whatever was set in it's manifest (or enabled, by default).
 	 * @param flags Optional behavior flags: {@link #DONT_KILL_APP} or 0.
 	 */
+	/** AOSP: overrides the manifest's enabled state of a component; kept across restarts. */
 	public void setComponentEnabledSetting(ComponentName componentName, int newState, int flags) {
-		return;
+		if (newState != COMPONENT_ENABLED_STATE_DEFAULT && newState != COMPONENT_ENABLED_STATE_ENABLED
+		    && newState != COMPONENT_ENABLED_STATE_DISABLED && newState != COMPONENT_ENABLED_STATE_DISABLED_USER
+		    && newState != COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED)
+			throw new IllegalArgumentException("Invalid new component state: " + newState);
+		tlCheckComponent(componentName);
+		tlSetComponentState(componentName, newState);
 	}
 
 	/**
@@ -3540,8 +3646,10 @@ public class PackageManager {
 	 * component's enabled state is based on the original information in
 	 * the manifest as found in {@link ComponentInfo}.
 	 */
+	/** AOSP: the state set by setComponentEnabledSetting, COMPONENT_ENABLED_STATE_DEFAULT if none. */
 	public int getComponentEnabledSetting(ComponentName componentName) {
-		return -1;
+		tlCheckComponent(componentName);
+		return tlGetComponentState(componentName);
 	}
 
 	/**
@@ -3684,10 +3792,145 @@ public class PackageManager {
 	public static final class PackageInfoFlags { public final long value; private PackageInfoFlags(long v) { value = v; } public static PackageInfoFlags of(long v) { return new PackageInfoFlags(v); } public long getValue() { return value; } }
 	public Property getProperty(String propertyName, String packageName) throws NameNotFoundException { throw new NameNotFoundException(propertyName); }
 	public Property getProperty(String propertyName, android.content.ComponentName component) throws NameNotFoundException { throw new NameNotFoundException(propertyName); }
-	public boolean hasSigningCertificate(String packageName, byte[] certificate, int type) { return false; }
-	public boolean hasSigningCertificate(int uid, byte[] certificate, int type) { return false; }
+	/** AOSP: whether the package is signed by the certificate (raw X.509 or its SHA-256), from the APK's signers. */
+	public boolean hasSigningCertificate(String packageName, byte[] certificate, int type) { return tlHasCertificate(tlPackage(packageName), certificate, type); }
+	public boolean hasSigningCertificate(int uid, byte[] certificate, int type) {
+		String[] pkgs = getPackagesForUid(uid);
+		return pkgs != null && hasSigningCertificate(pkgs[0], certificate, type);
+	}
 	public boolean isAutoRevokeWhitelisted() { return true; }
 	public boolean isAutoRevokeWhitelisted(String packageName) { return true; }
 	public boolean canRequestPackageInstalls() { return false; }
 	public boolean isPackageSuspended() { return false; }
+
+	/** AOSP: PackageInfo flag, fill in PackageInfo.signingInfo. */
+	public static final int GET_SIGNING_CERTIFICATES = 0x08000000;
+	/** AOSP: hasSigningCertificate input is the raw X.509 certificate. */
+	public static final int CERT_INPUT_RAW_X509 = 0;
+	/** AOSP: hasSigningCertificate input is the SHA-256 digest of the certificate. */
+	public static final int CERT_INPUT_SHA256 = 1;
+
+	/** the parsed package of packageName when it is the app ATL runs, else null */
+	private static PackageParser.Package tlPackage(String packageName) {
+		PackageParser.Package pkg = ATLLoadedApp.getPrimaryApplication().pkg;
+		return pkg.packageName.equals(packageName) ? pkg : null;
+	}
+
+	/** every feature name the device could report: the FEATURE_ constants and the extra names hasSystemFeature knows */
+	private static java.util.List<String> tlKnownFeatures() {
+		java.util.LinkedHashSet<String> names = new java.util.LinkedHashSet<>();
+		for (java.lang.reflect.Field f : PackageManager.class.getFields()) {
+			if (f.getName().startsWith("FEATURE_") && f.getType() == String.class
+			    && java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+				try {
+					names.add((String) f.get(null));
+				} catch (IllegalAccessException e) {
+					// public constants are always readable
+				}
+			}
+		}
+		java.util.Collections.addAll(names, "android.hardware.touchscreen", "android.hardware.touchscreen.multitouch",
+		                             "android.hardware.touchscreen.multitouch.distinct", "android.hardware.touchscreen.multitouch.jazzhand",
+		                             "android.hardware.faketouch", "android.hardware.location", "android.hardware.location.gps",
+		                             "android.hardware.location.network", "android.hardware.wifi", "android.hardware.screen.landscape",
+		                             "android.software.app_widgets", "android.software.webview", "android.hardware.opengles.aep",
+		                             "android.hardware.vulkan.level", "android.hardware.vulkan.version");
+		return new java.util.ArrayList<>(names);
+	}
+
+	/** AOSP: IllegalArgumentException for a component the package does not declare. */
+	private static void tlCheckComponent(ComponentName c) {
+		PackageParser.Package pkg = tlPackage(c.getPackageName());
+		if (pkg != null) {
+			String cls = c.getClassName();
+			for (PackageParser.Activity a : pkg.activities)
+				if (a.className.equals(cls)) return;
+			for (PackageParser.Activity a : pkg.receivers)
+				if (a.className.equals(cls)) return;
+			for (PackageParser.Service s : pkg.services)
+				if (s.className.equals(cls)) return;
+			for (PackageParser.Provider p : pkg.providers)
+				if (p.className.equals(cls)) return;
+		}
+		throw new IllegalArgumentException("Unknown component: " + c);
+	}
+
+	/*
+	 * Component enabled-state overrides. AOSP keeps them in the package manager's per-user
+	 * package-restrictions file; ATL keeps them in the app's data directory
+	 * (atl_component_states.properties), so they survive restarts the same way.
+	 */
+	private static java.util.Properties tlComponentStates;
+
+	private static java.io.File tlComponentStateFile() {
+		String dataDir = ATLLoadedApp.getPrimaryApplication().pkg.applicationInfo.dataDir;
+		if (dataDir == null)
+			dataDir = android.os.Environment.getDataDirectory().getPath();
+		return new java.io.File(dataDir, "atl_component_states.properties");
+	}
+
+	private static synchronized java.util.Properties tlStates() {
+		if (tlComponentStates == null) {
+			tlComponentStates = new java.util.Properties();
+			java.io.File f = tlComponentStateFile();
+			if (f.exists()) {
+				try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+					tlComponentStates.load(in);
+				} catch (java.io.IOException e) {
+					android.util.Slog.w(TAG, "cannot read " + f + ": " + e);
+				}
+			}
+		}
+		return tlComponentStates;
+	}
+
+	private static synchronized int tlGetComponentState(ComponentName c) {
+		String v = tlStates().getProperty(c.flattenToString());
+		try {
+			return v != null ? Integer.parseInt(v) : COMPONENT_ENABLED_STATE_DEFAULT;
+		} catch (NumberFormatException e) {
+			return COMPONENT_ENABLED_STATE_DEFAULT;
+		}
+	}
+
+	private static synchronized void tlSetComponentState(ComponentName c, int state) {
+		java.util.Properties p = tlStates();
+		if (state == COMPONENT_ENABLED_STATE_DEFAULT)
+			p.remove(c.flattenToString());
+		else
+			p.setProperty(c.flattenToString(), Integer.toString(state));
+		java.io.File f = tlComponentStateFile();
+		java.io.File tmp = new java.io.File(f.getPath() + ".new");
+		try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+			p.store(out, "component enabled states (PackageManager.setComponentEnabledSetting)");
+			out.getFD().sync();
+		} catch (java.io.IOException e) {
+			android.util.Slog.w(TAG, "cannot write " + f + ": " + e);
+			return;
+		}
+		if (!tmp.renameTo(f))
+			android.util.Slog.w(TAG, "cannot replace " + f);
+	}
+
+	/** the signatures (and past signing certificates) of a package for hasSigningCertificate */
+	private static boolean tlHasCertificate(PackageParser.Package pkg, byte[] certificate, int type) {
+		if (pkg == null || pkg.mSignatures == null || certificate == null)
+			return false;
+		for (Signature s : pkg.mSignatures) {
+			byte[] raw = s.toByteArray();
+			if (type == CERT_INPUT_RAW_X509) {
+				if (java.util.Arrays.equals(raw, certificate))
+					return true;
+			} else if (type == CERT_INPUT_SHA256) {
+				try {
+					byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(raw);
+					if (java.util.Arrays.equals(digest, certificate))
+						return true;
+				} catch (java.security.NoSuchAlgorithmException e) {
+					return false;
+				}
+			}
+		}
+		return false;
+	}
 }

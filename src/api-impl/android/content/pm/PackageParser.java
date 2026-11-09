@@ -458,6 +458,12 @@ public class PackageParser {
 				System.arraycopy(p.mSignatures, 0, pi.signatures, 0, N);
 			}
 		}
+		if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0 && p.mSignatures != null) {
+			// AOSP: signers, rotation history (only the current signer of a v3 lineage is read here)
+			// and the scheme: v3/v2 from the APK Signing Block, else the JAR signature (v1)
+			pi.signingInfo = new SigningInfo(p.mSignatures.clone(), null,
+			                                 p.tlSigningScheme != 0 ? p.tlSigningScheme : 1);
+		}
 		return pi;
 	}
 
@@ -3373,7 +3379,8 @@ public class PackageParser {
 		public Package(String _name) {
 			packageName = _name;
 			applicationInfo.packageName = _name;
-			applicationInfo.uid = -1;
+			// AOSP: the uid the package manager assigned at install; ATL runs the app as this process's uid
+			applicationInfo.uid = android.os.Process.myUid();
 		}
 
 		public void setPackageName(String newName) {
@@ -3434,7 +3441,10 @@ public class PackageParser {
 		public String toString() {
 			return "Package{" + Integer.toHexString(System.identityHashCode(this)) + " " + packageName + "}";
 		}
-	}
+	
+		/** teslalinux: the APK signature scheme the signers came from (3, 2; 0 when read from the JAR signature) */
+		public int tlSigningScheme;
+}
 
 	public static class Component<II extends IntentInfo> {
 		public final Package owner;
@@ -3977,6 +3987,7 @@ public class PackageParser {
 			android.util.apk.ApkSignatureSchemeV3Verifier.VerifiedSigner v3 = validate
 				? android.util.apk.ApkSignatureSchemeV3Verifier.verify(mArchiveSourcePath)
 				: android.util.apk.ApkSignatureSchemeV3Verifier.unsafeGetCertsWithoutVerification(mArchiveSourcePath);
+			pkg.tlSigningScheme = 3;
 			Slog.i(TAG, "Package " + pkg.packageName + ": APK Signature Scheme v3" + (validate ? " (verified)" : ""));
 			return new Certificate[] { v3.certs[0] };
 		} catch (android.util.apk.SignatureNotFoundException e) {
@@ -3992,6 +4003,7 @@ public class PackageParser {
 			Certificate[] certs = new Certificate[signers.length];
 			for (int i = 0; i < signers.length; i++)
 				certs[i] = signers[i][0];
+			pkg.tlSigningScheme = 2;
 			Slog.i(TAG, "Package " + pkg.packageName + ": APK Signature Scheme v2" + (validate ? " (verified)" : ""));
 			return certs;
 		} catch (android.util.apk.SignatureNotFoundException e) {

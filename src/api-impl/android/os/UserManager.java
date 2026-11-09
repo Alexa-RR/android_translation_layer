@@ -13,8 +13,9 @@ public class UserManager {
 	}
 
 	/* teslalinux: UserManager additions */
-	public boolean isUserRunning(UserHandle user) { return true; }
-	public boolean isUserRunningOrStopping(UserHandle user) { return true; }
+	/** AOSP: whether the user is running; this device runs only the user of this process. */
+	public boolean isUserRunning(UserHandle user) { return user != null && user.getIdentifier() == UserHandle.myUserId(); }
+	public boolean isUserRunningOrStopping(UserHandle user) { return isUserRunning(user); }
 	public boolean isUserAGoat() { return false; }
 	public boolean isDemoUser() { return false; }
 	public boolean isManagedProfile() { return false; }
