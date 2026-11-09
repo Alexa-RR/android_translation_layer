@@ -1101,7 +1101,9 @@ public final class Configuration implements Comparable<Configuration> {
 	public void setToDefaults() {
 		fontScale = 1;
 		mcc = mnc = 0;
-		locale = new Locale("en", "US");
+		// AOSP (API 24+): no locale until the system's is applied (Resources fills in Locale.getDefault())
+		locale = null;
+		tlLocaleList = LocaleList.getEmptyLocaleList();
 		userSetLocale = false;
 		touchscreen = TOUCHSCREEN_UNDEFINED;
 		keyboard = KEYBOARD_UNDEFINED;
@@ -1520,9 +1522,8 @@ public final class Configuration implements Comparable<Configuration> {
 	* @return The locale list.
 	*/
 	public LocaleList getLocales() {
-		return LocaleList.getDefault();
-		/*fixUpLocaleList();
-		return mLocaleList;*/
+		tlFixUpLocaleList();
+		return tlLocaleList;
 	}
 	/**
 	* Set the locale list. This is the preferred way for setting up the locales (instead of using
@@ -1536,9 +1537,9 @@ public final class Configuration implements Comparable<Configuration> {
 	* @param locales The locale list. If null, an empty LocaleList will be assigned.
 	*/
 	public void setLocales(LocaleList locales) {
-		/*mLocaleList = locales == null ? LocaleList.getEmptyLocaleList() : locales;
-		locale = mLocaleList.get(0);
-		setLayoutDirection(locale);*/
+		tlLocaleList = locales == null ? LocaleList.getEmptyLocaleList() : locales;
+		locale = tlLocaleList.get(0);
+		setLayoutDirection(locale);
 	}
 
 	/**
@@ -1591,4 +1592,13 @@ public final class Configuration implements Comparable<Configuration> {
 
 	/** AOSP (API 31): no font weight adjustment has been set. */
 	public static final int FONT_WEIGHT_ADJUSTMENT_UNDEFINED = Integer.MAX_VALUE;
+
+	/* teslalinux: AOSP's locale list (Configuration.mLocaleList); the public locale field stays its first
+	 * entry: a direct write to locale replaces the list on the next read (AOSP fixUpLocaleList) */
+	private LocaleList tlLocaleList = LocaleList.getEmptyLocaleList();
+
+	private void tlFixUpLocaleList() {
+		if ((locale == null && !tlLocaleList.isEmpty()) || (locale != null && !locale.equals(tlLocaleList.get(0))))
+			tlLocaleList = locale == null ? LocaleList.getEmptyLocaleList() : new LocaleList(locale);
+	}
 }

@@ -70,7 +70,12 @@ static void tl_apply_window_config(JNIEnv *env, jobject config, int width, int h
 {
 	int density_dpi = _GET_INT_FIELD(config, "densityDpi");
 	if (density_dpi <= 0) {
-		density_dpi = 160;
+		/* the device density: ATL_DENSITY_DPI (ro.sf.lcd_density, as DisplayMetrics.DENSITY_DEVICE and
+		 * the asset configuration read it), mdpi without it */
+		const char *dpi_env = g_getenv("ATL_DENSITY_DPI");
+		density_dpi = dpi_env ? (int)g_ascii_strtoll(dpi_env, NULL, 10) : 0;
+		if (density_dpi <= 0)
+			density_dpi = 160;
 		_SET_INT_FIELD(config, "densityDpi", density_dpi);
 	}
 	int width_dp = width * 160 / density_dpi;

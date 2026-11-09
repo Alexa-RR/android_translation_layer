@@ -115,6 +115,27 @@ public abstract class Context {
 	static {
 		sys_config = new Configuration();
 		native_updateConfig(sys_config);
+		// teslalinux: the system locale, applied the way AOSP's ActivityThread applies persist.sys.locale
+		// (LocaleList.setDefault with the configuration's locales) before any resources exist. The
+		// launcher passes the device setting as -Duser.locale (host/phase1-pios/teslalinux-atl).
+		// the system time zone, as AOSP's RuntimeInit hands persist.sys.timezone to libcore: the
+		// launcher passes it as -Duser.timezone (and TZ); without it libcore falls back to GMT
+		String tlZone = System.getProperty("user.timezone", "");
+		if (tlZone.isEmpty() && System.getenv("TZ") != null)
+			tlZone = System.getenv("TZ");
+		if (!tlZone.isEmpty()) {
+			final java.util.TimeZone tlTz = java.util.TimeZone.getTimeZone(tlZone);
+			if (tlTz.getID().equals(tlZone))
+				java.util.TimeZone.setDefault(tlTz);
+		}
+		final String tlLocaleTags = System.getProperty("user.locale", "");
+		if (!tlLocaleTags.isEmpty()) {
+			final android.os.LocaleList tlLocales = android.os.LocaleList.forLanguageTags(tlLocaleTags);
+			if (!tlLocales.isEmpty()) {
+				android.os.LocaleList.setDefault(tlLocales);
+				sys_config.setLocales(tlLocales);
+			}
+		}
 		ATLLoadedApp primary_application = ATLLoadedApp.getPrimaryApplication();
 
 		ApplicationInfo application_info = primary_application.pkg.applicationInfo;

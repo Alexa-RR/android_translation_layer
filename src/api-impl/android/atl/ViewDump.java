@@ -64,6 +64,10 @@ public final class ViewDump {
 						android.content.res.Resources res = activity.getResources();
 						Log.i(TAG, "config " + res.getConfiguration());
 						Log.i(TAG, "metrics " + res.getDisplayMetrics());
+						Log.i(TAG, "locale default=" + java.util.Locale.getDefault() + " user.locale=" + System.getProperty("user.locale")
+						           + " user.language=" + System.getProperty("user.language") + " user.region=" + System.getProperty("user.region")
+						           + " LocaleList=" + android.os.LocaleList.getDefault() + " tz=" + java.util.TimeZone.getDefault().getID()
+						           + " sys_config=" + android.content.Context.sys_config);
 						android.view.Display disp = activity.getWindowManager().getDefaultDisplay();
 						android.graphics.Point p = new android.graphics.Point();
 						disp.getSize(p);

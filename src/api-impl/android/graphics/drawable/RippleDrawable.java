@@ -85,6 +85,24 @@ public class RippleDrawable extends LayerDrawable {
 	}
 
 	/** Sets the ripple color. */
+	/**
+	 * AOSP: android:color (usually ?attr/colorControlHighlight, resolved through the theme) and
+	 * android:radius, read before the layer list consumes the parser; the items (and the
+	 * android:id/mask layer) inflate as in LayerDrawable. Without this an XML ripple kept the
+	 * placeholder colour of the inflation constructor.
+	 */
+	@Override
+	public void inflate(android.content.res.Resources r, org.xmlpull.v1.XmlPullParser parser, android.util.AttributeSet attrs,
+	                    android.content.res.Resources.Theme theme) throws org.xmlpull.v1.XmlPullParserException, java.io.IOException {
+		final android.content.res.TypedArray a = obtainAttributes(r, theme, attrs, R.styleable.RippleDrawable);
+		final ColorStateList color = a.getColorStateList(R.styleable.RippleDrawable_color);
+		if (color != null)
+			mColor = color;
+		mRadius = a.getDimensionPixelSize(R.styleable.RippleDrawable_radius, mRadius);
+		a.recycle();
+		super.inflate(r, parser, attrs, theme);
+	}
+
 	public void setColor(ColorStateList color) {
 		if (color == null)
 			throw new IllegalArgumentException("color cannot be null");
