@@ -473,11 +473,15 @@ public class Drawable {
 		bounds.set(mBounds);
 	}
 
+	/** AOSP: the minimum width a view should give this drawable: its intrinsic width, or 0 without one */
 	public int getMinimumWidth() {
-		return 10; // FIXME
+		final int intrinsicWidth = getIntrinsicWidth();
+		return intrinsicWidth > 0 ? intrinsicWidth : 0;
 	}
+	/** AOSP: the minimum height a view should give this drawable: its intrinsic height, or 0 without one */
 	public int getMinimumHeight() {
-		return 10; // FIXME
+		final int intrinsicHeight = getIntrinsicHeight();
+		return intrinsicHeight > 0 ? intrinsicHeight : 0;
 	}
 
 	protected void onBoundsChange(Rect bounds) {}

@@ -1795,11 +1795,14 @@ public class View implements Drawable.Callback {
 		return curState | newState;
 	}
 
+	/** AOSP: the larger of the view's minimum height and its background's minimum height (a view is
+	 * never smaller than its background image: Waze's speedometer circles are only backgrounds) */
 	protected int getSuggestedMinimumHeight() {
-		return getMinimumHeight();
+		return (background == null) ? getMinimumHeight() : Math.max(getMinimumHeight(), background.getMinimumHeight());
 	}
+	/** AOSP: the larger of the view's minimum width and its background's minimum width */
 	protected int getSuggestedMinimumWidth() {
-		return getMinimumWidth();
+		return (background == null) ? getMinimumWidth() : Math.max(getMinimumWidth(), background.getMinimumWidth());
 	}
 
 	/**

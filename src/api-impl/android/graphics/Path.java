@@ -93,8 +93,13 @@ public class Path {
 		arcTo(oval.left, oval.top, oval.right, oval.bottom, startAngle, sweepAngle, false);
 	}
 
+	/** AOSP/Skia arcTo: the arc is joined to the current contour with a line, except on an empty path
+	 * (no verbs since construction or reset), where the arc starts the path with a move: the native
+	 * builder's current point is then (0,0), and the joining line drew a stroke from the view's
+	 * corner to the arc (Waze's speedometer ring got a stray diagonal) */
 	public void arcTo(float left, float top, float right, float bottom, float startAngle, float sweepAngle, boolean forceMoveTo) {
-		native_arc_to(getBuilder(), left, top, right, bottom, startAngle, sweepAngle, forceMoveTo);
+		final boolean noVerbs = builder == 0 && path == 0;
+		native_arc_to(getBuilder(), left, top, right, bottom, startAngle, sweepAngle, forceMoveTo || noVerbs);
 	}
 
 	public void cubicTo(float x1, float y1, float x2, float y2, float x3, float y3) {
