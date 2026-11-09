@@ -240,3 +240,34 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushColorMatrix(JNIEnv
 	struct AndroidPaint *paint = _PTR(paint_ptr);
 	gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
 }
+
+/* teslalinux: drawPath with the path's fill type: 0 WINDING, 1 EVEN_ODD, 2 INVERSE_WINDING,
+ * 3 INVERSE_EVEN_ODD (Path.FillType ordinals); the inverse types fill (left, top, right, bottom)
+ * minus the path. */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawPathFillType(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong path_ptr, jlong paint_ptr,
+		jint fill_type, jfloat left, jfloat top, jfloat right, jfloat bottom)
+{
+	GtkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
+	GskPath *path = _PTR(path_ptr);
+	struct AndroidPaint *paint = _PTR(paint_ptr);
+	GskFillRule rule = (fill_type == 1 || fill_type == 3) ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING;
+	gboolean inverse = fill_type >= 2;
+	if (paint->use_color_filter)
+		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
+	if (paint->is_stroke)
+		gtk_snapshot_append_stroke(snapshot, path, paint->gsk_stroke, &paint->color);
+	if (paint->is_fill) {
+		if (!inverse) {
+			gtk_snapshot_append_fill(snapshot, path, rule, &paint->color);
+		} else if (right > left && bottom > top) {
+			/* the colour over the bounds, masked by the inverted coverage of the path */
+			gtk_snapshot_push_mask(snapshot, GSK_MASK_MODE_INVERTED_ALPHA);
+			gtk_snapshot_append_fill(snapshot, path, rule, &(GdkRGBA){0, 0, 0, 1});
+			gtk_snapshot_pop(snapshot);
+			gtk_snapshot_append_color(snapshot, &paint->color, &GRAPHENE_RECT_INIT(left, top, right - left, bottom - top));
+			gtk_snapshot_pop(snapshot);
+		}
+	}
+	if (paint->use_color_filter)
+		gtk_snapshot_pop(snapshot);
+}

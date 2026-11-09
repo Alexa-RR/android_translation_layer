@@ -103,8 +103,20 @@ public class GskCanvas extends DisplayListCanvas {
 
 	@Override
 	public void drawPath(Path path, Paint paint) {
-		if (path != null)
-			native_drawPath(snapshot, path.getGskPath(), paint != null ? paint.paint : default_paint.paint);
+		if (path == null)
+			return;
+		// AOSP/Skia: the fill honours the path's fill type (native-gskcanvas-filltype.sh); the inverse
+		// types fill the current clip bounds minus the path
+		final Path.FillType ft = path.getFillType();
+		final long p = paint != null ? paint.paint : default_paint.paint;
+		if (ft == null || ft == Path.FillType.WINDING) {
+			native_drawPath(snapshot, path.getGskPath(), p);
+			return;
+		}
+		Rect bounds = new Rect();
+		if (ft == Path.FillType.INVERSE_WINDING || ft == Path.FillType.INVERSE_EVEN_ODD)
+			getClipBounds(bounds);
+		native_drawPathFillType(snapshot, path.getGskPath(), p, ft.ordinal(), bounds.left, bounds.top, bounds.right, bounds.bottom);
 	}
 
 	@Override
@@ -489,4 +501,7 @@ public class GskCanvas extends DisplayListCanvas {
 	public boolean isHardwareAccelerated() {
 		return true;
 	}
+
+	/* teslalinux: drawPath with Path.FillType (native-gskcanvas-filltype.sh) */
+	protected native void native_drawPathFillType(long snapshot, long path, long paint, int fillType, float left, float top, float right, float bottom);
 }

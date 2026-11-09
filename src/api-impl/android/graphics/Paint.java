@@ -162,12 +162,20 @@ public class Paint {
 		return measureText(text.toString(), start, end);
 	}
 
+	/** AOSP: a blend-mode colour filter (PorterDuffColorFilter, or BlendModeColorFilter as Compose and
+	 * AndroidX use on API 29+) with the mode's real result (native-paint-colorfilter-modes.sh). */
 	public ColorFilter setColorFilter(ColorFilter colorFilter) {
 		if (colorFilter instanceof PorterDuffColorFilter) {
 			PorterDuffColorFilter porterDuff = (PorterDuffColorFilter)colorFilter;
-			native_set_color_filter(paint, porterDuff.getMode().ordinal(), porterDuff.getColor());
+			native_set_color_filter_mode(paint, porterDuff.getMode().ordinal(), porterDuff.getColor());
+		} else if (colorFilter instanceof BlendModeColorFilter) {
+			BlendModeColorFilter blend = (BlendModeColorFilter)colorFilter;
+			PorterDuff.Mode mode = BlendMode.blendModeToPorterDuffMode(blend.getMode());
+			if (blend.getMode() == BlendMode.MODULATE)
+				mode = PorterDuff.Mode.MULTIPLY;
+			native_set_color_filter_mode(paint, mode != null ? mode.ordinal() : PorterDuff.Mode.SRC_IN.ordinal(), blend.getColor());
 		} else {
-			native_set_color_filter(paint, -1, 0);
+			native_set_color_filter_mode(paint, -1, 0);
 		}
 		color_filter = colorFilter;
 		return colorFilter;
@@ -841,4 +849,7 @@ public class Paint {
 			mInvCompatScaling = 1.0f / factor;
 		}
 	}
+
+	/* teslalinux: blend-mode colour filter with the real per-mode result (native-paint-colorfilter-modes.sh) */
+	private static native void native_set_color_filter_mode(long paint, int mode, int color);
 }

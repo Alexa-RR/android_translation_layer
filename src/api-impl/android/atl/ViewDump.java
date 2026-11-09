@@ -26,9 +26,17 @@ public final class ViewDump {
 	private static Thread sStackWatcher;
 
 	/** Starts the trigger poller for an activity (no-op unless ATL_DEBUG_DUMPVIEWS is set). */
+	/* every activity that installed a poller; a plain dump walks all live ones (the trigger is
+	 * consumed by whichever poller sees it first, which used to dump only that activity) */
+	private static final java.util.Set<Activity> sActivities =
+		java.util.Collections.newSetFromMap(new java.util.WeakHashMap<Activity, Boolean>());
+
 	public static void installPoller(final Activity activity) {
 		if (!ENABLED)
 			return;
+		synchronized (sActivities) {
+			sActivities.add(activity);
+		}
 		installStackWatcher();
 		installMainStackDumper();
 		final Handler handler = new Handler(Looper.getMainLooper());
@@ -213,12 +221,23 @@ public final class ViewDump {
 						if (target != null)
 							target.setVisibility(Integer.parseInt(parts[2]));
 					} else {
-						Log.i(TAG, "=== view hierarchy of " + activity.getClass().getName() + " ===");
-						if (decor != null) {
-							dump(decor, 0);
-							nativeDumpGtk(decor.widget);
+						java.util.List<Activity> all = new java.util.ArrayList<Activity>();
+						synchronized (sActivities) {
+							all.addAll(sActivities);
 						}
-						Log.i(TAG, "=== end ===");
+						if (!all.contains(activity))
+							all.add(activity);
+						for (Activity a : all) {
+							if (a.isDestroyed())
+								continue;
+							View d = a.getWindow() != null ? a.getWindow().getDecorView() : null;
+							Log.i(TAG, "=== view hierarchy of " + a.getClass().getName() + " ===");
+							if (d != null) {
+								dump(d, 0);
+								nativeDumpGtk(d.widget);
+							}
+							Log.i(TAG, "=== end ===");
+						}
 					}
 				}
 				handler.postDelayed(this, 1000);
@@ -335,6 +354,72 @@ public final class ViewDump {
 		throw new NoSuchMethodException(names[0]);
 	}
 
+	/**
+	 * The vector tree under a Compose VectorPainter (VectorComponent -> GroupComponent -> PathComponent):
+	 * group transforms and clip paths, and per path its fill/stroke brush, fill type, alpha and the
+	 * number of path nodes, found by field type so obfuscated field names do not matter.
+	 */
+	private static String describeVector(Object o, int depth) {
+		if (o == null || depth > 6)
+			return "";
+		StringBuilder sb = new StringBuilder();
+		String cn = o.getClass().getName();
+		String sn = o.getClass().getSimpleName();
+		if (cn.endsWith("PathComponent")) {
+			sb.append("path(");
+			for (java.lang.reflect.Field f : o.getClass().getDeclaredFields()) {
+				try {
+					if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+						continue;
+					f.setAccessible(true);
+					Object v = f.get(o);
+					if (v == null)
+						continue;
+					String vn = v.getClass().getName();
+					if (v instanceof java.util.List)
+						sb.append(f.getName()).append("=").append(((java.util.List<?>) v).size()).append("nodes ");
+					else if (vn.contains("Brush") || vn.contains("SolidColor") || vn.contains("Gradient") || vn.contains("Shader"))
+						sb.append(f.getName()).append("=").append(v).append(' ');
+					else if (v instanceof Float || v instanceof Integer)
+						sb.append(f.getName()).append("=").append(v).append(' ');
+				} catch (Throwable e) {
+				}
+			}
+			return sb.append(") ").toString();
+		}
+		if (cn.endsWith("GroupComponent") || cn.endsWith("VectorComponent") || cn.endsWith("VectorPainter")) {
+			sb.append(sn).append("(");
+			for (java.lang.reflect.Field f : o.getClass().getDeclaredFields()) {
+				try {
+					if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+						continue;
+					f.setAccessible(true);
+					Object v = f.get(o);
+					if (v == null)
+						continue;
+					String vn = v.getClass().getName();
+					if (vn.startsWith("androidx.compose.ui.graphics.vector") && !vn.endsWith("Kt"))
+						sb.append(describeVector(v, depth + 1));
+					else if (v instanceof java.util.List) {
+						java.util.List<?> l = (java.util.List<?>) v;
+						boolean comps = !l.isEmpty() && l.get(0) != null && l.get(0).getClass().getName().startsWith("androidx.compose.ui.graphics.vector")
+						                && l.get(0).getClass().getName().endsWith("Component");
+						if (comps) {
+							for (Object c : l)
+								sb.append(describeVector(c, depth + 1));
+						} else if (cn.endsWith("GroupComponent") && !l.isEmpty()) {
+							sb.append("clip=").append(l.size()).append("nodes ");
+						}
+					} else if ((v instanceof Float && ((Float) v) != 0f && ((Float) v) != 1f))
+						sb.append(f.getName()).append("=").append(v).append(' ');
+				} catch (Throwable e) {
+				}
+			}
+			return sb.append(") ").toString();
+		}
+		return "";
+	}
+
 	private static void dumpLayoutNode(Object node, int depth, int count) throws Exception {
 		if (count > 400)
 			return;
@@ -357,8 +442,29 @@ public final class ViewDump {
 				String n = mod.getClass().getSimpleName();
 				if (n.isEmpty())
 					n = mod.getClass().getName();
-				if (mods.length() < 160)
+				if (mods.length() < 4000)
 					mods.append(n).append(',');
+				if (n.equals("PainterElement")) {
+					// the painter (VectorPainter/BitmapPainter/...), its size and the tint colour filter
+					for (java.lang.reflect.Field f : mod.getClass().getDeclaredFields()) {
+						try {
+							if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+								continue;
+							f.setAccessible(true);
+							Object val = f.get(mod);
+							if (val == null || val instanceof Boolean || val instanceof Float)
+								continue;
+							String cn = val.getClass().getName();
+							if (cn.contains("Painter") || cn.contains("ColorFilter") || cn.contains("painter")) {
+								mods.append(f.getName()).append('=').append(val.getClass().getSimpleName().isEmpty() ? cn : val.getClass().getSimpleName())
+								    .append(cn.contains("ColorFilter") ? "(" + val + ")" : "").append(',');
+								if (cn.endsWith("VectorPainter"))
+									mods.append(" vector{").append(describeVector(val, 0)).append("} ");
+							}
+						} catch (Throwable e) {
+						}
+					}
+				}
 				if (n.equals("BackgroundElement")) {
 					try {
 						java.lang.reflect.Field f = mod.getClass().getDeclaredField("color");
