@@ -272,6 +272,49 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		return false;
 	}
 
+	/* ---- cross-window blur (AOSP WindowManagerImpl / CrossWindowBlurListeners) ----
+	 * AOSP: blur behind and between windows needs the compositor's background blur
+	 * (ro.surface_flinger.supports_background_blur); without it isCrossWindowBlurEnabled() is
+	 * false for good. The windows here are layers of one GTK window composited by GSK, which has
+	 * no cross-window blur, so the state is false and never changes; a new listener is told the
+	 * current state at once, on its executor, as CrossWindowBlurListeners.addListener does. */
+	private static final java.util.HashMap<java.util.function.Consumer<Boolean>, java.util.concurrent.Executor> sBlurListeners = new java.util.HashMap<>();
+
+	@Override
+	public boolean isCrossWindowBlurEnabled() {
+		return false;
+	}
+
+	@Override
+	public void addCrossWindowBlurEnabledListener(java.util.function.Consumer<Boolean> listener) {
+		final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
+		addCrossWindowBlurEnabledListener(main::post, listener);
+	}
+
+	@Override
+	public void addCrossWindowBlurEnabledListener(java.util.concurrent.Executor executor, java.util.function.Consumer<Boolean> listener) {
+		if (executor == null)
+			throw new IllegalArgumentException("executor cannot be null");
+		if (listener == null)
+			throw new IllegalArgumentException("listener cannot be null");
+		synchronized (sBlurListeners) {
+			if (sBlurListeners.containsKey(listener))
+				return;
+			sBlurListeners.put(listener, executor);
+		}
+		final boolean enabled = isCrossWindowBlurEnabled();
+		executor.execute(() -> listener.accept(enabled));
+	}
+
+	@Override
+	public void removeCrossWindowBlurEnabledListener(java.util.function.Consumer<Boolean> listener) {
+		if (listener == null)
+			throw new IllegalArgumentException("listener cannot be null");
+		synchronized (sBlurListeners) {
+			sBlurListeners.remove(listener);
+		}
+	}
+
 	private static native long native_addWindow(View view, long widget, int flags, float dimAmount);
 	private static native void native_updateWindow(long layer, int flags, float dimAmount);
 	private static native void native_removeWindow(long layer);

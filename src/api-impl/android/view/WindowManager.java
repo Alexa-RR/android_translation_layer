@@ -398,7 +398,11 @@ public interface WindowManager {
 	/* teslalinux: WindowManager additions (default methods: WindowManagerImpl keeps compiling) */
 	default WindowMetrics getCurrentWindowMetrics() {
 		Display d = getDefaultDisplay();
-		return new WindowMetrics(new android.graphics.Rect(0, 0, d.getWidth(), d.getHeight()), new WindowInsets());
+		// AOSP WindowManagerImpl: the window bounds and the insets the window would get (layout:
+		// no inset source on the car screen, see Window.tlWindowInsetsFor)
+		android.content.Context app = android.app.ActivityThread.currentApplication();
+		return new WindowMetrics(new android.graphics.Rect(0, 0, d.getWidth(), d.getHeight()),
+		                         app != null ? Window.tlWindowInsetsFor(app) : new WindowInsets.Builder().build());
 	}
 	default WindowMetrics getMaximumWindowMetrics() { return getCurrentWindowMetrics(); }
 	default boolean isCrossWindowBlurEnabled() { return false; }

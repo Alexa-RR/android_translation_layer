@@ -357,6 +357,11 @@ public final class InputMethodManager {
 		Log.w(TAG, "Stylus handwriting is not available: no input method supports it");
 	}
 
+	/**
+	 * AOSP: tells the input method a delegator view may hand stylus handwriting to another view; with
+	 * no handwriting-capable input method (isStylusHandwritingAvailable) there is nobody to prepare,
+	 * and acceptStylusHandwritingDelegation reports false, as AOSP does on such a device.
+	 */
 	public void prepareStylusHandwritingDelegation(View delegatorView) {
 	}
 

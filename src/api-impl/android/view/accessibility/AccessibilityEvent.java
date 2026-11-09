@@ -961,6 +961,8 @@ public final class AccessibilityEvent extends AccessibilityRecord implements Par
     @UnsupportedAppUsage(maxTargetSdk = Build.VERSION_CODES.P, trackingBug = 115609023)
     int mAction;
     int mContentChangeTypes;
+    /** teslalinux (layout): the kinds of text change (AOSP TEXT_CHANGE_TYPE_* bits) */
+    int mTextChangeTypes;
     int mWindowChangeTypes;
     int mSpeechStateChangeTypes;
 
@@ -1016,6 +1018,7 @@ public final class AccessibilityEvent extends AccessibilityRecord implements Par
         mMovementGranularity = event.mMovementGranularity;
         mAction = event.mAction;
         mContentChangeTypes = event.mContentChangeTypes;
+        mTextChangeTypes = event.mTextChangeTypes;
         mSpeechStateChangeTypes = event.mSpeechStateChangeTypes;
         mWindowChangeTypes = event.mWindowChangeTypes;
         mEventTime = event.mEventTime;
@@ -1118,6 +1121,16 @@ public final class AccessibilityEvent extends AccessibilityRecord implements Par
     @ContentChangeTypes
     public int getContentChangeTypes() {
         return mContentChangeTypes;
+    }
+
+    /** AOSP: the kinds of text change a TYPE_VIEW_TEXT_CHANGED event reports (bit mask) */
+    public int getTextChangeTypes() {
+        return mTextChangeTypes;
+    }
+
+    /** AOSP: sets the kinds of text change of this event */
+    public void setTextChangeTypes(int changeTypes) {
+        mTextChangeTypes = changeTypes;
     }
 
     private static String contentChangeTypesToString(int types) {
@@ -1484,6 +1497,7 @@ public final class AccessibilityEvent extends AccessibilityRecord implements Par
         mMovementGranularity = 0;
         mAction = 0;
         mContentChangeTypes = 0;
+        mTextChangeTypes = 0;
         mWindowChangeTypes = 0;
         mSpeechStateChangeTypes = 0;
         mPackageName = null;
@@ -1507,6 +1521,7 @@ public final class AccessibilityEvent extends AccessibilityRecord implements Par
         mMovementGranularity = parcel.readInt();
         mAction = parcel.readInt();
         mContentChangeTypes = parcel.readInt();
+        mTextChangeTypes = parcel.readInt();
         mWindowChangeTypes = parcel.readInt();
         mSpeechStateChangeTypes = parcel.readInt();
         mPackageName = TextUtils.CHAR_SEQUENCE_CREATOR.createFromParcel(parcel);
@@ -1583,6 +1598,7 @@ public final class AccessibilityEvent extends AccessibilityRecord implements Par
         parcel.writeInt(mMovementGranularity);
         parcel.writeInt(mAction);
         parcel.writeInt(mContentChangeTypes);
+        parcel.writeInt(mTextChangeTypes);
         parcel.writeInt(mWindowChangeTypes);
         parcel.writeInt(mSpeechStateChangeTypes);
         TextUtils.writeToParcel(mPackageName, parcel, 0);

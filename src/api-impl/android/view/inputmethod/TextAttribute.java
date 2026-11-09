@@ -35,15 +35,24 @@ import java.util.List;
 public final class TextAttribute implements Parcelable {
     private final @NonNull List<String> mTextConversionSuggestions;
     private final @NonNull PersistableBundle mExtras;
+    /** API 35: whether the text is a suggestion the user picked (teslalinux, AOSP) */
+    private final boolean mIsTextSuggestionSelected;
 
     private TextAttribute(Builder builder) {
         mTextConversionSuggestions = builder.mTextConversionSuggestions;
         mExtras = builder.mExtras;
+        mIsTextSuggestionSelected = builder.mTextSuggestionSelected;
     }
 
     private TextAttribute(Parcel source) {
         mTextConversionSuggestions = source.createStringArrayList();
         mExtras = source.readPersistableBundle();
+        mIsTextSuggestionSelected = source.readBoolean();
+    }
+
+    /** API 35: whether the input method marked the text as a suggestion the user selected */
+    public boolean isTextSuggestionSelected() {
+        return mIsTextSuggestionSelected;
     }
 
     /**
@@ -74,6 +83,13 @@ public final class TextAttribute implements Parcelable {
     public static final class Builder {
         private List<String> mTextConversionSuggestions = new ArrayList<>();
         private PersistableBundle mExtras = new PersistableBundle();
+        private boolean mTextSuggestionSelected;
+
+        /** API 35: marks the text as a suggestion the user selected */
+        public @NonNull Builder setTextSuggestionSelected(boolean textSuggestionSelected) {
+            mTextSuggestionSelected = textSuggestionSelected;
+            return this;
+        }
 
         /**
          * Sets text conversion suggestions.
@@ -123,6 +139,7 @@ public final class TextAttribute implements Parcelable {
     public void writeToParcel(@NonNull Parcel dest, int flags) {
         dest.writeStringList(mTextConversionSuggestions);
         dest.writePersistableBundle(mExtras);
+        dest.writeBoolean(mIsTextSuggestionSelected);
     }
 
     public static final @NonNull Parcelable.Creator<TextAttribute> CREATOR =

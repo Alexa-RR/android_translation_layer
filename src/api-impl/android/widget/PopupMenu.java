@@ -15,6 +15,7 @@
  */
 
 package android.widget;
+import android.view.KeyEvent;
 
 import android.content.ComponentName;
 import android.content.Context;
@@ -135,9 +136,10 @@ public class PopupMenu {
 
 	// callback from native code
 	protected void menuItemClickCallback(final int id) {
-		if (mMenuItemClickListener != null) {
-			mMenuItemClickListener.onMenuItemClick(getMenu().findItem(id));
-		}
+		// (layout) AOSP MenuItemImpl.invoke: the item's listener, the popup's, the intent, the provider
+		final MenuItem item = getMenu().findItem(id);
+		if (item instanceof MenuItemImpl)
+			((MenuItemImpl) item).tlInvoke();
 	}
 
 	/**
@@ -206,6 +208,8 @@ public class PopupMenu {
 		@Override
 		public MenuItem add(int groupId, int itemId, int order, CharSequence title) {
 			MenuItemImpl item = new MenuItemImpl(itemId, this, String.valueOf(title), null);
+			item.tlGroupId = groupId; // (layout) AOSP MenuItemImpl keeps its group and order
+			item.tlOrder = order;
 			items.add(item);
 			item.setVisible(true);
 			return item;
@@ -213,8 +217,7 @@ public class PopupMenu {
 
 		@Override
 		public MenuItem add(int groupId, int itemId, int order, int titleRes) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'add'");
+			return add(groupId, itemId, order, mContext.getResources().getText(titleRes));
 		}
 
 		@Override
@@ -238,38 +241,43 @@ public class PopupMenu {
 
 		@Override
 		public void clear() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'clear'");
+			// (layout) AOSP MenuBuilder.clear: every item leaves the menu
+			for (int i = items.size() - 1; i >= 0; i--)
+				items.get(i).setVisible(false);
+			items.clear();
 		}
 
 		@Override
 		public void removeGroup(int groupId) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'removeGroup'");
+			for (int i = items.size() - 1; i >= 0; i--) {
+				if (items.get(i).tlGroupId == groupId) {
+					items.get(i).setVisible(false);
+					items.remove(i);
+				}
+			}
 		}
 
 		@Override
-		public SubMenu addSubMenu(int id) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'addSubMenu'");
+		public SubMenu addSubMenu(int titleRes) {
+			return addSubMenu(NONE, NONE, NONE, mContext.getResources().getText(titleRes));
 		}
 
 		@Override
-		public MenuItem add(int id) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'add'");
+		public MenuItem add(int titleRes) {
+			return add(NONE, NONE, NONE, mContext.getResources().getText(titleRes));
 		}
 
 		@Override
 		public MenuItem add(CharSequence text) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'add'");
+			return add(NONE, NONE, NONE, text);
 		}
 
 		@Override
 		public void setGroupCheckable(int group, boolean checkable, boolean exclusive) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setGroupCheckable'");
+			for (MenuItemImpl item : items) {
+				if (item.tlGroupId == group)
+					item.setCheckable(checkable);
+			}
 		}
 
 		@Override
@@ -282,14 +290,21 @@ public class PopupMenu {
 
 		@Override
 		public void setGroupVisible(int group, boolean visible) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setGroupVisible'");
+			for (MenuItemImpl item : items) {
+				if (item.tlGroupId == group)
+					item.setVisible(visible);
+			}
 		}
 
 		@Override
 		public void removeItem(int id) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'removeItem'");
+			for (int i = 0; i < items.size(); i++) {
+				if (items.get(i).id == id) {
+					items.get(i).setVisible(false);
+					items.remove(i);
+					return;
+				}
+			}
 		}
 
 		@Override
@@ -299,21 +314,100 @@ public class PopupMenu {
 
 		@Override
 		public boolean hasVisibleItems() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'hasVisibleItems'");
+			for (MenuItemImpl item : items) {
+				if (item.isVisible())
+					return true;
+			}
+			return false;
 		}
 
 		@Override
 		public SubMenu addSubMenu(int groupId, int itemId, int order, int titleRes) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'addSubMenu'");
+			return addSubMenu(groupId, itemId, order, mContext.getResources().getText(titleRes));
 		}
 
 		@Override
 		public int addIntentOptions(int groupId, int itemId, int order, ComponentName caller, Intent[] specifics, Intent intent, int flags, MenuItem[] outSpecificItems) {
 			return 0;
 		}
-	}
+	
+		/* teslalinux (layout): the AOSP Menu members ATL's menu lacked (MenuBuilder semantics) */
+		private boolean tlQwertyMode;
+
+		/** AOSP MenuBuilder.addSubMenu(CharSequence): a submenu at the end, no group or id */
+		@Override
+		public SubMenu addSubMenu(CharSequence title) {
+			return addSubMenu(NONE, NONE, NONE, title);
+		}
+
+		/** AOSP: whether the items of the group can be chosen; the GTK menu shows every item enabled */
+		@Override
+		public void setGroupEnabled(int group, boolean enabled) {
+			for (MenuItemImpl item : items) {
+				if (item.tlGroupId == group)
+					item.setEnabled(enabled);
+			}
+		}
+
+		/** AOSP MenuBuilder.close: the menu's popup goes away */
+		@Override
+		public void close() {
+			dismiss();
+		}
+
+		/** AOSP MenuBuilder.findItemWithShortcutForKey: the visible item whose shortcut is this key */
+		MenuItemImpl tlItemForShortcut(int keyCode, KeyEvent event) {
+			final boolean qwerty = tlQwertyMode;
+			final char wanted = qwerty ? Character.toLowerCase((char) event.getUnicodeChar()) : (char) event.getNumber();
+			for (MenuItemImpl item : items) {
+				if (!item.isVisible())
+					continue;
+				final char shortcut = qwerty ? Character.toLowerCase(item.getAlphabeticShortcut()) : item.getNumericShortcut();
+				if (shortcut != 0 && shortcut == wanted)
+					return item;
+				if (item.subMenu != null) {
+					MenuItemImpl found = item.subMenu.tlItemForShortcut(keyCode, event);
+					if (found != null)
+						return found;
+				}
+			}
+			return null;
+		}
+
+		/** AOSP: whether a key is the shortcut of one of the items */
+		@Override
+		public boolean isShortcutKey(int keyCode, KeyEvent event) {
+			return tlItemForShortcut(keyCode, event) != null;
+		}
+
+		/** AOSP: the item whose shortcut the key is gets performed (FLAG_PERFORM_NO_CLOSE keeps the menu open) */
+		@Override
+		public boolean performShortcut(int keyCode, KeyEvent event, int flags) {
+			final MenuItemImpl item = tlItemForShortcut(keyCode, event);
+			boolean handled = false;
+			if (item != null)
+				handled = item.tlInvoke();
+			if ((flags & FLAG_ALWAYS_PERFORM_CLOSE) != 0)
+				close();
+			return handled;
+		}
+
+		/** AOSP: the item with this id gets performed */
+		@Override
+		public boolean performIdentifierAction(int id, int flags) {
+			final MenuItem item = findItem(id);
+			final boolean handled = item instanceof MenuItemImpl && ((MenuItemImpl) item).tlInvoke();
+			if ((flags & FLAG_PERFORM_NO_CLOSE) == 0)
+				close();
+			return handled;
+		}
+
+		/** AOSP: whether shortcuts are the alphabetic (qwerty keyboard) or the numeric ones */
+		@Override
+		public void setQwertyMode(boolean isQwerty) {
+			tlQwertyMode = isQwerty;
+		}
+}
 
 	private class SubMenuImpl extends MenuImpl implements SubMenu {
 		private MenuItemImpl item;
@@ -357,13 +451,15 @@ public class PopupMenu {
 
 		@Override
 		public MenuItem setIcon(int iconRes) {
-			return this;
+			return setIcon(iconRes != 0 ? mContext.getDrawable(iconRes) : null);
 		}
 
 		@Override
 		public MenuItem setIcon(Drawable icon) {
+			tlIcon = icon; // (layout) kept for getIcon; the GTK menu shows text items
 			return this;
 		}
+		private Drawable tlIcon;
 
 		@Override
 		public MenuItem setVisible(boolean visible) {
@@ -398,26 +494,30 @@ public class PopupMenu {
 
 		@Override
 		public MenuItem setChecked(boolean checked) {
+			tlChecked = checked;
 			return this;
 		}
 
 		@Override
 		public MenuItem setEnabled(boolean enabled) {
+			tlEnabled = enabled;
 			return this;
 		}
 
 		@Override
 		public MenuItem setCheckable(boolean checkable) {
+			tlCheckable = checkable;
 			return this;
 		}
 
 		@Override
 		public boolean isCheckable() {
-			return false;
+			return tlCheckable;
 		}
 
 		@Override
 		public MenuItem setTitleCondensed(CharSequence titleCondensed) {
+			tlTitleCondensed = titleCondensed;
 			return this;
 		}
 
@@ -429,14 +529,14 @@ public class PopupMenu {
 
 		@Override
 		public MenuItem setActionView(View actionView) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setActionView'");
+			tlActionView = actionView;
+			tlActionProvider = null;
+			return this;
 		}
 
 		@Override
 		public void setShowAsAction(int action) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setShowAsAction'");
+			tlShowAsAction = action;
 		}
 
 		@Override
@@ -446,20 +546,18 @@ public class PopupMenu {
 
 		@Override
 		public int getGroupId() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'getGroupId'");
+			return tlGroupId;
 		}
 
 		@Override
 		public MenuItem setOnMenuItemClickListener(OnMenuItemClickListener listener) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setOnMenuItemClickListener'");
+			tlClickListener = listener;
+			return this;
 		}
 
 		@Override
 		public MenuItem setTitle(int resId) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setTitle'");
+			return setTitle(mContext.getResources().getText(resId));
 		}
 
 		@Override
@@ -469,7 +567,7 @@ public class PopupMenu {
 
 		@Override
 		public Drawable getIcon() {
-			return new Drawable();
+			return tlIcon; // AOSP: null without an icon
 		}
 
 		@Override
@@ -479,95 +577,244 @@ public class PopupMenu {
 
 		@Override
 		public MenuItem setActionView(int resId) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setActionView'");
+			return setActionView(android.view.LayoutInflater.from(mContext).inflate(resId, null, false));
 		}
 
 		@Override
 		public View getActionView() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'getActionView'");
+			if (tlActionView != null)
+				return tlActionView;
+			if (tlActionProvider != null) {
+				tlActionView = tlActionProvider.onCreateActionView(this);
+				return tlActionView;
+			}
+			return null;
 		}
 
 		@Override
 		public boolean hasSubMenu() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'hasSubMenu'");
+			return subMenu != null;
 		}
 
 		@Override
 		public MenuItem setOnActionExpandListener(OnActionExpandListener listener) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setOnActionExpandListener'");
+			tlOnActionExpandListener = listener;
+			return this;
 		}
 
 		@Override
 		public boolean isChecked() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'isChecked'");
+			return tlChecked;
 		}
 
 		@Override
 		public MenuItem setShowAsActionFlags(int action) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setShowAsActionFlags'");
+			setShowAsAction(action);
+			return this;
 		}
 
 		@Override
 		public MenuItem setAlphabeticShortcut(char alphaChar) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setAlphabeticShortcut'");
+			tlShortcutAlphabeticChar = Character.toLowerCase(alphaChar);
+			return this;
 		}
 
 		@Override
-		public MenuItem setShortcut(char numeric, char alpha) { return this; }
+		public MenuItem setShortcut(char numeric, char alpha) {
+			tlShortcutNumericChar = numeric;
+			tlShortcutAlphabeticChar = Character.toLowerCase(alpha);
+			return this;
+		}
 
 		@Override
 		public int getOrder() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'getOrder'");
+			return tlOrder;
 		}
 
 		@Override
 		public boolean isEnabled() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'isEnabled'");
+			return tlEnabled;
 		}
 
 		@Override
 		public CharSequence getTitleCondensed() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'getTitleCondensed'");
+			return tlTitleCondensed != null ? tlTitleCondensed : title;
 		}
 
 		@Override
 		public CharSequence getTitle() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'getTitle'");
+			return title;
 		}
 
 		@Override
 		public MenuItem setNumericShortcut(char numericChar) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setNumericShortcut'");
+			tlShortcutNumericChar = numericChar;
+			return this;
 		}
 
 		@Override
 		public boolean expandActionView() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'expandActionView'");
+			// AOSP MenuItemImpl: only a collapsible action view expands, if the listener lets it
+			if ((tlShowAsAction & SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW) == 0 || getActionView() == null)
+				return false;
+			if (tlOnActionExpandListener == null || tlOnActionExpandListener.onMenuItemActionExpand(this)) {
+				tlActionViewExpanded = true;
+				return true;
+			}
+			return false;
 		}
 
 		@Override
 		public boolean isActionViewExpanded() {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'isActionViewExpanded'");
+			return tlActionViewExpanded;
 		}
 
 		@Override
 		public MenuItem setIntent(Intent intent) {
-			// TODO Auto-generated method stub
-			throw new UnsupportedOperationException("Unimplemented method 'setIntent'");
+			tlIntent = intent;
+			return this;
 		}
-	}
+	
+		/* teslalinux (layout): AOSP MenuItemImpl state ATL's item lacked */
+		int tlGroupId;
+		int tlOrder;
+		private Intent tlIntent;
+		private char tlShortcutNumericChar;
+		private int tlShortcutNumericModifiers = KeyEvent.META_CTRL_ON;
+		private char tlShortcutAlphabeticChar;
+		private int tlShortcutAlphabeticModifiers = KeyEvent.META_CTRL_ON;
+		private android.view.ActionProvider tlActionProvider;
+		private View tlActionView;
+		private boolean tlActionViewExpanded;
+		private OnActionExpandListener tlOnActionExpandListener;
+		private OnMenuItemClickListener tlClickListener;
+		private boolean tlCheckable;
+		private boolean tlChecked;
+		private boolean tlEnabled = true;
+		private CharSequence tlTitleCondensed;
+		private int tlShowAsAction;
+		private CharSequence tlContentDescription;
+		private CharSequence tlTooltipText;
+
+		/**
+		 * AOSP MenuItemImpl.invoke: the item's own listener, then the popup's listener, then the
+		 * intent (started as an activity), then the action provider's default action.
+		 */
+		boolean tlInvoke() {
+			if (tlClickListener != null && tlClickListener.onMenuItemClick(this))
+				return true;
+			if (mMenuItemClickListener != null && mMenuItemClickListener.onMenuItemClick(this))
+				return true;
+			if (tlIntent != null) {
+				try {
+					mContext.startActivity(tlIntent);
+					return true;
+				} catch (android.content.ActivityNotFoundException e) {
+					android.util.Log.e("PopupMenu", "Can't find activity to handle intent; ignoring", e);
+				}
+			}
+			return tlActionProvider != null && tlActionProvider.onPerformDefaultAction();
+		}
+
+		@Override
+		public Intent getIntent() {
+			return tlIntent;
+		}
+
+		@Override
+		public char getNumericShortcut() {
+			return tlShortcutNumericChar;
+		}
+
+		@Override
+		public char getAlphabeticShortcut() {
+			return tlShortcutAlphabeticChar;
+		}
+
+		@Override
+		public MenuItem setNumericShortcut(char numericChar, int numericModifiers) {
+			tlShortcutNumericChar = numericChar;
+			tlShortcutNumericModifiers = KeyEvent.normalizeMetaState(numericModifiers);
+			return this;
+		}
+
+		@Override
+		public int getNumericModifiers() {
+			return tlShortcutNumericModifiers;
+		}
+
+		@Override
+		public MenuItem setAlphabeticShortcut(char alphaChar, int alphaModifiers) {
+			tlShortcutAlphabeticChar = Character.toLowerCase(alphaChar);
+			tlShortcutAlphabeticModifiers = KeyEvent.normalizeMetaState(alphaModifiers);
+			return this;
+		}
+
+		@Override
+		public int getAlphabeticModifiers() {
+			return tlShortcutAlphabeticModifiers;
+		}
+
+		@Override
+		public MenuItem setShortcut(char numericChar, char alphaChar, int numericModifiers, int alphaModifiers) {
+			setNumericShortcut(numericChar, numericModifiers);
+			return setAlphabeticShortcut(alphaChar, alphaModifiers);
+		}
+
+		/** AOSP: an item of a context menu carries the menu info; a popup menu's items have none */
+		@Override
+		public android.view.ContextMenu.ContextMenuInfo getMenuInfo() {
+			return null;
+		}
+
+		@Override
+		public MenuItem setActionProvider(android.view.ActionProvider actionProvider) {
+			if (tlActionProvider != null)
+				tlActionProvider.reset();
+			tlActionView = null;
+			tlActionProvider = actionProvider;
+			return this;
+		}
+
+		@Override
+		public android.view.ActionProvider getActionProvider() {
+			return tlActionProvider;
+		}
+
+		/** AOSP: an expanded action view collapses, if the listener lets it */
+		@Override
+		public boolean collapseActionView() {
+			if ((tlShowAsAction & SHOW_AS_ACTION_COLLAPSE_ACTION_VIEW) == 0 || tlActionView == null)
+				return false;
+			if (!tlActionViewExpanded)
+				return false;
+			if (tlOnActionExpandListener == null || tlOnActionExpandListener.onMenuItemActionCollapse(this)) {
+				tlActionViewExpanded = false;
+				return true;
+			}
+			return false;
+		}
+
+		@Override
+		public MenuItem setContentDescription(CharSequence contentDescription) {
+			tlContentDescription = contentDescription;
+			return this;
+		}
+
+		@Override
+		public CharSequence getContentDescription() {
+			return tlContentDescription;
+		}
+
+		@Override
+		public MenuItem setTooltipText(CharSequence tooltipText) {
+			tlTooltipText = tooltipText;
+			return this;
+		}
+
+		@Override
+		public CharSequence getTooltipText() {
+			return tlTooltipText;
+		}
+}
 }

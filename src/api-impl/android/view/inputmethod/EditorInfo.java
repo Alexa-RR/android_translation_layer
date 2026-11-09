@@ -522,6 +522,21 @@ public class EditorInfo implements InputType, Parcelable {
     @Nullable
     public String[] contentMimeTypes = null;
 
+    /** API 35: whether the editor accepts stylus handwriting (teslalinux, AOSP) */
+    private boolean mIsStylusHandwritingEnabled;
+
+    /**
+     * API 35: whether the editor accepts stylus handwriting. The input method reads it; an
+     * editor without it gets none (on this platform no input method offers handwriting).
+     */
+    public void setStylusHandwritingEnabled(boolean enabled) {
+        mIsStylusHandwritingEnabled = enabled;
+    }
+
+    public boolean isStylusHandwritingEnabled() {
+        return mIsStylusHandwritingEnabled;
+    }
+
     private @HandwritingGesture.GestureTypeFlags int mSupportedHandwritingGestureTypes;
 
     private @HandwritingGesture.GestureTypeFlags int mSupportedHandwritingGesturePreviewTypes;

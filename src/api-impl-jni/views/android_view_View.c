@@ -440,7 +440,8 @@ void _setOnTouchListener(JNIEnv *env, jobject this, GtkWidget *widget)
 		gtk_widget_size_allocate(GTK_WIDGET(wrapper), &(GtkAllocation){.x = 0, .y = 0, .width = wrapper->real_width, .height = wrapper->real_height}, 0);
 
 	wrapper->needs_allocation = true;
-	gtk_widget_set_overflow(GTK_WIDGET(wrapper), GTK_OVERFLOW_HIDDEN);
+	/* tl_layout_clip: a child of a group with clipChildren off may draw outside its bounds */
+	gtk_widget_set_overflow(GTK_WIDGET(wrapper), g_object_get_data(G_OBJECT(wrapper), "tl-no-clip") ? GTK_OVERFLOW_VISIBLE : GTK_OVERFLOW_HIDDEN);
 }
 
 JNIEXPORT void JNICALL Java_android_view_View_nativeSetOnTouchListener(JNIEnv *env, jobject this, jlong widget_ptr)

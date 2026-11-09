@@ -74,7 +74,11 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChildren(JNIEnv *
 	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(GTK_WIDGET(_PTR(widget_ptr))));
 	GdkSnapshot *snapshot = GDK_SNAPSHOT(_PTR(snapshot_ptr));
 	tl_prepare_child_snapshot(wrapper->child, wrapper->child, 0);
+	/* tl_layout_clip: AOSP dispatchDraw clips the children to the padding box (clipToPadding) */
+	const gboolean tl_padding_clip = tl_wrapper_push_padding_clip(wrapper, snapshot);
 	gtk_widget_snapshot_child(&wrapper->parent_instance, wrapper->child, snapshot);
+	if (tl_padding_clip)
+		gtk_snapshot_pop(snapshot);
 }
 
 JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChild(JNIEnv *env, jobject this, jlong widget_ptr, jlong child_ptr, jlong snapshot_ptr)
@@ -289,6 +293,37 @@ JNIEXPORT jboolean JNICALL Java_android_view_ViewGroup_native_1dispatchTouchEven
 	for (int i = 0; i < hidden_n; i++)
 		gtk_widget_set_can_target(hidden[i], hidden_target[i]);
 	return handled;
+}
+
+/* ---- teslalinux: tl_layout_clip ---- */
+/* AOSP RenderNode.setClipToBounds(parent clipChildren): whether the child's drawing (its own and its
+ * descendants') is clipped to the child's bounds */
+JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1setChildClipsToBounds(JNIEnv *env, jobject this, jlong child_ptr, jboolean clip)
+{
+	GtkWidget *wrapper = gtk_widget_get_parent(GTK_WIDGET(_PTR(child_ptr)));
+	if (!wrapper || !WRAPPER_IS_WIDGET(wrapper))
+		return;
+	gboolean was_clipped = !g_object_get_data(G_OBJECT(wrapper), "tl-no-clip");
+	if (was_clipped == !!clip)
+		return;
+	g_object_set_data(G_OBJECT(wrapper), "tl-no-clip", clip ? NULL : GINT_TO_POINTER(1));
+	if (!clip)
+		gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_VISIBLE);
+	else if (g_object_get_data(G_OBJECT(wrapper), "on_touch_listener"))
+		gtk_widget_set_overflow(wrapper, GTK_OVERFLOW_HIDDEN); /* what _setOnTouchListener sets */
+	gtk_widget_queue_draw(wrapper);
+}
+
+/* AOSP FLAG_CLIP_TO_PADDING: the group's children are clipped to its padding box when drawn */
+JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1setPaddingClip(JNIEnv *env, jobject this, jlong widget_ptr, jboolean enabled)
+{
+	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
+	GtkWidget *wrapper = gtk_widget_get_parent(widget);
+	if (!wrapper || !WRAPPER_IS_WIDGET(wrapper))
+		return;
+	g_object_set_data(G_OBJECT(wrapper), "tl-padding-clip", enabled ? GINT_TO_POINTER(1) : NULL);
+	gtk_widget_queue_draw(widget);
+	gtk_widget_queue_draw(wrapper);
 }
 
 /* ---- teslalinux: tl_restack_child ---- */

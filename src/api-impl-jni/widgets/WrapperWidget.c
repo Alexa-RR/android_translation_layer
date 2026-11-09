@@ -251,12 +251,44 @@ static void tl_node_debug_report(WrapperWidget *wrapper, GskRenderNode *node)
 	}
 }
 
+/* tl_layout_clip: AOSP ViewGroup.dispatchDraw clips the children to the padding box while
+ * clipToPadding is set (FLAG_CLIP_TO_PADDING) and the group has padding (FLAG_PADDING_NOT_NULL) */
+gboolean tl_wrapper_push_padding_clip(WrapperWidget *wrapper, GtkSnapshot *snapshot)
+{
+	if (!g_object_get_data(G_OBJECT(wrapper), "tl-padding-clip"))
+		return FALSE;
+	if (wrapper->real_width <= 0 || wrapper->real_height <= 0 || !wrapper->jobj)
+		return FALSE;
+	JNIEnv *env = get_jni_env();
+	if ((*env)->IsSameObject(env, wrapper->jobj, NULL))
+		return FALSE;
+	static jfieldID f_left, f_top, f_right, f_bottom;
+	if (!f_left) {
+		f_left = (*env)->GetFieldID(env, handle_cache.view.class, "paddingLeft", "I");
+		f_top = (*env)->GetFieldID(env, handle_cache.view.class, "paddingTop", "I");
+		f_right = (*env)->GetFieldID(env, handle_cache.view.class, "paddingRight", "I");
+		f_bottom = (*env)->GetFieldID(env, handle_cache.view.class, "paddingBottom", "I");
+	}
+	int left = (*env)->GetIntField(env, wrapper->jobj, f_left);
+	int top = (*env)->GetIntField(env, wrapper->jobj, f_top);
+	int right = (*env)->GetIntField(env, wrapper->jobj, f_right);
+	int bottom = (*env)->GetIntField(env, wrapper->jobj, f_bottom);
+	if (!left && !top && !right && !bottom)
+		return FALSE;
+	float width = wrapper->real_width - left - right;
+	float height = wrapper->real_height - top - bottom;
+	gtk_snapshot_push_clip(snapshot, &GRAPHENE_RECT_INIT(left, top, width > 0 ? width : 0, height > 0 ? height : 0));
+	return TRUE;
+}
+
 static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 {
 	snapshot_in_progress++;
 
 	WrapperWidget *wrapper = WRAPPER_WIDGET(widget);
-	if (wrapper->real_height > 0 && wrapper->real_width > 0) {
+	/* tl_layout_clip: the view clips to its bounds unless its parent has clipChildren off */
+	const gboolean tl_clip_bounds = wrapper->real_height > 0 && wrapper->real_width > 0 && !g_object_get_data(G_OBJECT(wrapper), "tl-no-clip");
+	if (tl_clip_bounds) {
 		gtk_snapshot_push_clip(snapshot, &GRAPHENE_RECT_INIT(0, 0, wrapper->real_width, wrapper->real_height));
 	}
 	/* tl_view_clip: the view's clip bounds and outline clip (AOSP RenderNode clipping) */
@@ -298,7 +330,11 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 		if (tl_node_debug(env, wrapper))
 			target = sub = gtk_snapshot_new();
 		while (child) {
+			/* tl_layout_clip: the children widget of a group clips to the padding box */
+			const gboolean tl_padding_clip = child == wrapper->child && tl_wrapper_push_padding_clip(wrapper, target);
 			gtk_widget_snapshot_child(widget, child, target);
+			if (tl_padding_clip)
+				gtk_snapshot_pop(target);
 			child = gtk_widget_get_next_sibling(child);
 		}
 		if (sub) {
@@ -312,7 +348,7 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 	}
 	while (tl_view_clips-- > 0)
 		gtk_snapshot_pop(snapshot);
-	if (wrapper->real_height > 0 && wrapper->real_width > 0) {
+	if (tl_clip_bounds) {
 		gtk_snapshot_pop(snapshot);
 	}
 

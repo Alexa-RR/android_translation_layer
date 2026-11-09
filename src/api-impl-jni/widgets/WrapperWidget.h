@@ -49,5 +49,7 @@ void wrapper_widget_set_background(WrapperWidget *wrapper, GdkPaintable *paintab
 void wrapper_widget_consume_touch_events(WrapperWidget *wrapper);
 
 void _setOnTouchListener(JNIEnv *env, jobject this, GtkWidget *widget);
+/* tl_layout_clip: pushes the clipToPadding clip of a group wrapper; TRUE when a clip was pushed */
+gboolean tl_wrapper_push_padding_clip(WrapperWidget *wrapper, GtkSnapshot *snapshot);
 
 #endif
