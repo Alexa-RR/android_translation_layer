@@ -94,13 +94,22 @@ public class Path {
 		arcTo(oval.left, oval.top, oval.right, oval.bottom, startAngle, sweepAngle, false);
 	}
 
-	/** AOSP/Skia arcTo: the arc is joined to the current contour with a line, except on an empty path
-	 * (no verbs since construction or reset), where the arc starts the path with a move: the native
-	 * builder's current point is then (0,0), and the joining line drew a stroke from the view's
-	 * corner to the arc (Waze's speedometer ring got a stray diagonal) */
 	public void arcTo(float left, float top, float right, float bottom, float startAngle, float sweepAngle, boolean forceMoveTo) {
-		final boolean noVerbs = builder == 0 && path == 0;
-		native_arc_to(getBuilder(), left, top, right, bottom, startAngle, sweepAngle, forceMoveTo || noVerbs);
+		// Skia joins the arc to the current contour with a line, except on an empty path (no verbs
+		// since construction or reset), where the arc starts the path with a move: the native
+		// builder's current point is then (0,0), and the joining line drew a stroke from the view's
+		// corner to the arc (Waze's speedometer ring got a stray diagonal)
+		if (builder == 0 && path == 0)
+			forceMoveTo = true;
+		// the native arc is an SVG arc between its end points, which is empty for a full turn (equal
+		// end points); Skia draws the whole oval for |sweep| >= 360, so a full turn is two half arcs
+		if (Math.abs(sweepAngle) >= 360f) {
+			float half = sweepAngle > 0 ? 180f : -180f;
+			native_arc_to(getBuilder(), left, top, right, bottom, startAngle, half, forceMoveTo);
+			native_arc_to(getBuilder(), left, top, right, bottom, startAngle + half, half, false);
+			return;
+		}
+		native_arc_to(getBuilder(), left, top, right, bottom, startAngle, sweepAngle, forceMoveTo);
 	}
 
 	public void cubicTo(float x1, float y1, float x2, float y2, float x3, float y3) {
