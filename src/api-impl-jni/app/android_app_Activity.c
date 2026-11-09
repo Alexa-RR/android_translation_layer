@@ -372,9 +372,22 @@ JNIEXPORT void JNICALL Java_android_app_Activity_nativeFileChooser(JNIEnv *env, 
 	file_dialog_functions[action](dialog, window, NULL, file_dialog_callback, callback_data);
 }
 
+/* tl_multiwindow: the activity fills the display unless its window is a smaller, freeform one */
 JNIEXPORT jboolean JNICALL Java_android_app_Activity_isInMultiWindowMode(JNIEnv *env, jobject this)
 {
-	return !gtk_window_is_maximized(window);
+	if (!window || gtk_window_is_maximized(window) || gtk_window_is_fullscreen(window))
+		return JNI_FALSE;
+	GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(window));
+	if (!surface)
+		return JNI_FALSE;
+	GdkMonitor *monitor = gdk_display_get_monitor_at_surface(gdk_surface_get_display(surface), surface);
+	if (!monitor)
+		return JNI_FALSE;
+	GdkRectangle geometry;
+	gdk_monitor_get_geometry(monitor, &geometry);
+	int width = gdk_surface_get_width(surface);
+	int height = gdk_surface_get_height(surface);
+	return (width < geometry.width || height < geometry.height) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL Java_android_app_Activity_isTaskRoot(JNIEnv *env, jobject this)
@@ -382,6 +395,22 @@ JNIEXPORT jboolean JNICALL Java_android_app_Activity_isTaskRoot(JNIEnv *env, job
 	jobject root_activity = activity_backlog ? g_list_last(activity_backlog)->data : NULL;
 	// NULL means that we are currently creating the root activity, so no other activity can exist yet
 	return root_activity == NULL || (*env)->IsSameObject(env, this, root_activity);
+}
+
+/* tl_activity_transition: the transition of the next page change of the activity stack */
+JNIEXPORT void JNICALL Java_android_app_Activity_nativeSetPageTransition(JNIEnv *env, jclass klass, jlong native_window, jint type, jint duration_ms)
+{
+	GtkWidget *root = native_window ? GTK_WIDGET(_PTR(native_window)) : NULL;
+	if (!root || !GTK_IS_WINDOW(root))
+		return;
+	GtkWidget *child = gtk_window_get_child(GTK_WINDOW(root));
+	if (!child || !GTK_IS_OVERLAY(child))
+		return;
+	GtkWidget *stack = gtk_overlay_get_child(GTK_OVERLAY(child));
+	if (!stack || !GTK_IS_STACK(stack))
+		return;
+	gtk_stack_set_transition_type(GTK_STACK(stack), (GtkStackTransitionType)type);
+	gtk_stack_set_transition_duration(GTK_STACK(stack), duration_ms > 0 ? (guint)duration_ms : 0);
 }
 
 /* teslalinux: AOSP delivers configuration changes to the resumed activity (native-config.sh) */

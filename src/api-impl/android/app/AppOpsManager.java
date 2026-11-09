@@ -29,7 +29,13 @@ public class AppOpsManager {
 	public int startOp(String op, int uid, String packageName) { return MODE_ALLOWED; }
 	public int startOpNoThrow(String op, int uid, String packageName) { return MODE_ALLOWED; }
 	public void finishOp(String op, int uid, String packageName) {}
-	public void checkPackage(int uid, String packageName) {}
+	/** AOSP: throws SecurityException unless the package belongs to the uid (here: the app's own package and uid). */
+	public void checkPackage(int uid, String packageName) {
+		android.atl.ATLLoadedApp app = android.atl.ATLLoadedApp.getPrimaryApplication();
+		String own = app != null && app.pkg != null ? app.pkg.packageName : null;
+		if (packageName == null || !packageName.equals(own) || uid != android.os.Process.myUid())
+			throw new SecurityException("Package " + packageName + " does not belong to " + uid);
+	}
 	public void startWatchingMode(String op, String packageName, OnOpChangedListener callback) {}
 	public void startWatchingMode(String op, String packageName, int flags, OnOpChangedListener callback) {}
 	public void stopWatchingMode(OnOpChangedListener callback) {}

@@ -9,8 +9,13 @@ public class KeyguardManager {
 		return false;
 	}
 
+	/**
+	 * AOSP: whether the keyguard asks for a PIN, pattern, password or SIM to unlock. This platform
+	 * has no lock screen (no keyguard, no credential), so it never does; consistent with
+	 * isDeviceSecure() and createConfirmDeviceCredentialIntent() returning null.
+	 */
 	public boolean isKeyguardSecure() {
-		return true;
+		return false;
 	}
 
 

@@ -406,6 +406,7 @@ public final class ContextImpl extends Context {
 			return;
 		}
 		final String className_ = className;
+		final ActivityOptions tlOptions_ = ActivityOptions.fromBundle(tlNextLaunchOptions); /* startActivity(Intent, Bundle) */
 		final Intent intent_ = intent;
 		/* AOSP singleTask/singleInstance (and FLAG_ACTIVITY_SINGLE_TOP): an existing instance gets onNewIntent */
 		final boolean tlSingle_ = tlResumesExisting(className, intent);
@@ -422,6 +423,7 @@ public final class ContextImpl extends Context {
 					}
 					Activity activity = Activity.internalCreateActivity(
 					    className_, ContextImpl.this.atl_loaded_app.getNativeWindow(), intent_);
+					activity.tlLaunchOptions = tlOptions_;
 					Activity.nativeStartActivity(activity);
 				} catch (Exception e) {
 					e.printStackTrace();
@@ -520,5 +522,22 @@ public final class ContextImpl extends Context {
 				    || activity.info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_INSTANCE;
 		}
 		return false;
+	}
+
+	/* ---- teslalinux (app): AOSP Context.startActivity(Intent, Bundle) ----
+	 * The options bundle of the launch in progress: the started activity gets its ActivityOptions
+	 * (usage time report) and a custom animation becomes the pending activity transition. */
+	static android.os.Bundle tlNextLaunchOptions;
+
+	@Override
+	public void startActivity(Intent intent, android.os.Bundle options) {
+		Activity.tlApplyLaunchOptions(this, options);
+		android.os.Bundle previous = tlNextLaunchOptions;
+		tlNextLaunchOptions = options;
+		try {
+			startActivity(intent);
+		} finally {
+			tlNextLaunchOptions = previous;
+		}
 	}
 }

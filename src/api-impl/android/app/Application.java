@@ -105,19 +105,70 @@ public class Application extends ContextWrapper {
 	public void onTerminate() {
 	}
 
+	/* AOSP: the registered ComponentCallbacks get the application's configuration and memory callbacks */
+	private final ArrayList<android.content.ComponentCallbacks> mComponentCallbacks = new ArrayList<>();
+
+	private Object[] collectComponentCallbacks() {
+		synchronized (mComponentCallbacks) {
+			return mComponentCallbacks.isEmpty() ? null : mComponentCallbacks.toArray();
+		}
+	}
+
 	public void onConfigurationChanged(Configuration newConfig) {
+		Object[] callbacks = collectComponentCallbacks();
+		if (callbacks != null)
+			for (Object c : callbacks)
+				tlInvoke(c, "onConfigurationChanged", Configuration.class, newConfig);
 	}
 
 	public void onLowMemory() {
+		Object[] callbacks = collectComponentCallbacks();
+		if (callbacks != null)
+			for (Object c : callbacks)
+				tlInvoke(c, "onLowMemory", null, null);
 	}
 
 	public void onTrimMemory(int level) {
+		Object[] callbacks = collectComponentCallbacks();
+		if (callbacks != null)
+			for (Object c : callbacks)
+				if (c instanceof android.content.ComponentCallbacks2)
+					tlInvoke(c, "onTrimMemory", int.class, level);
+	}
+
+	/* ATL's ComponentCallbacks interfaces do not declare their methods (android.content), so the
+	 * callbacks are called by name, as the interface methods AOSP calls */
+	private static void tlInvoke(Object target, String name, Class<?> type, Object arg) {
+		try {
+			java.lang.reflect.Method m = type == null ? target.getClass().getMethod(name) : target.getClass().getMethod(name, type);
+			if (type == null)
+				m.invoke(target);
+			else
+				m.invoke(target, arg);
+		} catch (NoSuchMethodException e) {
+			/* the callback object does not implement this callback */
+		} catch (java.lang.reflect.InvocationTargetException e) {
+			Throwable cause = e.getCause();
+			if (cause instanceof RuntimeException)
+				throw (RuntimeException) cause;
+			if (cause instanceof Error)
+				throw (Error) cause;
+			throw new RuntimeException(cause);
+		} catch (IllegalAccessException e) {
+			throw new RuntimeException(e);
+		}
 	}
 
 	public void registerComponentCallbacks(android.content.ComponentCallbacks callback) {
+		synchronized (mComponentCallbacks) {
+			mComponentCallbacks.add(callback);
+		}
 	}
 
 	public void unregisterComponentCallbacks(android.content.ComponentCallbacks callback) {
+		synchronized (mComponentCallbacks) {
+			mComponentCallbacks.remove(callback);
+		}
 	}
 
 	public void registerActivityLifecycleCallbacks(@NonNull ActivityLifecycleCallbacks callback) {
