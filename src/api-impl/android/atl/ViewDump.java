@@ -68,6 +68,9 @@ public final class ViewDump {
 						android.graphics.Point p = new android.graphics.Point();
 						disp.getSize(p);
 						Log.i(TAG, "display size " + p.x + "x" + p.y + " rotation=" + disp.getRotation());
+					} else if (command.startsWith("vecprobe")) {
+						// "vecprobe": Compose's vector cache sequence on a bitmap canvas, pixels read back
+						vecProbe();
 					} else if (command.startsWith("textprobe")) {
 						// "textprobe [size]": log what the text measurement API reports for a few strings
 						String[] parts = command.trim().split(" ");
@@ -243,6 +246,56 @@ public final class ViewDump {
 				handler.postDelayed(this, 1000);
 			}
 		}, 1000);
+	}
+
+	/**
+	 * What androidx.compose.ui.graphics.vector.DrawCache does for a VectorPainter, step by step on a
+	 * 24x24 ARGB bitmap: clear with BlendMode.CLEAR, root scale, a nested group (save + concat of a
+	 * translation), an even-odd ring path filled black, restore. Logs the alpha of a few pixels after
+	 * each variant: the ring must be opaque, its hole and the corners transparent.
+	 */
+	private static void vecProbe() {
+		String[] names = { "plain", "evenodd", "scale", "scale+concat", "clear+scale+concat", "concat-matrix-values" };
+		for (int v = 0; v < names.length; v++) {
+			try {
+				android.graphics.Bitmap b = android.graphics.Bitmap.createBitmap(24, 24, android.graphics.Bitmap.Config.ARGB_8888);
+				android.graphics.Canvas c = new android.graphics.Canvas(b);
+				android.graphics.Paint clear = new android.graphics.Paint();
+				if (v >= 4) {
+					clear.setBlendMode(android.graphics.BlendMode.CLEAR);
+					c.drawRect(0, 0, 24, 24, clear);
+				}
+				android.graphics.Path ring = new android.graphics.Path();
+				ring.addCircle(12, 12, 8, android.graphics.Path.Direction.CW);
+				ring.addCircle(12, 12, 4, android.graphics.Path.Direction.CW);
+				if (v >= 1)
+					ring.setFillType(android.graphics.Path.FillType.EVEN_ODD);
+				android.graphics.Paint black = new android.graphics.Paint();
+				black.setColor(0xff000000);
+				black.setAntiAlias(true);
+				int sc = c.save();
+				if (v >= 2)
+					c.scale(0.5f, 0.5f);
+				if (v >= 3) {
+					c.save();
+					android.graphics.Matrix m = new android.graphics.Matrix();
+					if (v == 5)
+						m.setValues(new float[] { 1, 0, 3, 0, 1, 0, 0, 0, 1 });
+					else
+						m.setTranslate(3, 0);
+					c.concat(m);
+				}
+				c.drawPath(ring, black);
+				c.restoreToCount(sc);
+				StringBuilder sb = new StringBuilder("vecprobe ").append(names[v]).append(':');
+				int[][] pts = { { 0, 0 }, { 23, 23 }, { 12, 12 }, { 5, 12 }, { 4, 6 }, { 7, 6 }, { 2, 6 }, { 6, 2 } };
+				for (int[] pt : pts)
+					sb.append(' ').append(pt[0]).append(',').append(pt[1]).append('=').append(Integer.toHexString(b.getPixel(pt[0], pt[1]) >>> 24));
+				Log.i(TAG, sb.toString());
+			} catch (Throwable t) {
+				Log.i(TAG, "vecprobe " + names[v] + ": " + t);
+			}
+		}
 	}
 
 	/** Logs Paint/StaticLayout measurements (tag ViewDump) for "H", "Hey Wazer!" and the empty string. */

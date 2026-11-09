@@ -1,3 +1,4 @@
+#include <math.h>
 #include <graphene.h>
 #include <gtk/gtk.h>
 #include <pango/pango.h>
@@ -186,11 +187,40 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1scale(JNIEnv *env, jcl
 	gtk_snapshot_scale(snapshot, x, y);
 }
 
+/* teslalinux: an Android canvas matrix (graphene, row-vector convention: rows 0/1 = x/y axes, row 3 =
+ * translation, column 3 = perspective) as a 2D GSK transform when it is affine (native-gskcanvas-concat2d.sh) */
+static void tl_snapshot_concat_android(GtkSnapshot *snapshot, const graphene_matrix_t *m)
+{
+	const float a = graphene_matrix_get_value(m, 0, 0), b = graphene_matrix_get_value(m, 0, 1);
+	const float c = graphene_matrix_get_value(m, 1, 0), d = graphene_matrix_get_value(m, 1, 1);
+	const float tx = graphene_matrix_get_value(m, 3, 0), ty = graphene_matrix_get_value(m, 3, 1);
+	const float p0 = graphene_matrix_get_value(m, 0, 3), p1 = graphene_matrix_get_value(m, 1, 3), p2 = graphene_matrix_get_value(m, 3, 3);
+	const float sx = sqrtf(a * a + b * b);
+	const float det = a * d - b * c;
+	if (p0 != 0.f || p1 != 0.f || p2 != 1.f || sx == 0.f || det == 0.f) {
+		gtk_snapshot_transform_matrix(snapshot, m);
+		return;
+	}
+	const float sy = det / sx;
+	const float shear = (a * c + b * d) / (sx * sy);
+	if (tx != 0.f || ty != 0.f)
+		gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(tx, ty));
+	if (b != 0.f || a < 0.f)
+		gtk_snapshot_rotate(snapshot, atan2f(b, a) * (180.f / (float)M_PI));
+	if (shear != 0.f) {
+		GskTransform *t = gsk_transform_skew(NULL, atanf(shear) * (180.f / (float)M_PI), 0.f);
+		gtk_snapshot_transform(snapshot, t);
+		gsk_transform_unref(t);
+	}
+	if (sx != 1.f || sy != 1.f)
+		gtk_snapshot_scale(snapshot, sx, sy);
+}
+
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1concat(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong matrix_ptr)
 {
 	GdkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
 	graphene_matrix_t *matrix = (graphene_matrix_t *)_PTR(matrix_ptr);
-	gtk_snapshot_transform_matrix(snapshot, matrix);
+	tl_snapshot_concat_android(snapshot, matrix);
 }
 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipRect(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jfloat left, jfloat top, jfloat right, jfloat bottom)
