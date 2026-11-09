@@ -83,12 +83,7 @@ public class Voice implements Parcelable {
 
     private Voice(Parcel in) {
         this.mName = in.readString();
-        try {
-            this.mLocale = (Locale)in.readSerializable();
-        } catch (ReflectiveOperationException e) {
-            // teslalinux: this runtime's Parcel.readSerializable declares a checked exception
-            throw new android.os.BadParcelableException(e.toString());
-        }
+        this.mLocale = (Locale)in.readSerializable();
         this.mQuality = in.readInt();
         this.mLatency = in.readInt();
         this.mRequiresNetworkConnection = (in.readByte() == 1);
