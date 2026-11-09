@@ -342,4 +342,14 @@ public class WindowInsets {
 		public Builder setPrivacyIndicatorBounds(android.graphics.Rect bounds) { return this; }
 		public WindowInsets build() { return new WindowInsets(); }
 	}
+
+	/**
+	 * AOSP: the rounded corner of the display at a position, relative to the window, or null when
+	 * that corner is not rounded; the car screen has square corners (see Display.getRoundedCorner).
+	 */
+	public RoundedCorner getRoundedCorner(int position) {
+		if (position < RoundedCorner.POSITION_TOP_LEFT || position > RoundedCorner.POSITION_BOTTOM_LEFT)
+			throw new IllegalArgumentException("unknown rounded corner position " + position);
+		return null;
+	}
 }

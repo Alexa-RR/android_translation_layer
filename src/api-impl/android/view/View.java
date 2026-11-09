@@ -719,8 +719,9 @@ public class View implements Drawable.Callback {
 		WindowInsets onApplyWindowInsets(View v, WindowInsets insets);
 	}
 
+	/** AOSP: called when the layout bounds of a view change because of layout processing. */
 	public interface OnLayoutChangeListener {
-		// TODO
+		void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom);
 	}
 
 	public interface OnUnhandledKeyEventListener {
@@ -1832,6 +1833,7 @@ public class View implements Drawable.Callback {
 		onLayout(changed, 0, 0, width, height);
 		oldWidth = width;
 		oldHeight = height;
+		tlDispatchLayoutChange();
 	}
 
 	/** Prefill the measureSpec cache, so that AndroidLayout can use it from native code if GTK measure spec is incomplete */
@@ -1954,8 +1956,17 @@ public class View implements Drawable.Callback {
 		return tag;
 	}
 
-	public void addOnLayoutChangeListener(OnLayoutChangeListener listener) {}
-	public void removeOnLayoutChangeListener(OnLayoutChangeListener listener) {}
+	/** AOSP: the listener hears about every layout of this view (tl_layout_change). */
+	public void addOnLayoutChangeListener(OnLayoutChangeListener listener) {
+		if (tlLayoutChangeListeners == null)
+			tlLayoutChangeListeners = new java.util.ArrayList<OnLayoutChangeListener>();
+		if (!tlLayoutChangeListeners.contains(listener))
+			tlLayoutChangeListeners.add(listener);
+	}
+	public void removeOnLayoutChangeListener(OnLayoutChangeListener listener) {
+		if (tlLayoutChangeListeners != null)
+			tlLayoutChangeListeners.remove(listener);
+	}
 
 	public boolean isSelected() { return false; }
 
@@ -2531,7 +2542,14 @@ public class View implements Drawable.Callback {
 
 	public void setScrollIndicators(int indicators, int mask) {}
 
-	public void setLayoutDirection(int layoutDirection) {}
+	/**
+	 * AOSP: stores the raw layout direction (INHERIT by default). teslalinux: resolving it against
+	 * the parent and the locale (RTL mirroring) is not done yet (TODO-real.md); getLayoutDirection
+	 * still resolves to LTR.
+	 */
+	public void setLayoutDirection(int layoutDirection) {
+		tlRawLayoutDirection = layoutDirection;
+	}
 
 	public ColorStateList getBackgroundTintList() { return null; }
 
@@ -2655,7 +2673,12 @@ public class View implements Drawable.Callback {
 		return false;
 	}
 
-	public WindowInsets getRootWindowInsets() { return null; }
+	/**
+	 * AOSP: the insets the window's root view got; null only while the view is not attached. This
+	 * platform has no status or navigation bars and no cutout, so they are empty. teslalinux: the
+	 * on-screen keyboard (native-osk.sh) is not reported as an IME inset yet (TODO-real.md).
+	 */
+	public WindowInsets getRootWindowInsets() { return isAttachedToWindow() ? new WindowInsets() : null; }
 
 	public PointerIcon getPointerIcon() {
 		return mPointerIcon;
@@ -3990,13 +4013,12 @@ public class View implements Drawable.Callback {
 	}
 
 	/**
-	 * A pointer DOWN or SCROLL from any device, before it reaches a view (AOSP processPointerEvent);
-	 * eventPopover is the GtkPopover of the PopupWindow it landed in (0: an activity or dialog window).
-	 * Popups that watch outside touches get theirs (AOSP ACTION_OUTSIDE).
+	 * A pointer DOWN or SCROLL from any device at (x, y) in the main window, before it reaches a view
+	 * (AOSP processPointerEvent). App windows that watch outside touches get theirs (ACTION_OUTSIDE).
 	 */
-	static void tlPointerDown(long eventPopover) {
+	static void tlPointerDown(float x, float y) {
 		tlEnsureTouchMode(true);
-		android.widget.PopupWindow.tlDispatchOutsideTouch(eventPopover);
+		WindowManagerImpl.tlDispatchOutsideTouch(x, y);
 	}
 
 	/**
@@ -4030,4 +4052,83 @@ public class View implements Drawable.Callback {
 	private static native View nativeFindFocus(long widget);
 	/** drops the window's focus (and a deferred focus request) when this view is the focused one; true if it was */
 	private static native boolean nativeClearFocus(long widget);
+
+	/* ---- teslalinux: layout change listeners, root namespace, window frames (tl_layout_change) ---- */
+	private java.util.ArrayList<OnLayoutChangeListener> tlLayoutChangeListeners;
+	private int tlLaidOutLeft, tlLaidOutTop, tlLaidOutRight, tlLaidOutBottom;
+
+	/** AOSP View.layout: after onLayout, the layout change listeners get the new and the previous bounds. */
+	private void tlDispatchLayoutChange() {
+		final int oldL = tlLaidOutLeft, oldT = tlLaidOutTop, oldR = tlLaidOutRight, oldB = tlLaidOutBottom;
+		tlLaidOutLeft = left;
+		tlLaidOutTop = top;
+		tlLaidOutRight = right;
+		tlLaidOutBottom = bottom;
+		if (tlLayoutChangeListeners == null || tlLayoutChangeListeners.isEmpty())
+			return;
+		java.util.ArrayList<OnLayoutChangeListener> listeners = new java.util.ArrayList<OnLayoutChangeListener>(tlLayoutChangeListeners);
+		for (OnLayoutChangeListener l : listeners)
+			l.onLayoutChange(this, left, top, right, bottom, oldL, oldT, oldR, oldB);
+	}
+
+	private int tlRawLayoutDirection = LAYOUT_DIRECTION_INHERIT;
+
+	/** AOSP (hidden): the layout direction as set, before resolution. */
+	public int getRawLayoutDirection() {
+		return tlRawLayoutDirection;
+	}
+
+	private boolean tlIsRootNamespace;
+
+	/** AOSP (hidden): marks the root of a namespace for findViewById and focus searches (window roots). */
+	public void setIsRootNamespace(boolean isRoot) {
+		tlIsRootNamespace = isRoot;
+	}
+
+	public boolean isRootNamespace() {
+		return tlIsRootNamespace;
+	}
+
+	/** AOSP (hidden): the view's location on screen as a new array. */
+	public int[] getLocationOnScreen() {
+		int[] location = new int[2];
+		getLocationOnScreen(location);
+		return location;
+	}
+
+	/**
+	 * AOSP (hidden): the frame of the display area the window is laid out in. There are no system
+	 * bars here, so it is the window's visible display frame.
+	 */
+	public void getWindowDisplayFrame(android.graphics.Rect outRect) {
+		getWindowVisibleDisplayFrame(outRect);
+	}
+
+	/**
+	 * AOSP (hidden): converts an event in this view's coordinates to screen coordinates (through the
+	 * parents, then the window's position on screen, which ViewRootImpl adds on Android); false when
+	 * the view is not attached. Used to forward touches between windows (ForwardingListener).
+	 */
+	public boolean toGlobalMotionEvent(MotionEvent ev) {
+		if (!isAttachedToWindow())
+			return false;
+		final android.graphics.Matrix m = new android.graphics.Matrix();
+		transformMatrixToGlobal(m);
+		final int[] window = getRootView().getLocationOnScreen();
+		m.postTranslate(window[0], window[1]);
+		ev.transform(m);
+		return true;
+	}
+
+	/** AOSP (hidden): converts an event in screen coordinates to this view's coordinates. */
+	public boolean toLocalMotionEvent(MotionEvent ev) {
+		if (!isAttachedToWindow())
+			return false;
+		final int[] window = getRootView().getLocationOnScreen();
+		final android.graphics.Matrix m = new android.graphics.Matrix();
+		m.setTranslate(-window[0], -window[1]);
+		transformMatrixToLocal(m);
+		ev.transform(m);
+		return true;
+	}
 }

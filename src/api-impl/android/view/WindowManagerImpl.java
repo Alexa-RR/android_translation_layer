@@ -1,11 +1,31 @@
 package android.view;
 
 import android.graphics.Rect;
-import android.util.Slog;
+import java.util.ArrayList;
 
+/**
+ * teslalinux: the window manager for the windows an app adds itself (PopupWindow, Compose popups,
+ * toasts and other panels; activities and dialogs have their own paths). On Android each one is a
+ * window with its own ViewRootImpl and surface, sized and placed by the window manager from its
+ * WindowManager.LayoutParams. Here each window is a layer of the main GtkWindow (native
+ * TlWindowLayer, android_view_WindowManagerImpl.c), stacked above everything added before it, the
+ * way native-dialog-overlay.sh stacks dialogs:
+ * - size: the root view is measured like ViewRootImpl.measureHierarchy (MATCH_PARENT exactly the
+ *   display frame, WRAP_CONTENT at most the display frame, a pixel size exactly that size);
+ * - position: Gravity.apply with x/y (and the margins) in the display frame, then clamped to the
+ *   display unless FLAG_LAYOUT_NO_LIMITS (WindowState.computeFrame / Gravity.applyDisplay); a frame
+ *   smaller than the measured size measures the view again at the frame size (ViewRootImpl relayout);
+ * - input: FLAG_NOT_TOUCHABLE windows let every touch through; a touch-modal window (focusable and
+ *   no FLAG_NOT_TOUCH_MODAL) takes the touches outside its frame too; FLAG_WATCH_OUTSIDE_TOUCH
+ *   windows get ACTION_OUTSIDE for a touch elsewhere; keys go to the topmost focusable window;
+ * - FLAG_DIM_BEHIND dims everything below by dimAmount.
+ * The layout runs on GTK's allocation of the layer, so a requestLayout of the root view (which
+ * queues a GTK resize) relayouts the window, like ViewRootImpl.requestLayout.
+ */
 public class WindowManagerImpl implements WindowManager, ViewManager {
 
 	private static final String TAG = "WindowManagerImpl";
+	private static final boolean DEBUG = System.getenv("ATL_DEBUG_WINDOWS") != null;
 
 	/**
 	 * The parent of a window's root view: what ViewRootImpl is on Android. Layout, drawing and
@@ -81,48 +101,79 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		}
 	}
 
+	/** One added window: its root view, its attributes and where the last layout put it. */
+	private static final class AddedWindow {
+		final View view;
+		final WindowManager.LayoutParams params = new WindowManager.LayoutParams();
+		final Rect frame = new Rect();
+		long layer;
+
+		AddedWindow(View view) {
+			this.view = view;
+		}
+	}
+
+	/** every window added through any WindowManagerImpl of the process, oldest (lowest) first */
+	private static final ArrayList<AddedWindow> sWindows = new ArrayList<>();
+
+	private static AddedWindow findWindow(View view) {
+		for (AddedWindow w : sWindows) {
+			if (w.view == view)
+				return w;
+		}
+		return null;
+	}
+
 	public android.view.Display getDefaultDisplay() {
 		return new android.view.Display();
 	}
 
+	/** AOSP WindowManagerGlobal.addView: the view becomes the root of a new window. */
 	@Override
 	public void addView(View view, android.view.ViewGroup.LayoutParams params) {
-		Slog.v(TAG, "addView(" + view + ", " + params + ") called");
+		if (view == null)
+			throw new IllegalArgumentException("view must not be null");
+		if (!(params instanceof WindowManager.LayoutParams))
+			throw new IllegalArgumentException("Params must be WindowManager.LayoutParams");
+		if (findWindow(view) != null)
+			throw new IllegalStateException("View " + view + " has already been added to the window manager.");
+		AddedWindow w = new AddedWindow(view);
+		w.params.copyFrom((WindowManager.LayoutParams) params);
+		if (DEBUG)
+			android.util.Log.i(TAG, "addView " + view.getClass().getName() + " " + describe(w.params));
 		view.setLayoutParams(params);
 		view.parent = new WindowViewParent();
+		sWindows.add(w);
+		w.layer = native_addWindow(view, view.widget, w.params.flags, w.params.dimAmount);
 		view.onAttachedToWindow();
-		Rect displayFrame = new Rect();
-		view.getWindowVisibleDisplayFrame(displayFrame);
-		view.internalSetDefaultMeasureSpec(View.MeasureSpec.AT_MOST | displayFrame.width(), View.MeasureSpec.AT_MOST | displayFrame.height());
-		WindowManager.LayoutParams windowParams = (WindowManager.LayoutParams)params;
-		native_addView(view.widget, windowParams.type, windowParams.x, windowParams.y, params.width, params.height);
 	}
 
+	/** AOSP: new attributes for an added window; applied at its next layout (ViewRootImpl.setLayoutParams). */
 	@Override
 	public void updateViewLayout(View view, android.view.ViewGroup.LayoutParams params) {
-		Slog.v(TAG, "updateViewLayout(" + view + ", " + params + ") called");
-		Rect displayFrame = new Rect();
-		view.getWindowVisibleDisplayFrame(displayFrame);
-		view.internalSetDefaultMeasureSpec(View.MeasureSpec.AT_MOST | displayFrame.width(), View.MeasureSpec.AT_MOST | displayFrame.height());
-		final WindowManager.LayoutParams windowParams = (WindowManager.LayoutParams)params;
+		if (!(params instanceof WindowManager.LayoutParams))
+			throw new IllegalArgumentException("Params must be WindowManager.LayoutParams");
+		AddedWindow w = findWindow(view);
+		if (w == null)
+			throw new IllegalArgumentException("View=" + view + " not attached to window manager");
+		w.params.copyFrom((WindowManager.LayoutParams) params);
+		if (DEBUG)
+			android.util.Log.i(TAG, "updateViewLayout " + view.getClass().getName() + " " + describe(w.params));
 		view.setLayoutParams(params);
-		/* AOSP: the new parameters are applied on the next traversal (ViewRootImpl.setLayoutParams ->
-		 * requestLayout); applying them here makes GTK re-present the popover and measure the view
-		 * synchronously, which Compose rejects when it is already measuring (popups move onSizeChanged). */
-		final View target = view;
-		final int width = params.width, height = params.height;
-		new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
-			@Override
-			public void run() {
-				if (target.parent == WindowManagerImpl.this || target.isAttachedToWindow())
-					native_updateViewLayout(target.widget, windowParams.x, windowParams.y, width, height);
-			}
-		});
+		native_updateWindow(w.layer, w.params.flags, w.params.dimAmount);
 	}
 
 	@Override
 	public void removeView(View view) {
-		native_removeView(view.widget);
+		AddedWindow w = findWindow(view);
+		if (w == null)
+			throw new IllegalArgumentException("View=" + view + " not attached to window manager");
+		if (DEBUG)
+			android.util.Log.i(TAG, "removeView " + view.getClass().getName());
+		sWindows.remove(w);
+		view.onDetachedFromWindow();
+		native_removeWindow(w.layer);
+		w.layer = 0;
 		view.parent = null;
 	}
 
@@ -131,7 +182,97 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		removeView(view);
 	}
 
-	private static native void native_addView(long widget, int type, int x, int y, int width, int height);
-	private static native void native_updateViewLayout(long widget, int x, int y, int width, int height);
-	private static native void native_removeView(long widget);
+	private static String describe(WindowManager.LayoutParams p) {
+		return "type=" + p.type + " " + p.width + "x" + p.height + " at " + p.x + "," + p.y + " gravity=0x" + Integer.toHexString(p.gravity)
+		     + " flags=0x" + Integer.toHexString(p.flags);
+	}
+
+	/** ViewRootImpl.getRootMeasureSpec */
+	private static int getRootMeasureSpec(int windowSize, int rootDimension) {
+		switch (rootDimension) {
+			case ViewGroup.LayoutParams.MATCH_PARENT:
+				return View.MeasureSpec.makeMeasureSpec(windowSize, View.MeasureSpec.EXACTLY);
+			case ViewGroup.LayoutParams.WRAP_CONTENT:
+				return View.MeasureSpec.makeMeasureSpec(windowSize, View.MeasureSpec.AT_MOST);
+			default:
+				return View.MeasureSpec.makeMeasureSpec(rootDimension, View.MeasureSpec.EXACTLY);
+		}
+	}
+
+	/**
+	 * Called by the layer's GTK allocation with the display frame (the main window's size): measures
+	 * the root view and returns the window frame in out[0..3] (x, y, width, height).
+	 */
+	private static void tlLayoutWindow(View view, int displayWidth, int displayHeight, int[] out) {
+		AddedWindow w = findWindow(view);
+		WindowManager.LayoutParams p = w != null ? w.params : (WindowManager.LayoutParams) view.getLayoutParams();
+		view.measure(getRootMeasureSpec(displayWidth, p.width), getRootMeasureSpec(displayHeight, p.height));
+		int width = p.width >= 0 ? p.width : (p.width == ViewGroup.LayoutParams.MATCH_PARENT ? displayWidth : view.getMeasuredWidth());
+		int height = p.height >= 0 ? p.height : (p.height == ViewGroup.LayoutParams.MATCH_PARENT ? displayHeight : view.getMeasuredHeight());
+		Rect display = new Rect(0, 0, displayWidth, displayHeight);
+		Rect frame = new Rect();
+		Gravity.apply(p.gravity, width, height, display,
+		              (int) (p.x + p.horizontalMargin * displayWidth), (int) (p.y + p.verticalMargin * displayHeight), frame);
+		if ((p.flags & WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS) == 0)
+			Gravity.applyDisplay(p.gravity, display, frame);
+		if (frame.width() != view.getMeasuredWidth() || frame.height() != view.getMeasuredHeight())
+			view.measure(View.MeasureSpec.makeMeasureSpec(frame.width(), View.MeasureSpec.EXACTLY),
+			             View.MeasureSpec.makeMeasureSpec(frame.height(), View.MeasureSpec.EXACTLY));
+		if (w != null)
+			w.frame.set(frame);
+		out[0] = frame.left;
+		out[1] = frame.top;
+		out[2] = frame.width();
+		out[3] = frame.height();
+	}
+
+	/**
+	 * A pointer DOWN at (x, y) in the main window, before any view saw it: every window watching
+	 * outside touches whose frame does not contain the point gets ACTION_OUTSIDE, in its own
+	 * coordinates (the windows all belong to this app, so AOSP does not zero them).
+	 */
+	static void tlDispatchOutsideTouch(float x, float y) {
+		ArrayList<AddedWindow> windows = new ArrayList<>(sWindows);
+		for (AddedWindow w : windows) {
+			if ((w.params.flags & WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH) == 0)
+				continue;
+			if (w.frame.contains((int) x, (int) y) || !sWindows.contains(w))
+				continue;
+			long now = android.os.SystemClock.uptimeMillis();
+			MotionEvent ev = MotionEvent.obtain(now, now, MotionEvent.ACTION_OUTSIDE, x - w.frame.left, y - w.frame.top, 0);
+			w.view.dispatchTouchEvent(ev);
+			ev.recycle();
+		}
+	}
+
+	/**
+	 * A touch-modal window gets the touches outside its frame as well (AOSP: without
+	 * FLAG_NOT_TOUCH_MODAL a focusable window consumes all pointer events); x/y are window-relative.
+	 */
+	private static void tlModalOutsideTouch(View view, int action, float x, float y) {
+		long now = android.os.SystemClock.uptimeMillis();
+		MotionEvent ev = MotionEvent.obtain(now, now, action, x, y, 0);
+		view.dispatchTouchEvent(ev);
+		ev.recycle();
+	}
+
+	/**
+	 * A key, before any view saw it: AOSP delivers keys to the focused window, which is the topmost
+	 * focusable one; an app-added focusable window above the activity takes them. True when such a
+	 * window exists (its root got the key, handled or not, as ViewRootImpl does).
+	 */
+	static boolean tlDispatchKeyToFocusedWindow(KeyEvent event) {
+		for (int i = sWindows.size() - 1; i >= 0; i--) {
+			AddedWindow w = sWindows.get(i);
+			if ((w.params.flags & WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) != 0)
+				continue;
+			w.view.dispatchKeyEvent(event);
+			return true;
+		}
+		return false;
+	}
+
+	private static native long native_addWindow(View view, long widget, int flags, float dimAmount);
+	private static native void native_updateWindow(long layer, int flags, float dimAmount);
+	private static native void native_removeWindow(long layer);
 }

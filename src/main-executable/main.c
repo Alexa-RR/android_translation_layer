@@ -601,6 +601,7 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 		/* tl_touch_mode: input passes the touch-mode logic before any view (AOSP ViewRootImpl input stages) */
 		gboolean tl_touch_mode_pointer_event(GtkEventControllerLegacy *controller, GdkEvent *event, gpointer data);
 		gboolean tl_touch_mode_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data);
+		void tl_touch_mode_key_released(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data);
 		GtkEventController *tl_mode_pointer = gtk_event_controller_legacy_new();
 		gtk_event_controller_set_propagation_phase(tl_mode_pointer, GTK_PHASE_CAPTURE);
 		g_signal_connect(tl_mode_pointer, "event", G_CALLBACK(tl_touch_mode_pointer_event), NULL);
@@ -608,6 +609,7 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 		GtkEventController *tl_mode_keys = gtk_event_controller_key_new();
 		gtk_event_controller_set_propagation_phase(tl_mode_keys, GTK_PHASE_CAPTURE);
 		g_signal_connect(tl_mode_keys, "key-pressed", G_CALLBACK(tl_touch_mode_key_pressed), NULL);
+		g_signal_connect(tl_mode_keys, "key-released", G_CALLBACK(tl_touch_mode_key_released), NULL);
 		gtk_widget_add_controller(window, tl_mode_keys);
 	}
 	if (getenv("ATL_DEBUG_TOUCH")) {

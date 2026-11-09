@@ -106,4 +106,15 @@ public final class Display {
 	public boolean isValid() { return true; }
 	/** Invalid display id (AOSP). */
 	public static final int INVALID_DISPLAY = -1;
+
+	/**
+	 * AOSP: the display's rounded corner at a position (RoundedCorner.POSITION_*), or null when that
+	 * corner is not rounded. The car screen is a browser viewport with square corners, so every
+	 * position reports null, as AOSP does for a display without rounded corners.
+	 */
+	public RoundedCorner getRoundedCorner(int position) {
+		if (position < RoundedCorner.POSITION_TOP_LEFT || position > RoundedCorner.POSITION_BOTTOM_LEFT)
+			throw new IllegalArgumentException("unknown rounded corner position " + position);
+		return null;
+	}
 }

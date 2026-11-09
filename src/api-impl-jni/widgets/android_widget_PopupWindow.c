@@ -13,8 +13,6 @@ JNIEXPORT jlong JNICALL Java_android_widget_PopupWindow_native_1constructor(JNIE
 	gtk_widget_set_name(popover, "PopupWindow");
 	/* autohiding works by the widget grabbing events, which is not something apps expect */
 	gtk_popover_set_autohide(GTK_POPOVER(popover), false);
-	/* tl_popup_window: AOSP popups are not focusable until setFocusable(true) */
-	gtk_widget_set_can_focus(popover, FALSE);
 	return _INTPTR(popover);
 }
 
@@ -127,10 +125,4 @@ JNIEXPORT void JNICALL Java_android_widget_PopupWindow_native_1update(JNIEnv *en
 	gtk_widget_insert_before(GTK_WIDGET(popover), GTK_WIDGET(anchor), NULL);
 	gtk_popover_present(GTK_POPOVER(popover));
 	gtk_popover_popup(popover);
-}
-
-/* tl_popup_window: AOSP PopupWindow.setFocusable; a focusable popup can take key focus */
-JNIEXPORT void JNICALL Java_android_widget_PopupWindow_native_1setFocusable(JNIEnv *env, jobject this, jlong popover_ptr, jboolean focusable)
-{
-	gtk_widget_set_can_focus(GTK_WIDGET(_PTR(popover_ptr)), focusable);
 }

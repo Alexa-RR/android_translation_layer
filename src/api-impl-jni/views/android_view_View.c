@@ -1054,11 +1054,38 @@ JNIEXPORT jobject JNICALL Java_android_view_View_native_1get_1window(JNIEnv *env
 
 extern GtkWindow *window;
 
+/* tl_window_frame: the height of the on-screen keyboard layer while it shows (0 otherwise) */
+static int tl_window_frame_ime_height(void)
+{
+	extern GtkWidget *tl_main_overlay;
+	if (!tl_main_overlay)
+		return 0;
+	for (GtkWidget *c = gtk_widget_get_first_child(tl_main_overlay); c; c = gtk_widget_get_next_sibling(c)) {
+		if (!gtk_widget_has_css_class(c, "tl-osk") || !gtk_widget_get_visible(c))
+			continue;
+		int h = gtk_widget_get_height(c);
+		if (h <= 0) { /* shown but not allocated yet: its requested height */
+			int min = 0, nat = 0;
+			gtk_widget_measure(c, GTK_ORIENTATION_VERTICAL, gtk_widget_get_width(tl_main_overlay), &min, &nat, NULL, NULL);
+			h = nat;
+		}
+		return h;
+	}
+	return 0;
+}
+
 JNIEXPORT void JNICALL Java_android_view_View_getWindowVisibleDisplayFrame(JNIEnv *env, jobject this, jobject rect)
 {
 	int width;
 	int height;
-	gtk_window_get_default_size(window, &width, &height);
+	/* tl_window_frame: the window as allocated (fullscreen, kiosk), not its default size */
+	width = gtk_widget_get_width(GTK_WIDGET(window));
+	height = gtk_widget_get_height(GTK_WIDGET(window));
+	if (width <= 0 || height <= 0)
+		gtk_window_get_default_size(window, &width, &height);
+	height -= tl_window_frame_ime_height();
+	if (height < 0)
+		height = 0;
 	_SET_INT_FIELD(rect, "left", 0);
 	_SET_INT_FIELD(rect, "top", 0);
 	_SET_INT_FIELD(rect, "right", width);
@@ -1131,42 +1158,68 @@ JNIEXPORT jboolean JNICALL Java_android_view_View_nativeClearFocus(JNIEnv *env, 
 int map_key_code(int key_code);
 int map_meta_state(GdkModifierType state);
 
-/* pointer DOWN (button press, touch begin) or SCROLL: AOSP enters touch mode; the event goes on.
- * Popovers (PopupWindow) are child widgets of their anchor, so their events pass here too; the
- * popover whose surface got the event is passed on, every other popup sees an outside touch. */
+/* pointer DOWN (button press, touch begin) or SCROLL: AOSP enters touch mode, and every app window
+ * watching outside touches whose frame does not contain the point gets ACTION_OUTSIDE (app windows
+ * are layers of this window, WindowManagerImpl); the event goes on to the views */
 gboolean tl_touch_mode_pointer_event(GtkEventControllerLegacy *controller, GdkEvent *event, gpointer data)
 {
 	GdkEventType type = gdk_event_get_event_type(event);
 	if (type != GDK_BUTTON_PRESS && type != GDK_TOUCH_BEGIN && type != GDK_SCROLL)
 		return FALSE;
-	GdkSurface *surface = gdk_event_get_surface(event);
-	GtkNative *native = surface ? gtk_native_get_for_surface(surface) : NULL;
-	jlong event_popover = (native && GTK_IS_POPOVER(native)) ? _INTPTR(native) : 0;
+	double x = 0, y = 0;
+	gdk_event_get_position(event, &x, &y);
 	JNIEnv *env = get_jni_env();
 	static jmethodID pointer_down = NULL;
 	if (!pointer_down)
-		pointer_down = _STATIC_METHOD(handle_cache.view.class, "tlPointerDown", "(J)V");
-	(*env)->CallStaticVoidMethod(env, handle_cache.view.class, pointer_down, event_popover);
+		pointer_down = _STATIC_METHOD(handle_cache.view.class, "tlPointerDown", "(FF)V");
+	(*env)->CallStaticVoidMethod(env, handle_cache.view.class, pointer_down, (jfloat)x, (jfloat)y);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 	return FALSE;
 }
 
-/* key down: AOSP leaves touch mode on navigation and typing keys; TRUE when that consumed the key */
-gboolean tl_touch_mode_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data)
+/* a key, before any view: AOSP ViewRootImpl leaves touch mode on navigation and typing keys (and may
+ * consume the key for that), and the key goes to the focused window, which is an app-added
+ * focusable window above the activity when one exists (WindowManagerImpl); TRUE when consumed.
+ * The host keyboard's Escape is this platform's BACK key, as in the window-level dispatch. */
+static gboolean tl_touch_mode_key(guint keyval, GdkModifierType state, int action)
 {
 	JNIEnv *env = get_jni_env();
-	static jmethodID check = NULL;
+	static jmethodID check = NULL, to_window = NULL;
+	static jclass wm = NULL;
 	if (!check)
 		check = _STATIC_METHOD(handle_cache.view.class, "tlCheckForLeavingTouchModeAndConsume", "(Landroid/view/KeyEvent;)Z");
+	if (!wm) {
+		wm = _REF((*env)->FindClass(env, "android/view/WindowManagerImpl"));
+		to_window = _STATIC_METHOD(wm, "tlDispatchKeyToFocusedWindow", "(Landroid/view/KeyEvent;)Z");
+	}
+	int code = keyval == GDK_KEY_Escape ? 4 /* KEYCODE_BACK */ : map_key_code(keyval);
 	jobject key_event = (*env)->NewObject(env, handle_cache.key_event.class, handle_cache.key_event.constructor,
-	                                      (jlong)0, (jlong)0, 0 /* ACTION_DOWN */, map_key_code(keyval), 0, map_meta_state(state));
+	                                      (jlong)0, (jlong)0, action, code, 0, map_meta_state(state));
 	_SET_INT_FIELD(key_event, "unicodeValue", gdk_keyval_to_unicode(keyval));
-	gboolean consumed = (*env)->CallStaticBooleanMethod(env, handle_cache.view.class, check, key_event);
+	gboolean consumed = FALSE;
+	if (action == 0 /* ACTION_DOWN */)
+		consumed = (*env)->CallStaticBooleanMethod(env, handle_cache.view.class, check, key_event);
+	if ((*env)->ExceptionCheck(env)) {
+		(*env)->ExceptionDescribe(env);
+		consumed = FALSE;
+	}
+	if (!consumed)
+		consumed = (*env)->CallStaticBooleanMethod(env, wm, to_window, key_event);
 	if ((*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionDescribe(env);
 		consumed = FALSE;
 	}
 	(*env)->DeleteLocalRef(env, key_event);
 	return consumed;
+}
+
+gboolean tl_touch_mode_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data)
+{
+	return tl_touch_mode_key(keyval, state, 0 /* ACTION_DOWN */);
+}
+
+void tl_touch_mode_key_released(GtkEventControllerKey *controller, guint keyval, guint keycode, GdkModifierType state, gpointer data)
+{
+	tl_touch_mode_key(keyval, state, 1 /* ACTION_UP */);
 }
