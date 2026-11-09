@@ -132,6 +132,8 @@ public class RenderNode {
 
 	public boolean setRotationX(float rotationX) {
 		boolean changed = this.rotationX != rotationX;
+		if (changed)
+			tlDropTransformed();
 		this.rotationX = rotationX;
 		return changed;
 	}
@@ -142,6 +144,8 @@ public class RenderNode {
 
 	public boolean setRotationY(float rotationY) {
 		boolean changed = this.rotationY != rotationY;
+		if (changed)
+			tlDropTransformed();
 		this.rotationY = rotationY;
 		return changed;
 	}
@@ -152,6 +156,8 @@ public class RenderNode {
 
 	public boolean setCameraDistance(float cameraDistance) {
 		boolean changed = this.cameraDistance != cameraDistance;
+		if (changed)
+			tlDropTransformed();
 		this.cameraDistance = cameraDistance;
 		return changed;
 	}
@@ -214,6 +220,8 @@ public class RenderNode {
 
 	public boolean setAlpha(float alpha) {
 		boolean changed = this.alpha != alpha;
+		if (changed)
+			tlDropTransformed();
 		this.alpha = alpha;
 		return changed;
 	}
@@ -294,7 +302,14 @@ public class RenderNode {
 			} else if (clipToBounds && width > 0 && height > 0) {
 				clipped = nativeClipKeep(render_node, 0, 0, width, height);
 			}
-			transformed_node = nativeTransform(clipped != 0 ? clipped : render_node, scaleX, scaleY, translationX, translationY, rotation, pivotX, pivotY);
+			// HWUI order (native-rendernode-layer.sh): clip, then the layer alpha over the content, then
+			// the layer matrix T(t+p) . 3D camera rotation . rotateZ . scale . T(-p)
+			final long content = clipped != 0 ? clipped : render_node;
+			final long faded = alpha < 1.0f ? nativeOpacityKeep(content, alpha) : 0;
+			transformed_node = nativeLayerTransformKeep(faded != 0 ? faded : content, scaleX, scaleY, translationX, translationY,
+			                                            rotation, rotationX, rotationY, cameraDistance, pivotX, pivotY);
+			if (faded != 0)
+				nativeUnref(faded);
 			if (clipped != 0)
 				nativeUnref(clipped);
 		}
@@ -378,4 +393,18 @@ public class RenderNode {
 	/* teslalinux: clip helpers that leave the input node referenced (native-rendernode-clip.sh) */
 	private static native long nativeClipKeep(long node, float left, float top, float right, float bottom);
 	private static native long nativeRoundedClipKeep(long node, float left, float top, float right, float bottom, float radius);
+
+	/* teslalinux: alpha and the full HWUI layer matrix (native-rendernode-layer.sh) */
+	private native long nativeOpacityKeep(long node, float alpha);
+	private native long nativeLayerTransformKeep(long node, float scaleX, float scaleY, float translationX, float translationY,
+	                                             float rotationZ, float rotationX, float rotationY, float cameraDistanceInches,
+	                                             float pivotX, float pivotY);
+
+	/** a layer property changed: the cached transformed node is rebuilt on the next getGskNode() */
+	private void tlDropTransformed() {
+		if (transformed_node != 0) {
+			nativeUnref(transformed_node);
+			transformed_node = 0;
+		}
+	}
 }
