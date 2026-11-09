@@ -72,6 +72,20 @@ public final class ViewDump {
 						android.graphics.Point p = new android.graphics.Point();
 						disp.getSize(p);
 						Log.i(TAG, "display size " + p.x + "x" + p.y + " rotation=" + disp.getRotation());
+					} else if (command.startsWith("windows")) {
+						// "windows": every live activity's window and decor (attach state, root insets, visible rect)
+						synchronized (sActivities) {
+							for (Activity a : sActivities) {
+								android.view.Window w = a.getWindow();
+								View d = w != null ? w.getDecorView() : null;
+								android.graphics.Rect r = new android.graphics.Rect();
+								boolean vis = d != null && d.getGlobalVisibleRect(r);
+								Log.i(TAG, "windows: " + a.getClass().getName() + " destroyed=" + a.isDestroyed() + " finishing=" + a.isFinishing()
+								           + " window=" + w + " decor=" + (d != null ? d.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(d)) : null)
+								           + " attached=" + (d != null && d.isAttachedToWindow()) + " rootInsets=" + (d != null ? d.getRootWindowInsets() : null)
+								           + " visible=" + vis + " " + r + " size=" + (d != null ? d.getWidth() + "x" + d.getHeight() : "-"));
+							}
+						}
 					} else if (command.startsWith("vecprobe")) {
 						// "vecprobe": Compose's vector cache sequence on a bitmap canvas, pixels read back
 						vecProbe();
