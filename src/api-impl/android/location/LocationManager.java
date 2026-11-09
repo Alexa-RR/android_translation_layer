@@ -137,7 +137,7 @@ public class LocationManager {
 	private static final Object sLock = new Object();
 	private static final Map<String, ProviderState> sProviders = new HashMap<>();
 	private static final CopyOnWriteArrayList<Request> sRequests = new CopyOnWriteArrayList<>();
-	private static final CopyOnWriteArrayList<Object[]> sGnssCallbacks = new CopyOnWriteArrayList<>();
+	private static final CopyOnWriteArrayList<Object> sGnssCallbacks = new CopyOnWriteArrayList<>();
 	private static boolean sSourcesStarted;
 	private static boolean sPortalStarted;
 
@@ -272,6 +272,7 @@ public class LocationManager {
 			throw new IllegalArgumentException("provider doesn't exist: " + r.provider);
 		sRequests.add(r);
 		startSources();
+		updateGnssEngine();
 		// AOSP delivers the last known location of the provider straight away when it is fresh
 		Location last = getLastKnownLocation(r.provider);
 		if (last != null)
@@ -283,57 +284,268 @@ public class LocationManager {
 			if (r.listener == listener)
 				sRequests.remove(r);
 		}
+		updateGnssEngine();
 	}
 
 	public void removeUpdates(PendingIntent intent) {}
 
+	/**
+	 * AOSP hands the command to the provider and returns true whatever it did with it ("always
+	 * true for backwards compatibility"). The provider commands AOSP's GNSS provider knows
+	 * (delete_aiding_data, force_time_injection, force_psds_injection) manage assistance data that
+	 * the external receiver behind this provider keeps by itself, so there is nothing to forward.
+	 */
 	public boolean sendExtraCommand(String provider, String command, Bundle extras) {
+		if (provider == null)
+			throw new IllegalArgumentException("invalid null provider");
+		if (command == null)
+			throw new IllegalArgumentException("invalid null command");
 		return true;
 	}
 
 	// ---- GNSS status ----------------------------------------------------------------------------
 
+	/*
+	 * teslalinux: the GNSS engine here is the external receiver behind the "gps" provider (the
+	 * car's GPS through the Tesla browser, or the fixed test position). It runs while any app
+	 * request is active on a provider it feeds (all but "passive"), like AOSP's GnssLocationProvider
+	 * navigates while it has requests, so GnssStatus callbacks get real onStarted / onFirstFix(ttff)
+	 * / onStopped events. The receiver publishes positions only, no satellite view, so
+	 * onSatelliteStatusChanged is never called (as with a GNSS HAL that reports no SV status) and
+	 * getGpsStatus lists no satellites. Measurements, navigation messages and NMEA are not
+	 * available from it either: those registrations fail the way AOSP's do without the capability.
+	 */
+
+	/** A GnssStatus.Callback registration and the executor its events run on. */
+	private static final class GnssStatusRegistration {
+		final GnssStatus.Callback callback;
+		final Executor executor;
+
+		GnssStatusRegistration(GnssStatus.Callback callback, Executor executor) {
+			this.callback = callback;
+			this.executor = executor;
+		}
+	}
+
+	private static boolean sGnssNavigating;
+	private static long sGnssStartElapsed;
+	private static int sGnssTtffMs;
+
+	private static Executor handlerExecutor(Handler handler) {
+		final Handler h = handler != null ? handler : new Handler(Looper.myLooper() != null ? Looper.myLooper() : Looper.getMainLooper());
+		return new Executor() {
+			@Override
+			public void execute(Runnable r) {
+				if (!h.post(r))
+					throw new java.util.concurrent.RejectedExecutionException(h + " is shutting down");
+			}
+		};
+	}
+
+	@Deprecated
 	public boolean registerGnssStatusCallback(GnssStatus.Callback callback) {
 		return registerGnssStatusCallback(callback, null);
 	}
 
-	public boolean registerGnssStatusCallback(final GnssStatus.Callback callback, Handler handler) {
-		final Handler h = handler != null ? handler : new Handler(Looper.getMainLooper());
-		sGnssCallbacks.add(new Object[] { callback, h });
-		h.post(new Runnable() {
-			@Override
-			public void run() {
-				callback.onStarted();
-				callback.onSatelliteStatusChanged(new GnssStatus());
-			}
-		});
-		return true;
+	public boolean registerGnssStatusCallback(GnssStatus.Callback callback, Handler handler) {
+		return registerGnssStatusCallback(handlerExecutor(handler), callback);
 	}
 
 	public boolean registerGnssStatusCallback(Executor executor, GnssStatus.Callback callback) {
-		return registerGnssStatusCallback(callback, null);
+		if (executor == null)
+			throw new IllegalArgumentException("invalid null executor");
+		if (callback == null)
+			throw new IllegalArgumentException("invalid null callback");
+		for (Object e : sGnssCallbacks) {
+			if (((GnssStatusRegistration) e).callback == callback)
+				return true; // AOSP: re-registering the same callback replaces the old registration
+		}
+		sGnssCallbacks.add(new GnssStatusRegistration(callback, executor));
+		return true;
 	}
 
 	public void unregisterGnssStatusCallback(GnssStatus.Callback callback) {
-		for (Object[] e : sGnssCallbacks) {
-			if (e[0] == callback)
+		for (Object e : sGnssCallbacks) {
+			if (((GnssStatusRegistration) e).callback == callback)
 				sGnssCallbacks.remove(e);
 		}
 	}
 
-	public boolean registerGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback) { return false; }
-	public boolean registerGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback, Handler handler) { return false; }
-	public boolean registerGnssMeasurementsCallback(Executor executor, GnssMeasurementsEvent.Callback callback) { return false; }
-	public void unregisterGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback) {}
-	public boolean addNmeaListener(Executor executor, OnNmeaMessageListener listener) { return false; }
-	public void removeNmeaListener(OnNmeaMessageListener listener) {}
-
-	public String getGnssHardwareModelName() {
-		return "atl";
+	private interface GnssEvent {
+		void deliver(GnssStatus.Callback callback);
 	}
 
+	private static void dispatchGnss(final GnssEvent event) {
+		for (Object o : sGnssCallbacks) {
+			final GnssStatusRegistration reg = (GnssStatusRegistration) o;
+			reg.executor.execute(new Runnable() {
+				@Override
+				public void run() {
+					if (sGnssCallbacks.contains(reg))
+						event.deliver(reg.callback);
+				}
+			});
+		}
+	}
+
+	/** Starts or stops the GNSS engine as app requests come and go (AOSP: session begin / end). */
+	private static void updateGnssEngine() {
+		boolean navigating = false;
+		for (Request r : sRequests) {
+			if (!PASSIVE_PROVIDER.equals(r.provider)) {
+				navigating = true;
+				break;
+			}
+		}
+		synchronized (sLock) {
+			if (navigating == sGnssNavigating)
+				return;
+			sGnssNavigating = navigating;
+			if (navigating) {
+				sGnssStartElapsed = SystemClock.elapsedRealtime();
+				sGnssTtffMs = 0;
+			}
+		}
+		final boolean started = navigating;
+		dispatchGnss(new GnssEvent() {
+			@Override
+			public void deliver(GnssStatus.Callback callback) {
+				if (started)
+					callback.onStarted();
+				else
+					callback.onStopped();
+			}
+		});
+	}
+
+	/** First fix of an engine session: AOSP reports the time to first fix once per session. */
+	private static void gnssFix() {
+		final int ttff;
+		synchronized (sLock) {
+			if (!sGnssNavigating || sGnssTtffMs != 0)
+				return;
+			ttff = (int) Math.max(1, SystemClock.elapsedRealtime() - sGnssStartElapsed);
+			sGnssTtffMs = ttff;
+		}
+		dispatchGnss(new GnssEvent() {
+			@Override
+			public void deliver(GnssStatus.Callback callback) {
+				callback.onFirstFix(ttff);
+			}
+		});
+	}
+
+	/** GpsStatus.Listener registrations (pre-S API), delivered through a GnssStatus.Callback. */
+	private static final Map<GpsStatus.Listener, GnssStatus.Callback> sGpsStatusListeners = new HashMap<>();
+
+	/** AOSP: the GpsStatus APIs throw for apps targeting Android 12 (S) or later. */
+	private static void checkGpsStatusAllowed() {
+		android.app.Application app = android.app.ActivityThread.currentApplication();
+		int target = app != null && app.getApplicationInfo() != null ? app.getApplicationInfo().targetSdkVersion : 0;
+		if (target > 30)
+			throw new UnsupportedOperationException("GpsStatus APIs not supported, please use GnssStatus APIs instead");
+	}
+
+	@Deprecated
+	public GpsStatus getGpsStatus(GpsStatus status) {
+		checkGpsStatusAllowed();
+		int ttff;
+		synchronized (sLock) {
+			ttff = sGnssTtffMs;
+		}
+		// no satellite view from this receiver (see above): an empty status with the session's TTFF
+		GnssStatus gnss = new GnssStatus.Builder().build();
+		if (status == null)
+			return GpsStatus.create(gnss, ttff);
+		status.setStatus(gnss, ttff);
+		return status;
+	}
+
+	@Deprecated
+	public boolean addGpsStatusListener(final GpsStatus.Listener listener) {
+		checkGpsStatusAllowed();
+		GnssStatus.Callback cb = new GnssStatus.Callback() {
+			@Override
+			public void onStarted() {
+				listener.onGpsStatusChanged(GpsStatus.GPS_EVENT_STARTED);
+			}
+
+			@Override
+			public void onStopped() {
+				listener.onGpsStatusChanged(GpsStatus.GPS_EVENT_STOPPED);
+			}
+
+			@Override
+			public void onFirstFix(int ttffMillis) {
+				listener.onGpsStatusChanged(GpsStatus.GPS_EVENT_FIRST_FIX);
+			}
+
+			@Override
+			public void onSatelliteStatusChanged(GnssStatus status) {
+				listener.onGpsStatusChanged(GpsStatus.GPS_EVENT_SATELLITE_STATUS);
+			}
+		};
+		synchronized (sGpsStatusListeners) {
+			GnssStatus.Callback old = sGpsStatusListeners.put(listener, cb);
+			if (old != null)
+				unregisterGnssStatusCallback(old);
+		}
+		return registerGnssStatusCallback(cb, new Handler(Looper.myLooper() != null ? Looper.myLooper() : Looper.getMainLooper()));
+	}
+
+	@Deprecated
+	public void removeGpsStatusListener(GpsStatus.Listener listener) {
+		checkGpsStatusAllowed();
+		GnssStatus.Callback cb;
+		synchronized (sGpsStatusListeners) {
+			cb = sGpsStatusListeners.remove(listener);
+		}
+		if (cb != null)
+			unregisterGnssStatusCallback(cb);
+	}
+
+	/*
+	 * Raw GNSS measurements need a GNSS HAL with the measurement capability; the receiver behind
+	 * this provider offers none. AOSP's service refuses the registration when the GNSS HAL has no
+	 * measurement provider, and LocationManager returns false.
+	 */
+	public boolean registerGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback) {
+		return false;
+	}
+
+	public boolean registerGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback, Handler handler) {
+		return false;
+	}
+
+	public boolean registerGnssMeasurementsCallback(Executor executor, GnssMeasurementsEvent.Callback callback) {
+		return false;
+	}
+
+	/** Nothing to remove: no measurement registration can exist (see above). */
+	public void unregisterGnssMeasurementsCallback(GnssMeasurementsEvent.Callback callback) {
+	}
+
+	/** NMEA sentences: the receiver does not forward any, so (as AOSP without NMEA output) no registration. */
+	public boolean addNmeaListener(Executor executor, OnNmeaMessageListener listener) {
+		return false;
+	}
+
+	public boolean addNmeaListener(OnNmeaMessageListener listener, Handler handler) {
+		return false;
+	}
+
+	/** Nothing to remove: no NMEA registration can exist (see above). */
+	public void removeNmeaListener(OnNmeaMessageListener listener) {
+	}
+
+	/** AOSP: null when the GNSS HAL does not report its model name, as here (an external receiver). */
+	public String getGnssHardwareModelName() {
+		return null;
+	}
+
+	/** AOSP: 0 when the GNSS HAL does not report its model year (pre-2016 or unknown), as here. */
 	public int getGnssYearOfHardware() {
-		return 2020;
+		return 0;
 	}
 
 	// ---- test providers (AOSP mock location API) -----------------------------------------------
@@ -426,6 +638,8 @@ public class LocationManager {
 				}
 			}
 		}
+		if (GPS_PROVIDER.equals(provider))
+			gnssFix();
 		for (Request r : sRequests) {
 			if (targets.contains(r.provider))
 				r.deliver(location);

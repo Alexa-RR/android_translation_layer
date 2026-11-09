@@ -325,7 +325,8 @@ public class ConnectivityManager {
         return null;
     }
 
-    private static int transportOf(String iface) {
+    /** Also used by TrafficStats to pick the mobile (cellular) interfaces. */
+    static int transportOf(String iface) {
         if (iface == null)
             return -1;
         if (new File("/sys/class/net/" + iface + "/wireless").exists() || new File("/sys/class/net/" + iface + "/phy80211").exists())

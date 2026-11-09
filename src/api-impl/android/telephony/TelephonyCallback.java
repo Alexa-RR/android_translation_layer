@@ -1,7 +1,8 @@
 package android.telephony;
 
 /* teslalinux: API 31 TelephonyCallback. Waze registers one at startup to watch call state. There is
- * no telephony here, so callbacks are never invoked. */
+ * no telephony here: TelephonyManager delivers the registry's initial states (idle, disconnected)
+ * and nothing changes them afterwards. */
 public class TelephonyCallback {
 	public interface CallStateListener { void onCallStateChanged(int state); }
 	public interface DisplayInfoListener { void onDisplayInfoChanged(TelephonyDisplayInfo telephonyDisplayInfo); }

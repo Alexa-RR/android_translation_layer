@@ -393,6 +393,16 @@ public class NetworkRequest implements Parcelable {
      *
      * @hide
      */
+    /** The transport types this request asks for (API 31, AOSP: from its NetworkCapabilities). */
+    public @NonNull int[] getTransportTypes() {
+        return networkCapabilities.getTransportTypes();
+    }
+
+    /** The capabilities this request asks for (API 31, AOSP: from its NetworkCapabilities). */
+    public @NonNull int[] getCapabilities() {
+        return networkCapabilities.getCapabilities();
+    }
+
     public boolean isListen() {
         return type == Type.LISTEN;
     }

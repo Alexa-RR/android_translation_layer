@@ -185,12 +185,14 @@ public class AudioTrack implements AudioRouting {
         this.bufferSizeInBytes = bufferSizeInBytes;
         this.mode = mode;
         this.mPlaybackRate = rate;
-        mSessionId = sessionId == AudioManager.AUDIO_SESSION_ID_GENERATE ? AudioSystemSessions.next() : sessionId;
+        mSessionId = sessionId == AudioManager.AUDIO_SESSION_ID_GENERATE ? AudioSystem.newAudioSessionId() : sessionId;
         // the native side plays 16-bit interleaved PCM: other PCM encodings are converted in write()
         native_constructor(this.streamType, rate, channelCount, AudioFormat.ENCODING_PCM_16BIT, bytesToNativeBytes(bufferSizeInBytes), mode);
         if (pcm_handle != 0) {
             mState = mode == MODE_STATIC ? STATE_NO_STATIC_DATA : STATE_INITIALIZED;
             mStartThresholdFrames = buffer_frames;
+            // AOSP PlayerBase.baseRegisterPlayer: the player exists for AudioService from now on
+            AudioManager.tlPlayerEvent(this, AudioPlaybackConfiguration.PLAYER_STATE_IDLE);
         }
         if (DEBUG)
             android.util.Log.i(TAG, "AudioTrack " + rate + "Hz mask=0x" + Integer.toHexString(mask) + " enc=" + encoding + " buffer=" + bufferSizeInBytes + " mode=" + mode + " -> state=" + mState + " frames=" + buffer_frames);
@@ -717,6 +719,7 @@ public class AudioTrack implements AudioRouting {
             if (mode == MODE_STATIC)
                 startStaticPlayback();
         }
+        AudioManager.tlPlayerEvent(this, AudioPlaybackConfiguration.PLAYER_STATE_STARTED);
     }
 
     public void stop() throws IllegalStateException {
@@ -731,6 +734,7 @@ public class AudioTrack implements AudioRouting {
             native_stop();
             mFramesWritten = 0;
         }
+        AudioManager.tlPlayerEvent(this, AudioPlaybackConfiguration.PLAYER_STATE_STOPPED);
     }
 
     public void pause() throws IllegalStateException {
@@ -742,6 +746,7 @@ public class AudioTrack implements AudioRouting {
             mPlayState = PLAYSTATE_PAUSED;
             native_pause();
         }
+        AudioManager.tlPlayerEvent(this, AudioPlaybackConfiguration.PLAYER_STATE_PAUSED);
     }
 
     public void flush() {
@@ -769,6 +774,7 @@ public class AudioTrack implements AudioRouting {
             pcm_handle = 0;
             mState = STATE_UNINITIALIZED;
         }
+        AudioManager.tlPlayerEvent(this, AudioPlaybackConfiguration.PLAYER_STATE_RELEASED);
     }
 
     @Override
@@ -782,8 +788,12 @@ public class AudioTrack implements AudioRouting {
         return Integer.bitCount(channelConfig) * AudioFormat.getBytesPerSample(audioFormat);
     }
 
+    /**
+     * The gain the samples get: the track volume times its stream's volume (AudioManager's stream
+     * index through the volume curve, 0 while muted), as AudioFlinger combines them.
+     */
     private float effectiveVolume() {
-        return Math.max(mVolumeLeft, mVolumeRight);
+        return Math.max(mVolumeLeft, mVolumeRight) * AudioManager.tlStreamGain(streamType);
     }
 
     /** Converts one chunk of this track's encoding to the 16-bit interleaved PCM the output takes. */
@@ -1019,21 +1029,18 @@ public class AudioTrack implements AudioRouting {
                     break;
                 frame += written;
             }
+            boolean ended = false;
             synchronized (AudioTrack.this) {
-                if (mPlayState == PLAYSTATE_PLAYING)
+                if (mPlayState == PLAYSTATE_PLAYING) {
                     mPlayState = PLAYSTATE_STOPPED;
+                    ended = true;
+                }
             }
+            if (ended)
+                AudioManager.tlPlayerEvent(AudioTrack.this, AudioPlaybackConfiguration.PLAYER_STATE_STOPPED);
         }, "AudioTrack static");
         mStaticThread.setDaemon(true);
         mStaticThread.start();
     }
 
-    /** Session ids handed out for AUDIO_SESSION_ID_GENERATE. */
-    private static final class AudioSystemSessions {
-        private static int sNext = 1;
-
-        static synchronized int next() {
-            return sNext++;
-        }
-    }
 }
