@@ -28,12 +28,10 @@ import android.util.TypedValue;
  * Abstraction for an Animation that can be applied to Views, Surfaces, or other objects.
  *
  * teslalinux: AOSP's public API, attribute parsing, state machine (started / ended / repeat
- * handling), {@link Description} parsing and size resolution. What differs from AOSP is the clock:
- * on Android a view animation is sampled by the view hierarchy on every drawn frame through
- * {@link #getTransformation(long, Transformation)}; ATL draws views with GTK and has no per-frame
- * animation sampling, so {@link #start()} runs the animation to its end state on the next main
- * loop iteration (the way ATL has always done) and fires the listeners around it. Apps therefore
- * see a complete, consistent animation lifecycle, just without the intermediate frames.
+ * handling), {@link Description} parsing and size resolution. As on Android, a view animation is
+ * sampled on every frame through {@link #getTransformation(long, Transformation)}: the View it is
+ * attached to (View.startAnimation / setAnimation) drives it from Choreographer frames and applies
+ * the Transformation's matrix and alpha (View.java+transform.frag).
  */
 public abstract class Animation implements Cloneable {
 	/** Repeat the animation indefinitely. */
@@ -102,7 +100,6 @@ public abstract class Animation implements Cloneable {
 	private boolean mMore = true;
 	private boolean mOneMoreTime = true;
 
-	private final Handler mMainHandler = new Handler(Looper.getMainLooper());
 
 	/** Creates a new animation with a duration of 0ms, the default interpolator, with fillBefore set to true and fillAfter set to false */
 	public Animation() {
@@ -261,24 +258,10 @@ public abstract class Animation implements Cloneable {
 
 	/**
 	 * Convenience method to start the animation the first time {@link #getTransformation(long, Transformation)} is invoked.
-	 * teslalinux: there is no per-frame sampling in ATL, so the animation is completed on the main loop; see the class comment.
+	 * AOSP: only the start time changes; whoever samples the animation (the View it is attached to) runs it.
 	 */
 	public void start() {
 		setStartTime(-1);
-		mMainHandler.post(new Runnable() {
-			@Override
-			public void run() {
-				if (!mInitialized)
-					initialize(0, 0, 0, 0);
-				final Transformation t = new Transformation();
-				getTransformation(SystemClock.uptimeMillis(), t);
-				if (!mEnded) {
-					// run to the end state; honour repeat/reverse semantics for the final frame
-					mStartTime = Long.MIN_VALUE;
-					getTransformation(SystemClock.uptimeMillis(), t);
-				}
-			}
-		});
 	}
 
 	/** Convenience method to start the animation at the current time in milliseconds. */
