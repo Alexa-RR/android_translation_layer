@@ -100,8 +100,11 @@ public class BoringLayout extends Layout {
 		mFallbackLineSpacing = useFallbackLineSpacing;
 		mEllipsize = ellipsize;
 		mEllipsizedWidth = ellipsize == null ? outerwidth : ellipsizedWidth;
-		if (ellipsize != null && ellipsize != TextUtils.TruncateAt.MARQUEE)
-			native_set_ellipsize(layout, ellipsize.ordinal() + 1, ellipsizedWidth);
+		if (ellipsize != null && ellipsize != TextUtils.TruncateAt.MARQUEE) {
+			/* teslalinux (+text): one line, ellipsized the AOSP way (ordinal()+1 was no PangoEllipsizeMode) */
+			native_set_ellipsize(layout, tlPangoEllipsize(ellipsize, 1), ellipsizedWidth);
+			native_set_max_lines(layout, 1);
+		}
 	}
 
 	/** Whether this layout was built with fallback line spacing (API 33). */

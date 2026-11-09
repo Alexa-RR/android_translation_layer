@@ -55,6 +55,14 @@ public class ImageView extends View {
 			setImageDrawable(src);
 		if (a.hasValue(com.android.internal.R.styleable.ImageView_scaleType))
 			setScaleType(scaletype_from_int[a.getInt(com.android.internal.R.styleable.ImageView_scaleType, 3 /*CENTER*/)]);
+		/* teslalinux (+text): AOSP measuring attributes */
+		mAdjustViewBounds = a.getBoolean(com.android.internal.R.styleable.ImageView_adjustViewBounds, false);
+		if (mAdjustViewBounds && !a.hasValue(com.android.internal.R.styleable.ImageView_scaleType))
+			setScaleType(ScaleType.FIT_CENTER); /* AOSP setAdjustViewBounds(true) */
+		mMaxWidth = a.getDimensionPixelSize(com.android.internal.R.styleable.ImageView_maxWidth, Integer.MAX_VALUE);
+		mMaxHeight = a.getDimensionPixelSize(com.android.internal.R.styleable.ImageView_maxHeight, Integer.MAX_VALUE);
+		mBaseline = a.getDimensionPixelSize(com.android.internal.R.styleable.ImageView_baseline, -1);
+		mBaselineAlignBottom = a.getBoolean(com.android.internal.R.styleable.ImageView_baselineAlignBottom, false);
 		a.recycle();
 	}
 
@@ -72,7 +80,12 @@ public class ImageView extends View {
 		final Bitmap b = BitmapFactory.decodeResource(this.getResources(), resid);
 		setImageDrawable(b != null ? new android.graphics.drawable.BitmapDrawable(getResources(), b) : null);
 	}
-	public void setAdjustViewBounds(boolean adjustViewBounds) {}
+	/** AOSP: keep the drawable's aspect ratio when measuring; implies FIT_CENTER (teslalinux +text) */
+	public void setAdjustViewBounds(boolean adjustViewBounds) {
+		mAdjustViewBounds = adjustViewBounds;
+		if (adjustViewBounds)
+			setScaleType(ScaleType.FIT_CENTER);
+	}
 
 	public void setScaleType(ScaleType scaleType) {
 		this.scaleType = scaleType;
@@ -104,7 +117,15 @@ public class ImageView extends View {
 		native_setDrawable(widget, this.drawable != null ? this.drawable.paintable : 0);
 	}
 
-	public void setImageMatrix(Matrix matrix) {}
+	/** AOSP: the matrix a MATRIX scale type draws the image with (teslalinux +text) */
+	public void setImageMatrix(Matrix matrix) {
+		if (matrix != null && matrix.isIdentity())
+			matrix = null;
+		if ((matrix == null && !mTlMatrix.isIdentity()) || (matrix != null && !mTlMatrix.equals(matrix))) {
+			mTlMatrix.set(matrix);
+			invalidate();
+		}
+	}
 
 	/** AOSP: the bitmap is shown through a BitmapDrawable (getDrawable(), tint and filters apply). */
 	public void setImageBitmap(Bitmap bitmap) {
@@ -200,9 +221,16 @@ public class ImageView extends View {
 		}
 	}
 
-	public void setMaxWidth(int width) {}
+	/** AOSP: an upper bound for the measured size (with adjustViewBounds) (teslalinux +text) */
+	public void setMaxWidth(int maxWidth) {
+		mMaxWidth = maxWidth;
+		requestLayout();
+	}
 
-	public void setMaxHeight(int height) {}
+	public void setMaxHeight(int maxHeight) {
+		mMaxHeight = maxHeight;
+		requestLayout();
+	}
 
 	public void setImageState(int[] state, boolean merge) {
 		tlImageState = state;
@@ -225,7 +253,14 @@ public class ImageView extends View {
 		tlRefreshImage();
 	}
 
-	public void setCropToPadding(boolean crop) {}
+	/** AOSP: whether the image is clipped to the padding (teslalinux +text) */
+	public void setCropToPadding(boolean crop) {
+		if (mCropToPaddingFlag != crop) {
+			mCropToPaddingFlag = crop;
+			requestLayout();
+			invalidate();
+		}
+	}
 
 	/** AOSP: SRC_ATOP, the colour over the image's opaque pixels */
 	public void setColorFilter(int color) {
@@ -241,9 +276,7 @@ public class ImageView extends View {
 		}
 	}
 
-	public Matrix getImageMatrix() {
-		return Matrix.IDENTITY_MATRIX;
-	}
+	/* teslalinux (+text): getImageMatrix is in ImageView.java+text.frag */
 
 	@Override
 	protected native long native_constructor(Context context, AttributeSet attrs);
@@ -252,6 +285,200 @@ public class ImageView extends View {
 
 	public final void clearColorFilter() {
 		setColorFilter((android.graphics.ColorFilter) null);
+	}
+
+	/* ==== teslalinux (+text): AOSP ImageView measuring, URI/level images, baseline ==== */
+	private boolean mAdjustViewBounds;
+	private int mMaxWidth = Integer.MAX_VALUE;
+	private int mMaxHeight = Integer.MAX_VALUE;
+	private int mBaseline = -1;
+	private boolean mBaselineAlignBottom;
+	private boolean mCropToPaddingFlag;
+	private int mLevel;
+	private android.net.Uri mUri;
+	private final Matrix mTlMatrix = new Matrix();
+
+	public boolean getAdjustViewBounds() {
+		return mAdjustViewBounds;
+	}
+
+	public int getMaxWidth() {
+		return mMaxWidth;
+	}
+
+	public int getMaxHeight() {
+		return mMaxHeight;
+	}
+
+	/** AOSP onMeasure for adjustViewBounds and maxWidth/maxHeight; otherwise the GtkPicture's own
+	 * measure (the drawable's intrinsic size plus padding, as AOSP) */
+	@Override
+	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+		if (!mAdjustViewBounds && mMaxWidth == Integer.MAX_VALUE && mMaxHeight == Integer.MAX_VALUE) {
+			super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+			return;
+		}
+		int w, h;
+		float desiredAspect = 0.0f;
+		boolean resizeWidth = false, resizeHeight = false;
+		final int widthSpecMode = MeasureSpec.getMode(widthMeasureSpec);
+		final int heightSpecMode = MeasureSpec.getMode(heightMeasureSpec);
+		final Drawable d = getDrawable();
+		if (d == null) {
+			w = h = 0;
+		} else {
+			w = d.getIntrinsicWidth();
+			h = d.getIntrinsicHeight();
+			if (w <= 0)
+				w = 1;
+			if (h <= 0)
+				h = 1;
+			if (mAdjustViewBounds) {
+				resizeWidth = widthSpecMode != MeasureSpec.EXACTLY;
+				resizeHeight = heightSpecMode != MeasureSpec.EXACTLY;
+				desiredAspect = (float) w / (float) h;
+			}
+		}
+		final int pleft = getPaddingLeft(), pright = getPaddingRight(), ptop = getPaddingTop(), pbottom = getPaddingBottom();
+		int widthSize, heightSize;
+		if (resizeWidth || resizeHeight) {
+			widthSize = resolveAdjustedSize(w + pleft + pright, mMaxWidth, widthMeasureSpec);
+			heightSize = resolveAdjustedSize(h + ptop + pbottom, mMaxHeight, heightMeasureSpec);
+			if (desiredAspect != 0.0f) {
+				final float actualAspect = (float) (widthSize - pleft - pright) / (heightSize - ptop - pbottom);
+				if (Math.abs(actualAspect - desiredAspect) > 0.0000001) {
+					boolean done = false;
+					if (resizeWidth) {
+						int newWidth = (int) (desiredAspect * (heightSize - ptop - pbottom)) + pleft + pright;
+						if (!resizeHeight)
+							widthSize = resolveAdjustedSize(newWidth, mMaxWidth, widthMeasureSpec);
+						if (newWidth <= widthSize) {
+							widthSize = newWidth;
+							done = true;
+						}
+					}
+					if (!done && resizeHeight) {
+						int newHeight = (int) ((widthSize - pleft - pright) / desiredAspect) + ptop + pbottom;
+						if (!resizeWidth)
+							heightSize = resolveAdjustedSize(newHeight, mMaxHeight, heightMeasureSpec);
+						if (newHeight <= heightSize)
+							heightSize = newHeight;
+					}
+				}
+			}
+		} else {
+			w += pleft + pright;
+			h += ptop + pbottom;
+			w = Math.max(w, getSuggestedMinimumWidth());
+			h = Math.max(h, getSuggestedMinimumHeight());
+			widthSize = resolveSizeAndState(w, widthMeasureSpec, 0);
+			heightSize = resolveSizeAndState(h, heightMeasureSpec, 0);
+		}
+		setMeasuredDimension(widthSize, heightSize);
+	}
+
+	private int resolveAdjustedSize(int desiredSize, int maxSize, int measureSpec) {
+		int result = desiredSize;
+		final int specMode = MeasureSpec.getMode(measureSpec);
+		final int specSize = MeasureSpec.getSize(measureSpec);
+		switch (specMode) {
+			case MeasureSpec.UNSPECIFIED:
+				result = Math.min(desiredSize, maxSize);
+				break;
+			case MeasureSpec.AT_MOST:
+				result = Math.min(Math.min(desiredSize, specSize), maxSize);
+				break;
+			case MeasureSpec.EXACTLY:
+				result = specSize;
+				break;
+		}
+		return result;
+	}
+
+	/** AOSP: an image from a URI (android.resource, content, file), read through the ContentResolver */
+	public void setImageURI(android.net.Uri uri) {
+		mUri = uri;
+		if (uri == null) {
+			setImageDrawable(null);
+			return;
+		}
+		Drawable d = null;
+		final String scheme = uri.getScheme();
+		try {
+			if ("android.resource".equals(scheme)) {
+				final java.util.List<String> segs = uri.getPathSegments();
+				final android.content.res.Resources res = getContext().getResources();
+				int id = 0;
+				if (segs.size() == 1) {
+					id = Integer.parseInt(segs.get(0));
+				} else if (segs.size() == 2) {
+					id = res.getIdentifier(segs.get(1), segs.get(0), uri.getAuthority());
+				}
+				if (id != 0)
+					d = getContext().getDrawable(id);
+			} else {
+				java.io.InputStream is = (scheme == null || "file".equals(scheme))
+					? new java.io.FileInputStream(uri.getPath())
+					: getContext().getContentResolver().openInputStream(uri);
+				try {
+					d = Drawable.createFromResourceStream(getResources(), null, is, uri.toString(), null);
+				} finally {
+					is.close();
+				}
+			}
+		} catch (Exception e) {
+			android.util.Log.w("ImageView", "Unable to open content: " + uri, e);
+		}
+		setImageDrawable(d);
+	}
+
+	/** AOSP: the image drawable's level (LevelListDrawable, ClipDrawable, ...) */
+	public void setImageLevel(int level) {
+		mLevel = level;
+		final Drawable d = getDrawable();
+		if (d != null) {
+			d.setLevel(level);
+			requestLayout();
+			invalidate();
+		}
+	}
+
+	public Matrix getImageMatrix() {
+		return mTlMatrix.isIdentity() ? new Matrix(Matrix.IDENTITY_MATRIX) : mTlMatrix;
+	}
+
+	/** AOSP (hidden, androidx.transition): the image matrix during a transition */
+	public void animateTransform(Matrix matrix) {
+		setImageMatrix(matrix);
+	}
+
+	public boolean getCropToPadding() {
+		return mCropToPaddingFlag;
+	}
+
+	public void setBaseline(int baseline) {
+		if (mBaseline != baseline) {
+			mBaseline = baseline;
+			requestLayout();
+		}
+	}
+
+	public void setBaselineAlignBottom(boolean aligned) {
+		if (mBaselineAlignBottom != aligned) {
+			mBaselineAlignBottom = aligned;
+			requestLayout();
+		}
+	}
+
+	public boolean getBaselineAlignBottom() {
+		return mBaselineAlignBottom;
+	}
+
+	@Override
+	public int getBaseline() {
+		if (mBaselineAlignBottom)
+			return getMeasuredHeight();
+		return mBaseline;
 	}
 
 	/* AOSP ImageView drawable tint, colour filter, image alpha and image state (frameworks/base

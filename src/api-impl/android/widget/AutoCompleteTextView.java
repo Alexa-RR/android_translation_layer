@@ -1095,9 +1095,8 @@ public class AutoCompleteTextView extends EditText implements Filter.FilterListe
 		// clearComposingText();
 
 		setText(text);
-		// make sure we keep the caret at the end of the text view
-		Editable spannable = getText();
-		// Selection.setSelection(spannable, spannable.length());
+		// make sure we keep the caret at the end of the text view (AOSP; teslalinux +text)
+		setSelection(text == null ? 0 : text.length());
 	}
 
 	/** {@inheritDoc} */

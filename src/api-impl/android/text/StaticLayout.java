@@ -51,8 +51,12 @@ public class StaticLayout extends Layout {
 		mEllipsize = ellipsize;
 		mEllipsizedWidth = ellipsize == null ? outerwidth : ellipsizedWidth;
 		mMaxLines = maxLines;
-		if (ellipsize != null)
-			native_set_ellipsize(layout, ellipsize.ordinal() + 1, ellipsizedWidth);
+		/* teslalinux (+text): AOSP ellipsizes the last of maxLines lines; Pango's default height (-1)
+		 * would ellipsize every paragraph to one line, and ordinal()+1 was no PangoEllipsizeMode */
+		if (ellipsize != null && maxLines > 0 && maxLines != Integer.MAX_VALUE) {
+			native_set_ellipsize(layout, tlPangoEllipsize(ellipsize, maxLines), ellipsizedWidth);
+			native_set_max_lines(layout, maxLines);
+		}
 	}
 
 	public StaticLayout(CharSequence source, TextPaint paint, int outerwidth, Alignment align, float spacingmult, float spacingadd, boolean includepad) {
@@ -83,6 +87,13 @@ public class StaticLayout extends Layout {
 	/** Maximum number of lines this layout was built with. */
 	public int getMaxLines() {
 		return mMaxLines;
+	}
+
+	private boolean mUseBoundsForWidth;
+
+	/** AOSP (API 35): whether the builder asked for bounds-based line widths */
+	public boolean getUseBoundsForWidth() {
+		return mUseBoundsForWidth;
 	}
 
 	/** API 33 name. */
@@ -251,6 +262,15 @@ public class StaticLayout extends Layout {
 			return this;
 		}
 
+		/** AOSP (API 35): size lines by the glyph bounds instead of the advances. Pango lays the
+		 * text out by advances either way; the choice is kept and reported by the layout. */
+		public Builder setUseBoundsForWidth(boolean useBoundsForWidth) {
+			mUseBoundsForWidth = useBoundsForWidth;
+			return this;
+		}
+
+		private boolean mUseBoundsForWidth;
+
 		public StaticLayout build() {
 			StaticLayout result = new StaticLayout(mText, mStart, mEnd, mPaint, mWidth, mAlignment, mTextDir,
 			                                       mSpacingMult, mSpacingAdd, mIncludePad, mEllipsize, mEllipsizedWidth, mMaxLines);
@@ -260,6 +280,7 @@ public class StaticLayout extends Layout {
 			result.mJustificationMode = mJustificationMode;
 			result.mLeftIndents = mLeftIndents;
 			result.mRightIndents = mRightIndents;
+			result.mUseBoundsForWidth = mUseBoundsForWidth;
 			return result;
 		}
 	}

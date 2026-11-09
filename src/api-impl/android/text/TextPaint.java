@@ -46,11 +46,11 @@ public class TextPaint extends Paint {
 	}
 
 	public TextPaint(int flags) {
-		super(/*flags*/);
+		super(flags); /* teslalinux (+text): AOSP passes the flags on */
 	}
 
 	public TextPaint(Paint p) {
-		super(/*p*/);
+		super(p); /* teslalinux (+text): AOSP copies the paint */
 	}
 
 	/**
@@ -58,7 +58,7 @@ public class TextPaint extends Paint {
 	 * fields inherited from Paint.
 	 */
 	public void set(TextPaint tp) {
-		//super.set(tp);
+		super.set(tp); /* teslalinux (+text): AOSP copies the Paint part too */
 
 		bgColor = tp.bgColor;
 		baselineShift = tp.baselineShift;
@@ -69,7 +69,7 @@ public class TextPaint extends Paint {
 		underlineThickness = tp.underlineThickness;
 	}
 
-	public void reset() {}
+	/* teslalinux (+text): AOSP TextPaint inherits Paint.reset() (the empty override kept old state) */
 
 	/**
 	 * Defines a custom underline for this Paint.

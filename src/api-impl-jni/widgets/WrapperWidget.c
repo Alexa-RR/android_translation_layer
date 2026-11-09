@@ -602,6 +602,18 @@ void wrapper_widget_set_jobject(WrapperWidget *wrapper, JNIEnv *env, jobject job
 	jmethodID on_draw_method = _METHOD(_CLASS(jobj), "onDraw", "(Landroid/graphics/Canvas;)V");
 	jmethodID dispatch_draw_method = _METHOD(_CLASS(jobj), "dispatchDraw", "(Landroid/graphics/Canvas;)V");
 	jmethodID draw_method = _METHOD(_CLASS(jobj), "draw", "(Landroid/graphics/Canvas;)V");
+	/* tl_textview_java_hooks: TextView's own onDraw (compound drawables) and onTouchEvent (movement
+	 * method) count as View's; a TextView asks for the Java path itself when it needs it
+	 * (TextView.native_setJavaDraw, setClickable). Subclasses that override them again still count. */
+	static jmethodID tl_tv_on_draw = NULL, tl_tv_on_touch = NULL;
+	if (!tl_tv_on_draw) {
+		jclass tv_class = (*env)->FindClass(env, "android/widget/TextView");
+		tl_tv_on_draw = _METHOD(tv_class, "onDraw", "(Landroid/graphics/Canvas;)V");
+		tl_tv_on_touch = _METHOD(tv_class, "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
+		(*env)->DeleteLocalRef(env, tv_class);
+	}
+	if (on_draw_method == tl_tv_on_draw)
+		on_draw_method = handle_cache.view.onDraw;
 	if (on_draw_method != handle_cache.view.onDraw || draw_method != handle_cache.view.draw || dispatch_draw_method != handle_cache.view.dispatchDraw) {
 		wrapper->draw_method = draw_method;
 		jclass canvas_class = (*env)->FindClass(env, "android/atl/GskCanvas");
@@ -614,6 +626,8 @@ void wrapper_widget_set_jobject(WrapperWidget *wrapper, JNIEnv *env, jobject job
 	jmethodID performClick_method = _METHOD(_CLASS(jobj), "performClick", "()Z");
 
 	jmethodID ontouchevent_method = _METHOD(_CLASS(jobj), "onTouchEvent", "(Landroid/view/MotionEvent;)Z");
+	if (ontouchevent_method == tl_tv_on_touch) /* tl_textview_java_hooks */
+		ontouchevent_method = handle_cache.view.onTouchEvent;
 	jmethodID dispatchtouchevent_method = _METHOD(_CLASS(jobj), "dispatchTouchEvent", "(Landroid/view/MotionEvent;)Z");
 	wrapper->custom_dispatch_touch = (dispatchtouchevent_method != handle_cache.view.dispatchTouchEvent && dispatchtouchevent_method != handle_cache.view_group.dispatchTouchEvent);
 	wrapper->tl_touch_target = ontouchevent_method != handle_cache.view.onTouchEvent || wrapper->custom_dispatch_touch; /* tl_javawidget_contains */

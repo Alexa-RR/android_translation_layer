@@ -23,12 +23,34 @@ static void tl_edittext_focus_cb(GtkWidget *gtk_text, GParamSpec *pspec, gpointe
 		(*env)->ExceptionDescribe(env);
 }
 
+/* ---- teslalinux: GtkText cursor/selection changes reach TextView.onSelectionChanged (tl_edittext_selection) ---- */
+static void tl_edittext_selection_cb(GtkWidget *gtk_text, GParamSpec *pspec, gpointer data)
+{
+	GtkWidget *wrapper = gtk_widget_get_parent(gtk_text);
+	if (!wrapper || !WRAPPER_IS_WIDGET(wrapper))
+		return;
+	WrapperWidget *w = WRAPPER_WIDGET(wrapper);
+	JNIEnv *env = get_jni_env();
+	if (!w->jobj || (*env)->IsSameObject(env, w->jobj, NULL))
+		return;
+	jmethodID m = _METHOD(_CLASS(w->jobj), "tlGtkSelectionChanged", "()V");
+	if (!m) {
+		(*env)->ExceptionClear(env);
+		return;
+	}
+	(*env)->CallVoidMethod(env, w->jobj, m);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
 JNIEXPORT jlong JNICALL Java_android_widget_EditText_native_1constructor(JNIEnv *env, jobject this, jobject context, jobject attrs)
 {
 	GtkWidget *wrapper = g_object_ref(wrapper_widget_new());
 	GtkWidget *gtk_text = gtk_text_new();
 	wrapper_widget_set_child(WRAPPER_WIDGET(wrapper), gtk_text);
 	g_signal_connect(gtk_text, "notify::has-focus", G_CALLBACK(tl_edittext_focus_cb), NULL); /* tl_edittext_ime */
+	g_signal_connect(gtk_text, "notify::cursor-position", G_CALLBACK(tl_edittext_selection_cb), NULL); /* tl_edittext_selection */
+	g_signal_connect(gtk_text, "notify::selection-bound", G_CALLBACK(tl_edittext_selection_cb), NULL);
 	return _INTPTR(gtk_text);
 }
 
