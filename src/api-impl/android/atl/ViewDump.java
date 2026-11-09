@@ -401,8 +401,31 @@ public final class ViewDump {
 			else
 				sb.append(bg.getClass().getSimpleName());
 		}
-		if (v instanceof android.widget.TextView)
-			sb.append(" tg=0x").append(Integer.toHexString(((android.widget.TextView) v).getGravity()));
+		if (v.getBackgroundTintList() != null)
+			sb.append(" bgtint=#").append(Integer.toHexString(v.getBackgroundTintList().getColorForState(v.getDrawableState(), 0)));
+		if (v.getId() != android.view.View.NO_ID) {
+			try {
+				sb.append(" @").append(v.getResources().getResourceEntryName(v.getId()));
+			} catch (Exception e) {
+			}
+		}
+		if (v instanceof android.widget.ImageView) {
+			android.widget.ImageView iv = (android.widget.ImageView) v;
+			android.graphics.drawable.Drawable d = iv.getDrawable();
+			sb.append(" img=").append(d == null ? "null" : d.getClass().getSimpleName() + "(" + d.getIntrinsicWidth() + "x" + d.getIntrinsicHeight() + ")");
+			if (iv.getImageTintList() != null)
+				sb.append(" imgtint=#").append(Integer.toHexString(iv.getImageTintList().getColorForState(iv.getDrawableState(), 0)));
+			if (iv.getColorFilter() != null)
+				sb.append(" cf=").append(iv.getColorFilter().getClass().getSimpleName());
+		}
+		if (v instanceof android.widget.TextView) {
+			android.widget.TextView tv = (android.widget.TextView) v;
+			sb.append(" tg=0x").append(Integer.toHexString(tv.getGravity()));
+			sb.append(" color=#").append(Integer.toHexString(tv.getCurrentTextColor()));
+			CharSequence h = tv.getHint();
+			if (h != null && h.length() > 0)
+				sb.append(" hint=\"").append(h).append('"');
+		}
 		if (v instanceof android.widget.Checkable)
 			sb.append(" checked=").append(((android.widget.Checkable) v).isChecked());
 		for (Class<?> c = v.getClass(); c != null; c = c.getSuperclass()) {

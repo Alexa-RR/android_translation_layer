@@ -447,19 +447,6 @@ public class NinePatchDrawable extends Drawable {
 		}
 	}
 
-	/** AOSP Drawable.parseTintMode: the android:tintMode enum values. */
-	private static PorterDuff.Mode parseTintMode(int value, PorterDuff.Mode defaultMode) {
-		switch (value) {
-			case 3: return PorterDuff.Mode.SRC_OVER;
-			case 5: return PorterDuff.Mode.SRC_IN;
-			case 9: return PorterDuff.Mode.SRC_ATOP;
-			case 14: return PorterDuff.Mode.MULTIPLY;
-			case 15: return PorterDuff.Mode.SCREEN;
-			case 16: return PorterDuff.Mode.ADD;
-			default: return defaultMode;
-		}
-	}
-
 	@Override
 	public void applyTheme(Theme t) {
 		super.applyTheme(t);

@@ -962,7 +962,7 @@ public class View implements Drawable.Callback {
 	private float alpha = 1.0f;
 	private boolean pressed = false;
 	private Drawable background;
-	private int backgroundTint = 0;
+	/* background tint: tlBgTintList / tlBgTintMode (View.java+bgtint.frag) */
 
 	private int minWidth = 0;
 	private int minHeight = 0;
@@ -1034,8 +1034,15 @@ public class View implements Drawable.Callback {
 
 		TypedArray a = context.obtainStyledAttributes(attrs, com.android.internal.R.styleable.View, defStyle, defStyleRes);
 		this.id = a.getResourceId(com.android.internal.R.styleable.View_id, View.NO_ID);
-		if (a.hasValue(com.android.internal.R.styleable.View_backgroundTint))
-			backgroundTint = a.getColor(com.android.internal.R.styleable.View_backgroundTint, 0);
+		// AOSP View(Context, AttributeSet, ...): a colour state list, and its blending mode
+		if (a.hasValue(com.android.internal.R.styleable.View_backgroundTint)) {
+			tlBgTintList = a.getColorStateList(com.android.internal.R.styleable.View_backgroundTint);
+			tlHasBgTintList = true;
+		}
+		if (a.hasValue(com.android.internal.R.styleable.View_backgroundTintMode)) {
+			tlBgTintMode = Drawable.parseTintMode(a.getInt(com.android.internal.R.styleable.View_backgroundTintMode, -1), null);
+			tlHasBgTintMode = tlBgTintMode != null;
+		}
 		if (a.hasValue(com.android.internal.R.styleable.View_background)) {
 			try {
 				Drawable background = a.getDrawable(com.android.internal.R.styleable.View_background);
@@ -1868,10 +1875,10 @@ public class View implements Drawable.Callback {
 		this.background = backgroundDrawable;
 		if (backgroundDrawable != null) {
 			backgroundDrawable.setCallback(this);
-			if (backgroundTint != 0)
-				backgroundDrawable.setTint(backgroundTint);
+			// AOSP setBackgroundDrawable(): the view's background tint applies to every new background
+			applyBackgroundTint();
 		}
-		native_setBackgroundDrawable(widget, backgroundDrawable != null ? backgroundDrawable.paintable : 0);
+		native_setBackgroundDrawable(widget, this.background != null ? this.background.paintable : 0);
 	}
 
 	public int getOverScrollMode() { return 0; }
@@ -2410,7 +2417,12 @@ public class View implements Drawable.Callback {
 
 	protected void onSizeChanged(int w, int h, int oldw, int oldh) {}
 
-	public void setBackgroundTintList(ColorStateList tint) {}
+	/** AOSP: the background's tint list (kept across setBackground*), applied through applyBackgroundTint(). */
+	public void setBackgroundTintList(ColorStateList tint) {
+		tlBgTintList = tint;
+		tlHasBgTintList = true;
+		applyBackgroundTint();
+	}
 
 	protected int computeHorizontalScrollRange() {
 		return getWidth();
@@ -2551,9 +2563,9 @@ public class View implements Drawable.Callback {
 		tlRawLayoutDirection = layoutDirection;
 	}
 
-	public ColorStateList getBackgroundTintList() { return null; }
+	public ColorStateList getBackgroundTintList() { return tlBgTintList; }
 
-	public PorterDuff.Mode getBackgroundTintMode() { return null; }
+	public PorterDuff.Mode getBackgroundTintMode() { return tlBgTintMode; }
 
 	public String getTransitionName() { return null; }
 
@@ -2747,7 +2759,12 @@ public class View implements Drawable.Callback {
 		return tlDuplicateParentState;
 	}
 
-	public void setBackgroundTintMode(PorterDuff.Mode tintMode) {}
+	/** AOSP: the blending mode of the background tint (SRC_IN when only a tint list is given). */
+	public void setBackgroundTintMode(PorterDuff.Mode tintMode) {
+		tlBgTintMode = tintMode;
+		tlHasBgTintMode = true;
+		applyBackgroundTint();
+	}
 
 	public void setNextFocusLeftId(int id) {}
 
@@ -4130,5 +4147,50 @@ public class View implements Drawable.Callback {
 		transformMatrixToLocal(m);
 		ev.transform(m);
 		return true;
+	}
+
+	/* AOSP View.TintInfo of the background (frameworks/base View.java): from android:backgroundTint /
+	 * android:backgroundTintMode or setBackgroundTintList()/setBackgroundTintMode(), applied to every
+	 * background drawable, mutated first so a drawable shared through its constant state keeps its own
+	 * colours (Material and Waze buttons colour one ripple/shape resource this way). */
+	private android.content.res.ColorStateList tlBgTintList;
+	private android.graphics.PorterDuff.Mode tlBgTintMode;
+	private boolean tlHasBgTintList;
+	private boolean tlHasBgTintMode;
+
+	/** AOSP View.applyBackgroundTint() */
+	private void applyBackgroundTint() {
+		final android.graphics.drawable.Drawable bg = background;
+		if (bg == null || !(tlHasBgTintList || tlHasBgTintMode))
+			return;
+		final android.graphics.drawable.Drawable m = bg.mutate();
+		if (tlHasBgTintList)
+			m.setTintList(tlBgTintList);
+		if (tlHasBgTintMode)
+			m.setTintMode(tlBgTintMode);
+		// the tint list resolves against the drawable state; a stateful background must know it
+		if (m.isStateful())
+			m.setState(getDrawableState());
+		if (m != bg) {
+			background = m;
+			m.setCallback(this);
+			native_setBackgroundDrawable(widget, m.paintable);
+		}
+		invalidate();
+	}
+
+	/** AOSP View.setBackgroundTintBlendMode() (API 29): the same tint, as a BlendMode */
+	public void setBackgroundTintBlendMode(android.graphics.BlendMode blendMode) {
+		setBackgroundTintMode(android.graphics.BlendMode.blendModeToPorterDuffMode(blendMode));
+	}
+
+	/** AOSP View.getBackgroundTintBlendMode() */
+	public android.graphics.BlendMode getBackgroundTintBlendMode() {
+		if (tlBgTintMode == null)
+			return null;
+		for (android.graphics.BlendMode b : android.graphics.BlendMode.values())
+			if (android.graphics.BlendMode.blendModeToPorterDuffMode(b) == tlBgTintMode)
+				return b;
+		return null;
 	}
 }
