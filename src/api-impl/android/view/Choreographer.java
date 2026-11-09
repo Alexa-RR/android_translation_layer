@@ -144,9 +144,9 @@ public final class Choreographer {
 			mCallbackQueues[i] = new CallbackQueue();
 		}
 	}
+	/** AOSP: the default display's refresh rate (Display.getRefreshRate: the monitor showing the window) */
 	private static float getRefreshRate() {
-		/*DisplayInfo di = DisplayManagerGlobal.getInstance().getDisplayInfo(Display.DEFAULT_DISPLAY);*/
-		return 60 /*di.refreshRate*/; // FIXME
+		return new Display().getRefreshRate();
 	}
 	/**
 	 * Gets the choreographer for the calling thread.  Must be called from

@@ -1273,3 +1273,32 @@ void tl_touch_mode_key_released(GtkEventControllerKey *controller, guint keyval,
 {
 	tl_touch_mode_key(keyval, state, 1 /* ACTION_UP */);
 }
+
+/* tl_view_clip (native-vcore-view-clip.sh): the clips the WrapperWidget pushes around its drawing */
+static WrapperWidget *tl_clip_wrapper(jlong widget_ptr)
+{
+	if (!widget_ptr)
+		return NULL;
+	GtkWidget *parent = gtk_widget_get_parent(GTK_WIDGET(_PTR(widget_ptr)));
+	return (parent && WRAPPER_IS_WIDGET(parent)) ? WRAPPER_WIDGET(parent) : NULL;
+}
+
+JNIEXPORT void JNICALL Java_android_view_View_nativeSetClipBounds(JNIEnv *env, jclass clazz, jlong widget_ptr, jboolean set, jint left, jint top, jint right, jint bottom)
+{
+	WrapperWidget *wrapper = tl_clip_wrapper(widget_ptr);
+	if (!wrapper)
+		return;
+	wrapper->tl_clip_bounds_set = set;
+	graphene_rect_init(&wrapper->tl_clip_bounds, left, top, MAX(right - left, 0), MAX(bottom - top, 0));
+	gtk_widget_queue_draw(GTK_WIDGET(wrapper));
+}
+
+JNIEXPORT void JNICALL Java_android_view_View_nativeSetOutlineClip(JNIEnv *env, jclass clazz, jlong widget_ptr, jboolean set, jint left, jint top, jint right, jint bottom, jfloat radius)
+{
+	WrapperWidget *wrapper = tl_clip_wrapper(widget_ptr);
+	if (!wrapper)
+		return;
+	wrapper->tl_outline_clip = set;
+	gsk_rounded_rect_init_from_rect(&wrapper->tl_outline, &GRAPHENE_RECT_INIT(left, top, MAX(right - left, 0), MAX(bottom - top, 0)), radius);
+	gtk_widget_queue_draw(GTK_WIDGET(wrapper));
+}

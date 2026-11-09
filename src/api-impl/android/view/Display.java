@@ -9,11 +9,14 @@ public final class Display {
 	public static int window_width = 960;
 	public static int window_height = 540;
 
-	// FIXME: what do we return here?
-	// we don't want to hardcode this stuff, but at the same time the apps can cache it
+	/**
+	 * AOSP DisplayInfo.getMetricsWithSize: the size (the app window, which fills the display here),
+	 * the display density and dpi; scaledDensity is the density (no font scale on Display metrics).
+	 */
 	public void getMetrics(DisplayMetrics outMetrics) {
-		outMetrics.widthPixels = this.window_width;
-		outMetrics.heightPixels = this.window_height;
+		outMetrics.setToDefaults();
+		outMetrics.widthPixels = window_width;
+		outMetrics.heightPixels = window_height;
 	}
 
 	public void getRealMetrics(DisplayMetrics outMetrics) {
@@ -40,9 +43,21 @@ public final class Display {
 		return 0 /*ROTATION_0*/;
 	}
 
+	/**
+	 * AOSP: the refresh rate of the display's active mode. Here the monitor that shows the app window
+	 * (native-vcore-display-refresh.sh); 60 Hz when the compositor announced no rate (the Wayland
+	 * default) or before the native side has it.
+	 */
 	public float getRefreshRate() {
-		return 60; // FIXME
+		float rate = 0;
+		try {
+			rate = nativeGetRefreshRate();
+		} catch (UnsatisfiedLinkError e) {
+			// an api-impl.jar newer than the native library: no rate from the compositor
+		}
+		return rate > 0 ? rate : 60.0f;
 	}
+	private static native float nativeGetRefreshRate();
 
 	public long getAppVsyncOffsetNanos() {
 		return 0; // what else would we return here?
@@ -68,8 +83,9 @@ public final class Display {
 		rect.set(0, 0, getWidth(), getHeight());
 	}
 
+	/** AOSP: the display's cutout, null when the display has none (this one is a plain rectangle) */
 	public DisplayCutout getCutout() {
-		return DisplayCutout.NO_CUTOUT;
+		return null;
 	}
 
 	/* teslalinux: Display additions */
@@ -117,4 +133,7 @@ public final class Display {
 			throw new IllegalArgumentException("unknown rounded corner position " + position);
 		return null;
 	}
+
+	/** AOSP: the default display, the one the app runs on (getDisplayId() reports it) */
+	public static final int DEFAULT_DISPLAY = 0;
 }

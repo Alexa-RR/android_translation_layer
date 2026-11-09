@@ -28,6 +28,10 @@ struct _WrapperWidget {
 	gboolean hover_exit_pending;
 	int hover_x;
 	int hover_y;
+	gboolean tl_clip_bounds_set; /* tl_view_clip: View.setClipBounds */
+	graphene_rect_t tl_clip_bounds;
+	gboolean tl_outline_clip; /* tl_view_clip: View.setClipToOutline with a (round) rect outline */
+	GskRoundedRect tl_outline;
 };
 
 struct _WrapperWidgetClass {

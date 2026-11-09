@@ -67,8 +67,12 @@ public abstract class InputEvent {
 	 *
 	 * @return The device, or null if unknown.
 	 */
+	/**
+	 * AOSP: the device that generated the event (the input manager's device of getDeviceId()), or
+	 * null when there is none (an event an app made up with an unknown device id).
+	 */
 	public final InputDevice getDevice() {
-		return InputDevice.getDevice(0 /*FIXME*/);
+		return InputDevice.getDevice(getDeviceId());
 	}
 
 	/**

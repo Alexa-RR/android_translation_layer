@@ -259,6 +259,16 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 	if (wrapper->real_height > 0 && wrapper->real_width > 0) {
 		gtk_snapshot_push_clip(snapshot, &GRAPHENE_RECT_INIT(0, 0, wrapper->real_width, wrapper->real_height));
 	}
+	/* tl_view_clip: the view's clip bounds and outline clip (AOSP RenderNode clipping) */
+	int tl_view_clips = 0;
+	if (wrapper->tl_clip_bounds_set) {
+		gtk_snapshot_push_clip(snapshot, &wrapper->tl_clip_bounds);
+		tl_view_clips++;
+	}
+	if (wrapper->tl_outline_clip) {
+		gtk_snapshot_push_rounded_clip(snapshot, &wrapper->tl_outline);
+		tl_view_clips++;
+	}
 	if (wrapper->draw_method) {
 		JNIEnv *env = get_jni_env();
 		if (tl_node_debug(env, wrapper)) {
@@ -300,6 +310,8 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 			}
 		}
 	}
+	while (tl_view_clips-- > 0)
+		gtk_snapshot_pop(snapshot);
 	if (wrapper->real_height > 0 && wrapper->real_width > 0) {
 		gtk_snapshot_pop(snapshot);
 	}
