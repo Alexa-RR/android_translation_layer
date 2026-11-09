@@ -1267,6 +1267,9 @@ public class Resources {
 			}
 
 			mAssets.applyThemeStyle(theme, resid, force);
+			/* AOSP ThemeImpl.applyStyle: the key records the applied styles (theme-keyed caches and
+			 * rebase() depend on it) */
+			mKey.append(resid, force);
 		}
 
 		/**
@@ -1280,6 +1283,7 @@ public class Resources {
 		 */
 		public void setTo(Theme other) {
 			getAssets().copyTheme(this.theme, other.theme);
+			mKey.setTo(other.getKey());
 		}
 
 		/**
@@ -1523,7 +1527,21 @@ public class Resources {
 
 		private final AssetManager mAssets;
 
-		public void rebase() {}
+		/**
+		 * AOSP: rebuilds the theme from the styles applied to it, in order, against the current
+		 * resources configuration (AssetManager.rebaseTheme clears the native theme and re-applies
+		 * the key; ATL builds a fresh native theme and applies the key to it).
+		 */
+		public void rebase() {
+			synchronized (mKey) {
+				final long rebuilt = mAssets.createTheme();
+				for (int i = 0; i < mKey.mCount; i++)
+					mAssets.applyThemeStyle(rebuilt, mKey.mResId[i], mKey.mForce[i]);
+				final long old = theme;
+				theme = rebuilt;
+				mAssets.releaseTheme(old);
+			}
+		}
 
 		public Drawable getDrawable(int resId) {
 			return Resources.this.getDrawable(resId, this);

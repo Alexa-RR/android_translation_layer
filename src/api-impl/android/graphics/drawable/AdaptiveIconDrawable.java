@@ -347,13 +347,14 @@ public class AdaptiveIconDrawable extends Drawable implements Drawable.Callback 
 				continue;
 			}
 
-			/*int insetWidth = (int)(bounds.width() / (DEFAULT_VIEW_PORT_SCALE * 2));
+			/* AOSP: each layer is 1/DEFAULT_VIEW_PORT_SCALE (150%) of the icon, centred, in the
+			 * icon's local coordinates (draw translates to the bounds) */
+			int insetWidth = (int)(bounds.width() / (DEFAULT_VIEW_PORT_SCALE * 2));
 			int insetHeight = (int)(bounds.height() / (DEFAULT_VIEW_PORT_SCALE * 2));
 			final Rect outRect = mTmpOutRect;
 			outRect.set(cX - insetWidth, cY - insetHeight, cX + insetWidth, cY + insetHeight);
 
-			d.setBounds(outRect);*/
-			d.setBounds(bounds);
+			d.setBounds(outRect);
 		}
 	}
 
@@ -398,15 +399,22 @@ public class AdaptiveIconDrawable extends Drawable implements Drawable.Callback 
 			canvas.translate(-bounds.left, -bounds.top);
 		}
 	*/
+		/* AOSP renders the layers over black into a bitmap and fills the mask path with it as a
+		 * bitmap shader; GSK clips the same drawing to the mask path directly (no offscreen bitmap) */
+		if (mMaskScaleOnly == null)
+			return;
 		Rect bounds = getBounds();
+		final int save = canvas.save();
 		canvas.translate(bounds.left, bounds.top);
+		canvas.clipPath(mMaskScaleOnly);
+		canvas.drawColor(Color.BLACK);
 		if (mLayerState.mChildren[BACKGROUND_ID].mDrawable != null) {
 			mLayerState.mChildren[BACKGROUND_ID].mDrawable.draw(canvas);
 		}
 		if (mLayerState.mChildren[FOREGROUND_ID].mDrawable != null) {
 			mLayerState.mChildren[FOREGROUND_ID].mDrawable.draw(canvas);
 		}
-		canvas.translate(-bounds.left, -bounds.top);
+		canvas.restoreToCount(save);
 	}
 
 	@Override
@@ -415,10 +423,11 @@ public class AdaptiveIconDrawable extends Drawable implements Drawable.Callback 
 		super.invalidateSelf();
 	}
 
-	/*@Override
+	/** AOSP: the outline is the icon mask in the drawable's bounds. */
+	@Override
 	public void getOutline(@NonNull Outline outline) {
 		outline.setPath(mMask);
-	}*/
+	}
 
 	/**
 	 * @hide

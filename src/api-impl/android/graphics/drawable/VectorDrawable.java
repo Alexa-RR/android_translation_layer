@@ -880,8 +880,14 @@ public class VectorDrawable extends Drawable {
 	 * @hide
 	 */
 	public void clearMutated() {
-		// super.clearMutated();
+		super.clearMutated();
 		mMutated = false;
+	}
+
+	/** AOSP: whether the tint has a state for focus. */
+	@Override
+	public boolean hasFocusStateSpecified() {
+		return mVectorState != null && mVectorState.mTint != null && mVectorState.mTint.hasFocusStateSpecified();
 	}
 
 	Object getTargetByName(String name) {
@@ -1076,47 +1082,50 @@ public class VectorDrawable extends Drawable {
 		// mDpiScaleInsets = mVectorState.mVPathRenderer.mOpticalInsets;
 	}
 
-	// @Override
-	// public boolean canApplyTheme() {
-	// 	return (mVectorState != null && mVectorState.canApplyTheme()) || super.canApplyTheme();
-	// }
+	/** AOSP: theme attributes left unresolved at inflation (a drawable inflated without a theme). */
+	@Override
+	public boolean canApplyTheme() {
+		return (mVectorState != null && mVectorState.canApplyTheme()) || super.canApplyTheme();
+	}
 
-	// @Override
-	// public void applyTheme(Theme t) {
-	// 	super.applyTheme(t);
+	/** AOSP: resolves the theme attributes of the vector, its tint and its paths and groups. */
+	@Override
+	public void applyTheme(Theme t) {
+		super.applyTheme(t);
 
-	// 	final VectorDrawableState state = mVectorState;
-	// 	if (state == null) {
-	// 		return;
-	// 	}
+		final VectorDrawableState state = mVectorState;
+		if (state == null) {
+			return;
+		}
 
-	// 	if (state.mThemeAttrs != null) {
-	// 		final TypedArray a = t.resolveAttributes(
-	// 				state.mThemeAttrs, R.styleable.VectorDrawable);
-	// 		try {
-	// 			state.mCacheDirty = true;
-	// 			updateStateFromTypedArray(a);
-	// 			updateDimensionInfo(t.getResources(), true /* update constant state */);
-	// 		} catch (XmlPullParserException e) {
-	// 			throw new RuntimeException(e);
-	// 		} finally {
-	// 			a.recycle();
-	// 		}
-	// 	}
+		if (state.mThemeAttrs != null) {
+			final TypedArray a = t.resolveAttributes(
+					state.mThemeAttrs, R.styleable.VectorDrawable);
+			try {
+				state.mCacheDirty = true;
+				updateStateFromTypedArray(a);
+				updateDimensionInfo(t.getResources(), true /* update constant state */);
+			} catch (XmlPullParserException e) {
+				throw new RuntimeException(e);
+			} finally {
+				a.recycle();
+			}
+		}
 
-	// 	// Apply theme to contained color state list.
-	// 	if (state.mTint != null && state.mTint.canApplyTheme()) {
-	// 		state.mTint = state.mTint.obtainForTheme(t);
-	// 	}
+		// Apply theme to contained color state list.
+		if (state.mTint != null && state.mTint.canApplyTheme()) {
+			state.mTint = state.mTint.obtainForTheme(t);
+		}
 
-	// 	final VPathRenderer path = state.mVPathRenderer;
-	// 	if (path != null && path.canApplyTheme()) {
-	// 		path.applyTheme(t);
-	// 	}
+		final VPathRenderer path = state.mVPathRenderer;
+		if (path != null && path.canApplyTheme()) {
+			state.mCacheDirty = true;
+			path.applyTheme(t);
+		}
 
-	// 	// Update local state.
-	// 	mTintFilter = updateTintFilter(mTintFilter, state.mTint, state.mTintMode);
-	// }
+		// Update local state.
+		mTintFilter = updateTintFilter(mTintFilter, state.mTint, state.mTintMode);
+	}
 
 	/**
 	 * The size of a pixel when scaled from the intrinsic dimension to the viewport dimension.
@@ -1356,8 +1365,7 @@ public class VectorDrawable extends Drawable {
 	}
 
 	private boolean needMirroring() {
-		// return isAutoMirrored() && getLayoutDirection() == LayoutDirection.RTL;
-		return false;
+		return isAutoMirrored() && getLayoutDirection() == android.util.LayoutDirection.RTL;
 	}
 
 	@Override
@@ -1481,13 +1489,13 @@ public class VectorDrawable extends Drawable {
 			mCacheDirty = false;
 		}
 
-		// @Override
-		// public boolean canApplyTheme() {
-		// 	return mThemeAttrs != null
-		// 			|| (mVPathRenderer != null && mVPathRenderer.canApplyTheme())
-		// 			|| (mTint != null && mTint.canApplyTheme())
-		// 			|| super.canApplyTheme();
-		// }
+		@Override
+		public boolean canApplyTheme() {
+			return mThemeAttrs != null
+					|| (mVPathRenderer != null && mVPathRenderer.canApplyTheme())
+					|| (mTint != null && mTint.canApplyTheme())
+					|| super.canApplyTheme();
+		}
 
 		public VectorDrawableState() {
 			mVPathRenderer = new VPathRenderer();

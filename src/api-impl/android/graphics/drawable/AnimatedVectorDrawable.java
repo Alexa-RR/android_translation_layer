@@ -242,6 +242,11 @@ public class AnimatedVectorDrawable extends Drawable implements Animatable2 {
     }
 
     @Override
+    public ColorFilter getColorFilter() {
+        return mAnimatedVectorState.mVectorDrawable.getColorFilter();
+    }
+
+    @Override
     public void setTintList(ColorStateList tint) {
         mAnimatedVectorState.mVectorDrawable.setTintList(tint);
     }

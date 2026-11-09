@@ -26,6 +26,7 @@ srcs = [
 	'android/graphics/RenderNode.java',
 	'android/graphics/SurfaceTexture.java',
 	'android/graphics/drawable/Animatable2.java',
+	'android/graphics/drawable/AnimatedImageDrawable.java',
 	'android/graphics/drawable/AnimatedRotateDrawable.java',
 	'android/graphics/drawable/AnimatedStateListDrawable.java',
 	'android/graphics/drawable/LevelListDrawable.java',

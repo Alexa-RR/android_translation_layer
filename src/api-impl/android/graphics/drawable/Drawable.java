@@ -62,34 +62,61 @@ public class Drawable {
 		this.paintable = paintable;
 	}
 
+	/** AOSP: the configuration changes this drawable depends on (set by Resources when it loads it). */
 	public int getChangingConfigurations() {
-		return 0;
+		return mChangingConfigurations;
 	}
 
-	public void setChangingConfigurations(int bitmap) {}
+	/** AOSP: sets the configuration changes this drawable depends on. */
+	public void setChangingConfigurations(int configs) {
+		mChangingConfigurations = configs;
+	}
 
+	/**
+	 * AOSP: a drawable that does not override this has no constant state (null). ATL's own
+	 * paintable-backed Drawable (created from a path or a native paintable) has one: the paintable is
+	 * immutable shared data, like the Bitmap of AOSP's BitmapState, so new drawables share it.
+	 */
 	public ConstantState getConstantState() {
-		return new ConstantState() {
-			@Override
-			public Drawable newDrawable(Resources res) {
-				return Drawable.this;
-			}
+		if (getClass() == Drawable.class && paintable != 0)
+			return new TlPaintableState(paintable, mChangingConfigurations);
+		return null;
+	}
 
-			@Override
-			public Drawable newDrawable() {
-				return Drawable.this;
-			}
+	/** The constant state of a paintable-backed Drawable: new drawables share the native paintable. */
+	static final class TlPaintableState extends ConstantState {
+		private final long mPaintable;
+		private final int mChangingConfigurations;
 
-			@Override
-			public int getChangingConfigurations() {
-				return Drawable.this.getChangingConfigurations();
-			}
-		};
+		TlPaintableState(long paintable, int changingConfigurations) {
+			mPaintable = paintable;
+			mChangingConfigurations = changingConfigurations;
+		}
+
+		@Override
+		public Drawable newDrawable(Resources res) {
+			return newDrawable();
+		}
+
+		@Override
+		public Drawable newDrawable() {
+			Drawable d = new Drawable(mPaintable);
+			d.mChangingConfigurations = mChangingConfigurations;
+			return d;
+		}
+
+		@Override
+		public int getChangingConfigurations() {
+			return mChangingConfigurations;
+		}
 	}
 
 	public static abstract class ConstantState {
 
-		public abstract Drawable newDrawable(Resources res);
+		/** AOSP: a new drawable from this state for the given resources (default: newDrawable()). */
+		public Drawable newDrawable(Resources res) {
+			return newDrawable();
+		}
 
 		public abstract Drawable newDrawable();
 
@@ -127,6 +154,16 @@ public class Drawable {
 	public void draw(Canvas canvas) {
 		if (canvas instanceof GskCanvas) {
 			GskCanvas gsk = (GskCanvas) canvas;
+			if (mTlAlpha == 0)
+				return;
+			/* the alpha is a DST_IN filter with the alpha as the filter colour: every channel keeps
+			 * its colour and its alpha is multiplied by alpha/255 (Skia's paint alpha) */
+			boolean alphaPushed = false;
+			if (mTlAlpha != 0xFF) {
+				if (mTlAlphaFilter == null || mTlAlphaFilter.getColor() != mTlAlpha << 24)
+					mTlAlphaFilter = new PorterDuffColorFilter(mTlAlpha << 24, PorterDuff.Mode.DST_IN);
+				alphaPushed = gsk.tlPushColorFilter(mTlAlphaFilter);
+			}
 			ColorFilter filter = mColorFilter != null ? mColorFilter : mTintFilter;
 			boolean pushed = filter != null && gsk.tlPushColorFilter(filter);
 			if (mBounds.left != 0 || mBounds.top != 0)
@@ -135,6 +172,8 @@ public class Drawable {
 			if (mBounds.left != 0 || mBounds.top != 0)
 				canvas.translate(-mBounds.left, -mBounds.top);
 			if (pushed)
+				gsk.tlPopGroup();
+			if (alphaPushed)
 				gsk.tlPopGroup();
 		}
 	}
@@ -203,10 +242,27 @@ public class Drawable {
 			return r.obtainAttributes(set, attrs);
 	}
 
-	public void clearColorFilter() {}
+	/** AOSP: removes the colour filter. */
+	public void clearColorFilter() {
+		setColorFilter(null);
+	}
 
-	public final int getLevel() { return 0; }
-	public final boolean setLevel(int level) { return false; }
+	/** AOSP: the current level (0..10000). */
+	public final int getLevel() {
+		return mLevel;
+	}
+
+	/**
+	 * AOSP: sets the level (0..10000) that level-aware drawables (clip, scale, level-list, rotate,
+	 * progress) use; returns what onLevelChange returns when the level changed.
+	 */
+	public final boolean setLevel(int level) {
+		if (mLevel != level) {
+			mLevel = level;
+			return onLevelChange(level);
+		}
+		return false;
+	}
 
 	public void setColorFilter(int color, PorterDuff.Mode mode) {
 		setColorFilter(new PorterDuffColorFilter(color, mode));
@@ -294,10 +350,25 @@ public class Drawable {
 		return false;
 	}
 
+	/**
+	 * AOSP: the tint mode (null: SRC_IN). ATL keeps the tint of a plain drawable in the base class;
+	 * as in AOSP the call is also handed to setTintBlendMode, so subclasses that only override
+	 * the blend-mode variant (ColorDrawable, LayerDrawable, ...) get it too.
+	 */
 	public void setTintMode(PorterDuff.Mode tintMode) {
-		mTintMode = tintMode;
-		mTintFilter = updateTintFilter(mTintFilter, mTint, mTintMode);
-		invalidateSelf();
+		if (tintMode == null)
+			tintMode = DEFAULT_TINT_MODE;
+		if (mTintMode != tintMode) {
+			mTintMode = tintMode;
+			mTintFilter = updateTintFilter(mTintFilter, mTint, mTintMode);
+			invalidateSelf();
+		}
+		if (!mSetTintModeInvoked) {
+			mSetTintModeInvoked = true;
+			BlendMode mode = BlendMode.fromValue(tintMode.nativeInt);
+			setTintBlendMode(mode != null ? mode : DEFAULT_BLEND_MODE);
+			mSetTintModeInvoked = false;
+		}
 	}
 
 	public boolean isProjected() { return false; }
@@ -358,7 +429,10 @@ public class Drawable {
 				return drawable;
 			}
 			case "nine-patch": {
-				return new NinePatchDrawable(resources, null, null, null, null);
+				/* AOSP DrawableInflater: <nine-patch android:src=...> inflates its source image */
+				NinePatchDrawable drawable = new NinePatchDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
 			}
 			case "animation-list": {
 				AnimationDrawable drawable = new AnimationDrawable();
@@ -411,6 +485,11 @@ public class Drawable {
 				drawable.inflate(resources, parser, attrs, theme);
 				return drawable;
 			}
+			case "animated-image": {
+				AnimatedImageDrawable drawable = new AnimatedImageDrawable();
+				drawable.inflate(resources, parser, attrs, theme);
+				return drawable;
+			}
 			case "animated-rotate": {
 				AnimatedRotateDrawable drawable = new AnimatedRotateDrawable();
 				drawable.inflate(resources, parser, attrs, theme);
@@ -424,9 +503,21 @@ public class Drawable {
 		return drawable;
 	}
 
+	/** AOSP: a drawable from a stream (no resources, so no density information). */
+	public static Drawable createFromStream(InputStream is, String srcName) {
+		return createFromResourceStream(null, null, is, srcName, null);
+	}
+
+	/** AOSP: a drawable from a stream, with the resources and value giving density information. */
+	public static Drawable createFromResourceStream(Resources res, TypedValue value, InputStream is, String srcName) {
+		return createFromResourceStream(res, value, is, srcName, null);
+	}
+
 	public static Drawable createFromResourceStream(Resources resources, TypedValue value, InputStream is, String file,
 	                                                Object object) {
-		if (!file.endsWith(".9.png")) {
+		if (is == null)
+			return null;
+		if (file == null || !file.endsWith(".9.png")) {
 			final Bitmap bm = BitmapFactory.decodeStream(is);
 			if (bm == null)
 				return null;
@@ -463,9 +554,21 @@ public class Drawable {
 		return false;
 	}
 
-	public void setAlpha(int alpha) {}
+	/**
+	 * AOSP declares this abstract; ATL's plain (paintable) drawable keeps the alpha and draws the
+	 * paintable with it (see draw). Subclasses with their own paint override it.
+	 */
+	public void setAlpha(int alpha) {
+		alpha &= 0xFF;
+		if (mTlAlpha != alpha) {
+			mTlAlpha = alpha;
+			invalidateSelf();
+		}
+	}
 
+	/** AOSP: no padding (all zero) unless a subclass has some; true when there is padding. */
 	public boolean getPadding(Rect padding) {
+		padding.set(0, 0, 0, 0);
 		return false;
 	}
 
@@ -473,12 +576,13 @@ public class Drawable {
 		bounds.set(mBounds);
 	}
 
-	/** AOSP: the minimum width a view should give this drawable: its intrinsic width, or 0 without one */
+	/** AOSP: the suggested minimum width, the intrinsic width or 0 when there is none. */
 	public int getMinimumWidth() {
 		final int intrinsicWidth = getIntrinsicWidth();
 		return intrinsicWidth > 0 ? intrinsicWidth : 0;
 	}
-	/** AOSP: the minimum height a view should give this drawable: its intrinsic height, or 0 without one */
+
+	/** AOSP: the suggested minimum height, the intrinsic height or 0 when there is none. */
 	public int getMinimumHeight() {
 		final int intrinsicHeight = getIntrinsicHeight();
 		return intrinsicHeight > 0 ? intrinsicHeight : 0;
@@ -492,14 +596,23 @@ public class Drawable {
 
 	public void jumpToCurrentState() {}
 
-	public boolean setLayoutDirection(int layoutDirection) {
+	/**
+	 * AOSP: sets the resolved layout direction (View.LAYOUT_DIRECTION_LTR or _RTL); returns what
+	 * onLayoutDirectionChanged returns when it changed.
+	 */
+	public final boolean setLayoutDirection(int layoutDirection) {
+		if (mLayoutDirection != layoutDirection) {
+			mLayoutDirection = layoutDirection;
+			return onLayoutDirectionChanged(layoutDirection);
+		}
 		return false;
 	}
 
 	public void setHotspot(float x, float y) {}
 
+	/** AOSP: the resolved layout direction. */
 	public int getLayoutDirection() {
-		return LayoutDirection.LTR;
+		return mLayoutDirection;
 	}
 
 	static int resolveDensity(Resources r, int parentDensity) {
@@ -531,11 +644,16 @@ public class Drawable {
 
 
 	/* teslalinux: Drawable additions */
-	public int getAlpha() { return 255; }
+	/** AOSP returns 0xFF unless a subclass tracks its alpha; the plain drawable tracks it (setAlpha). */
+	public int getAlpha() { return mTlAlpha; }
 	public int getOpacity() { return android.graphics.PixelFormat.TRANSLUCENT; }
 	public boolean isAutoMirrored() { return false; }
 	public Rect getDirtyBounds() { return getBounds(); }
-	public void getOutline(android.graphics.Outline outline) {}
+	/** AOSP: the default outline is the bounds rectangle with alpha 0 (it casts no shadow). */
+	public void getOutline(android.graphics.Outline outline) {
+		outline.setRect(getBounds());
+		outline.setAlpha(0);
+	}
 	public android.graphics.Insets getOpticalInsets() { return android.graphics.Insets.NONE; }
 	public void applyTheme(android.content.res.Resources.Theme t) {}
 	public boolean canApplyTheme() { return false; }
@@ -580,7 +698,12 @@ public class Drawable {
 
 	/** AOSP (API 29): a tint blend mode; the default maps it to the PorterDuff mode. */
 	public void setTintBlendMode(android.graphics.BlendMode blendMode) {
-		setTintMode(android.graphics.BlendMode.blendModeToPorterDuffMode(blendMode));
+		if (!mSetBlendModeInvoked) {
+			mSetBlendModeInvoked = true;
+			android.graphics.PorterDuff.Mode mode = android.graphics.BlendMode.blendModeToPorterDuffMode(blendMode);
+			setTintMode(mode != null ? mode : DEFAULT_TINT_MODE);
+			mSetBlendModeInvoked = false;
+		}
 	}
 
 	/** AOSP (API 28): whether the drawable has a state for focus (so no focus highlight is needed). */
@@ -695,5 +818,87 @@ public class Drawable {
 			ie.initCause(e);
 			throw ie;
 		}
+	}
+
+	/* ---- teslalinux (draw): AOSP base Drawable state ---- */
+	/** AOSP mLevel: 0..10000, see setLevel. */
+	private int mLevel = 0;
+	/** AOSP mChangingConfigurations. */
+	private int mChangingConfigurations = 0;
+	/** AOSP mLayoutDirection (View.LAYOUT_DIRECTION_LTR = 0). */
+	private int mLayoutDirection = LayoutDirection.LTR;
+	/** The alpha of ATL's plain paintable drawable (AOSP keeps alpha in the subclasses' paints). */
+	private int mTlAlpha = 0xFF;
+	private PorterDuffColorFilter mTlAlphaFilter;
+	/** AOSP (package): the density XML children are looked up at, 0 for the resources' density. */
+	int mSrcDensityOverride = 0;
+	/** AOSP: re-entrancy guards between setTintMode and setTintBlendMode. */
+	private boolean mSetTintModeInvoked;
+	private boolean mSetBlendModeInvoked;
+
+	/**
+	 * AOSP: the BitmapFactory.Options variant (deprecated in AOSP). ATL's decoder takes no options
+	 * here (the drawable is decoded at the asset's own size, as the null-options path does).
+	 */
+	public static Drawable createFromResourceStream(Resources res, TypedValue value, InputStream is, String srcName, BitmapFactory.Options opts) {
+		return createFromResourceStream(res, value, is, srcName, (Object) opts);
+	}
+
+	/** AOSP (hidden): XML inflation with a density override; ATL inflates at the resource density. */
+	public static Drawable createFromXmlForDensity(Resources r, XmlPullParser parser, int density, Theme theme) throws XmlPullParserException, IOException {
+		AttributeSet attrs = android.util.Xml.asAttributeSet(parser);
+		int type;
+		while ((type = parser.next()) != XmlPullParser.START_TAG && type != XmlPullParser.END_DOCUMENT)
+			;
+		if (type != XmlPullParser.START_TAG)
+			throw new XmlPullParserException("No start tag found");
+		Drawable drawable = createFromXmlInnerForDensity(r, parser, attrs, density, theme);
+		if (drawable == null)
+			throw new RuntimeException("Unknown initial tag: " + parser.getName());
+		return drawable;
+	}
+
+	/** AOSP (hidden): createFromXmlInner with a density override (0: the resources' density). */
+	static Drawable createFromXmlInnerForDensity(Resources r, XmlPullParser parser, AttributeSet attrs, int density, Theme theme) throws XmlPullParserException, IOException {
+		return createFromXmlInner(r, parser, attrs, theme);
+	}
+
+	/**
+	 * Skia's saveLayer(bounds, paint) for a drawable that composites several draws before applying
+	 * one alpha and one colour filter (GradientDrawable with a translucent stroke over a fill): on
+	 * ATL's GSK canvas a group with a DST_IN alpha (outer) and the colour filter as a colour matrix
+	 * (inner) gives the same result. Returns the number of groups pushed (pop them with
+	 * tlPopLayer), or -1 when the canvas or the filter cannot be expressed that way (the caller
+	 * then filters each draw itself).
+	 */
+	static int tlPushLayer(Canvas canvas, int alpha, ColorFilter filter) {
+		if (!(canvas instanceof GskCanvas))
+			return -1;
+		PorterDuffColorFilter pd = null;
+		if (filter instanceof PorterDuffColorFilter) {
+			pd = (PorterDuffColorFilter) filter;
+		} else if (filter instanceof BlendModeColorFilter) {
+			BlendModeColorFilter blend = (BlendModeColorFilter) filter;
+			PorterDuff.Mode mode = blend.getMode() == BlendMode.MODULATE ? PorterDuff.Mode.MULTIPLY : BlendMode.blendModeToPorterDuffMode(blend.getMode());
+			if (mode == null)
+				return -1;
+			pd = new PorterDuffColorFilter(blend.getColor(), mode);
+		} else if (filter != null) {
+			return -1;
+		}
+		GskCanvas gsk = (GskCanvas) canvas;
+		int pushed = 0;
+		alpha &= 0xFF;
+		if (alpha != 0xFF && gsk.tlPushColorFilter(new PorterDuffColorFilter(alpha << 24, PorterDuff.Mode.DST_IN)))
+			pushed++;
+		if (pd != null && gsk.tlPushColorFilter(pd))
+			pushed++;
+		return pushed;
+	}
+
+	/** Closes the groups tlPushLayer opened. */
+	static void tlPopLayer(Canvas canvas, int pushed) {
+		for (int i = 0; i < pushed; i++)
+			((GskCanvas) canvas).tlPopGroup();
 	}
 }
