@@ -271,3 +271,19 @@ JNIEXPORT jboolean JNICALL Java_android_view_ViewGroup_native_1dispatchTouchEven
 		gtk_widget_set_can_target(hidden[i], hidden_target[i]);
 	return handled;
 }
+
+/* ---- teslalinux: tl_restack_child ---- */
+JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1restackChild(JNIEnv *env, jobject this, jlong widget_ptr, jlong child_ptr, jlong next_ptr)
+{
+	GtkWidget *parent = GTK_WIDGET(_PTR(widget_ptr));
+	GtkWidget *child = gtk_widget_get_parent(GTK_WIDGET(_PTR(child_ptr)));
+	GtkWidget *next = next_ptr ? gtk_widget_get_parent(GTK_WIDGET(_PTR(next_ptr))) : NULL;
+	if (!child || gtk_widget_get_parent(child) != parent || child == next)
+		return;
+	if (next && gtk_widget_get_parent(next) != parent)
+		return;
+	if (gtk_widget_get_next_sibling(child) == next)
+		return; /* already in place (next NULL: already the last) */
+	gtk_widget_insert_before(child, parent, next);
+	gtk_widget_queue_draw(parent);
+}
