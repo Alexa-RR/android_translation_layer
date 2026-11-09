@@ -115,7 +115,7 @@ public class TextView extends View {
 
 	public void setText(CharSequence text, BufferType type) {
 		this.text = text == null ? "" : text;
-		native_setText(text != null ? text.toString() : null);
+		tlShowTextOrHint();
 
 		if (text instanceof android.text.Spanned)
 			native_set_markup(1);
@@ -147,14 +147,19 @@ public class TextView extends View {
 	public native void setTextSize(float size);
 
 	public native final void native_setTextColor(int color);
+	/** AOSP: one colour for every state */
 	public void setTextColor(int color) {
-		native_setTextColor(color);
+		setTextColor(ColorStateList.valueOf(color));
 	}
+
+	/** AOSP: a colour state list, resolved against the drawable state now and on every state change */
 	public void setTextColor(ColorStateList colors) {
-		if (colors != null) {
-			this.colors = colors;
-			native_setTextColor(colors.getDefaultColor()); // TODO: do this properly
-		}
+		if (colors == null)
+			throw new NullPointerException();
+		this.colors = colors;
+		tlTextColor = colors;
+		tlCurTextColor = colors.getColorForState(getDrawableState(), colors.getDefaultColor());
+		tlApplyNativeColor();
 	}
 	public void setTypeface(Typeface tf, int style) {
 		String[] classesToRemove = {"ATL-font-bold", "ATL-font-italic"};
@@ -190,8 +195,23 @@ public class TextView extends View {
 		tlImeOptions = imeOptions;
 	}
 
-	public final ColorStateList getTextColors() { return colors; }
-	public static ColorStateList getTextColors(Context context, TypedArray attrs) { return new ColorStateList(new int[][] {new int[0]}, new int[1]); }
+	public final ColorStateList getTextColors() {
+		return tlTextColor != null ? tlTextColor : ColorStateList.valueOf(getCurrentTextColor());
+	}
+
+	/** AOSP (deprecated): the textColor of attrs, else the one of its textAppearance */
+	public static ColorStateList getTextColors(Context context, TypedArray attrs) {
+		ColorStateList colors = attrs.getColorStateList(com.android.internal.R.styleable.TextView_textColor);
+		if (colors == null) {
+			final int ap = attrs.getResourceId(com.android.internal.R.styleable.TextView_textAppearance, 0);
+			if (ap != 0) {
+				final TypedArray appearance = context.obtainStyledAttributes(ap, com.android.internal.R.styleable.TextAppearance);
+				colors = appearance.getColorStateList(com.android.internal.R.styleable.TextAppearance_textColor);
+				appearance.recycle();
+			}
+		}
+		return colors;
+	}
 
 	public TextPaint getPaint() {
 		return paint;
@@ -209,8 +229,21 @@ public class TextView extends View {
 		return null;
 	}
 
-	public void setHintTextColor(ColorStateList colorStateList) {}
-	public void setHintTextColor(int i) {}
+	/** AOSP: the hint's colour state list */
+	public void setHintTextColor(ColorStateList colorStateList) {
+		tlHintTextColor = colorStateList;
+		if (colorStateList != null)
+			mCurHintTextColor = colorStateList.getColorForState(getDrawableState(), colorStateList.getDefaultColor());
+		tlApplyNativeColor();
+	}
+
+	public void setHintTextColor(int i) {
+		setHintTextColor(ColorStateList.valueOf(i));
+	}
+
+	public final ColorStateList getHintTextColors() {
+		return tlHintTextColor;
+	}
 	public void setLinkTextColor(ColorStateList colorStateList) {}
 
 	public void setSingleLine() {}
@@ -313,7 +346,7 @@ public class TextView extends View {
 		return new BaseMovementMethod();
 	}
 
-	public CharSequence getHint() { return "HINT"; }
+	public CharSequence getHint() { return tlHint; }
 
 	public int getMinHeight() { return 0; }
 	public int getMinWidth() { return 0; }
@@ -340,7 +373,7 @@ public class TextView extends View {
 	}
 
 	public int getCurrentTextColor() {
-		return Color.CYAN;
+		return tlTextColor != null ? tlCurTextColor : tlDefaultTextColor();
 	}
 
 	public void setSingleLine(boolean singleLine) {}
@@ -367,7 +400,11 @@ public class TextView extends View {
 
 	public void setCompoundDrawablesWithIntrinsicBounds(Drawable left, Drawable top, Drawable right, Drawable bottom) {}
 
-	public void setHint(CharSequence s) {}
+	/** AOSP: the text shown while the view's own text is empty */
+	public void setHint(CharSequence s) {
+		tlHint = s;
+		tlShowTextOrHint();
+	}
 
 	public Drawable[] getCompoundDrawablesRelative() { return new Drawable[4]; }
 
@@ -664,4 +701,79 @@ public class TextView extends View {
 	/* AOSP EditorInfo state of this editor (set by setInputType/setImeOptions or the XML attributes) */
 	protected int tlInputType = android.text.InputType.TYPE_CLASS_TEXT;
 	protected int tlImeOptions = android.view.inputmethod.EditorInfo.IME_NULL;
+
+	/* ---- teslalinux: AOSP text and hint colours (TextView.java updateTextColors) ----
+	 * The colour state lists resolve against the view's drawable state whenever it changes (pressed,
+	 * selected, checked, enabled: a selected tab or segment shows its selected colour), and a plain
+	 * TextView shows its hint in the hint colour while its text is empty, as AOSP draws it. */
+	private ColorStateList tlTextColor;
+	private int tlCurTextColor;
+	private ColorStateList tlHintTextColor;
+	private CharSequence tlHint;
+	private boolean tlShowingHint;
+
+	/** AOSP: the theme's primary text colour when no textColor was set (getCurrentTextColor before any setTextColor) */
+	private int tlDefaultTextColor() {
+		try {
+			final TypedArray ta = getContext().obtainStyledAttributes(new int[] {android.R.attr.textColorPrimary});
+			final ColorStateList c = ta.getColorStateList(0);
+			ta.recycle();
+			if (c != null)
+				return c.getColorForState(getDrawableState(), c.getDefaultColor());
+		} catch (Exception e) {
+		}
+		return 0xFF000000;
+	}
+
+	/** AOSP TextView.updateTextColors(): the current text and hint colours for this state */
+	private void tlUpdateTextColors() {
+		final int[] state = getDrawableState();
+		boolean changed = false;
+		if (tlTextColor != null) {
+			final int c = tlTextColor.getColorForState(state, tlTextColor.getDefaultColor());
+			if (c != tlCurTextColor) {
+				tlCurTextColor = c;
+				changed = true;
+			}
+		}
+		if (tlHintTextColor != null) {
+			final int c = tlHintTextColor.getColorForState(state, tlHintTextColor.getDefaultColor());
+			if (c != mCurHintTextColor) {
+				mCurHintTextColor = c;
+				changed = true;
+			}
+		}
+		if (changed)
+			tlApplyNativeColor();
+	}
+
+	private void tlApplyNativeColor() {
+		if (tlShowingHint)
+			native_setTextColor(mCurHintTextColor);
+		else if (tlTextColor != null)
+			native_setTextColor(tlCurTextColor);
+	}
+
+	/** what the native label shows: the text, or (a plain TextView with empty text) the hint */
+	private void tlShowTextOrHint() {
+		final boolean hint = !(this instanceof EditText) && (text == null || text.length() == 0) && tlHint != null && tlHint.length() > 0;
+		if (hint) {
+			native_setText(tlHint.toString());
+			if (tlHint instanceof android.text.Spanned)
+				native_set_markup(1);
+		} else {
+			native_setText(text != null ? text.toString() : null);
+		}
+		if (hint != tlShowingHint) {
+			tlShowingHint = hint;
+			tlApplyNativeColor();
+		}
+	}
+
+	@Override
+	protected void drawableStateChanged() {
+		super.drawableStateChanged();
+		if ((tlTextColor != null && tlTextColor.isStateful()) || (tlHintTextColor != null && tlHintTextColor.isStateful()))
+			tlUpdateTextColors();
+	}
 }

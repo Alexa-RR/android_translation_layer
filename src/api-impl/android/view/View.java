@@ -1148,12 +1148,22 @@ public class View implements Drawable.Callback {
 		onCreateDrawableState(0);
 	}
 
+	/** AOSP: the view's state set with extraSpace free slots at the end (for subclasses to merge into);
+	 * a view with duplicateParentState takes its parent's */
 	protected int[] onCreateDrawableState(int extraSpace) {
-		return new int[0];
+		if (isDuplicateParentStateEnabled() && parent instanceof View)
+			return ((View) parent).onCreateDrawableState(extraSpace);
+		return tlBaseDrawableState(extraSpace);
 	}
 
+	/** AOSP: copies newState into the free (zero) tail of curState and returns curState */
 	protected static int[] mergeDrawableStates(int[] curState, int[] newState) {
-		return new int[0];
+		final int n = curState.length;
+		int i = n - 1;
+		while (i >= 0 && curState[i] == 0)
+			i--;
+		System.arraycopy(newState, 0, curState, i + 1, newState.length);
+		return curState;
 	}
 
 	/** AOSP: NO_ID never matches; otherwise this view when the id is its own. */
@@ -1472,15 +1482,26 @@ public class View implements Drawable.Callback {
 			native_measure(widget, widthMeasureSpec, heightMeasureSpec);
 	}
 
+	/** AOSP: the pressed state; a group passes it to children that are not clickable themselves */
 	public void setPressed(boolean pressed) {
 		if (this.pressed != pressed) {
 			this.pressed = pressed;
-			if (background != null && background.isStateful())
-				background.setState(getDrawableState());
+			refreshDrawableState();
+			dispatchSetPressed(pressed);
 		}
 	}
 
-	public void setSelected(boolean selected) {}
+	/** AOSP: the selected state (tabs, segmented controls, list rows), passed on to a group's children */
+	public void setSelected(boolean selected) {
+		if (tlSelected != selected) {
+			tlSelected = selected;
+			if (!selected && pressed)
+				setPressed(false);
+			invalidate();
+			refreshDrawableState();
+			dispatchSetSelected(selected);
+		}
+	}
 
 	public native Window native_get_window(long widget);
 	public ViewTreeObserver getViewTreeObserver() {
@@ -1688,7 +1709,12 @@ public class View implements Drawable.Callback {
 		return this.context;
 	}
 
+	/** AOSP: the state set is rebuilt; drawables and colours follow, and the parent hears of it */
 	public void refreshDrawableState() {
+		tlDrawableStateDirty = true;
+		drawableStateChanged();
+		if (parent instanceof ViewGroup)
+			((ViewGroup) parent).childDrawableStateChanged(this);
 	}
 
 	public void setDescendantFocusability(int value) {}
@@ -1711,8 +1737,15 @@ public class View implements Drawable.Callback {
 	}
 
 	public void setEnabled(boolean enabled) {
+		if (atl_enabled == enabled)
+			return;
 		atl_enabled = enabled;
 		native_setVisibility(widget, visibility, alpha, atl_enabled);
+		// AOSP: a disabled view is not pressed, and state_enabled changes
+		if (!enabled && pressed)
+			setPressed(false);
+		refreshDrawableState();
+		invalidate();
 	}
 
 	public CharSequence getContentDescription() {
@@ -1978,7 +2011,7 @@ public class View implements Drawable.Callback {
 			tlLayoutChangeListeners.remove(listener);
 	}
 
-	public boolean isSelected() { return false; }
+	public boolean isSelected() { return tlSelected; }
 
 	public void sendAccessibilityEvent(int eventType) {}
 
@@ -1989,9 +2022,17 @@ public class View implements Drawable.Callback {
 		this.minWidth = minWidth;
 	}
 
-	public void setActivated(boolean activated) {}
+	/** AOSP: the activated state (the current item of a list in an activated-choice mode) */
+	public void setActivated(boolean activated) {
+		if (tlActivated != activated) {
+			tlActivated = activated;
+			invalidate();
+			refreshDrawableState();
+			dispatchSetActivated(activated);
+		}
+	}
 
-	public boolean isActivated() { return false; }
+	public boolean isActivated() { return tlActivated; }
 
 	public int getVisibility() { return visibility; }
 
@@ -2007,13 +2048,13 @@ public class View implements Drawable.Callback {
 		}
 	}
 
+	/** AOSP: the cached state set, rebuilt through onCreateDrawableState(0) after refreshDrawableState() */
 	public final int[] getDrawableState() {
-		int[] state = new int[2];
-		state[0] = R.attr.state_enabled;
-		if (pressed) {
-			state[1] = R.attr.state_pressed;
-		}
-		return state;
+		if (tlDrawableState != null && !tlDrawableStateDirty)
+			return tlDrawableState;
+		tlDrawableState = onCreateDrawableState(0);
+		tlDrawableStateDirty = false;
+		return tlDrawableState;
 	}
 
 	public float getRotation() { return tlRotation; }
@@ -2793,7 +2834,12 @@ public class View implements Drawable.Callback {
 		return mTransitionAlpha;
 	}
 
-	public void onWindowFocusChanged(boolean hasFocus) {}
+	/** AOSP: losing window focus ends a press; state_window_focused changes */
+	public void onWindowFocusChanged(boolean hasFocus) {
+		if (!hasFocus && pressed)
+			setPressed(false);
+		refreshDrawableState();
+	}
 
 	/** AOSP: attaches the animation; it runs from its start time (START_ON_FIRST_FRAME: the next frame) */
 	public void setAnimation(Animation animation) {
@@ -4283,6 +4329,49 @@ public class View implements Drawable.Callback {
 			if (android.graphics.BlendMode.blendModeToPorterDuffMode(b) == tlBgTintMode)
 				return b;
 		return null;
+	}
+
+	/* ---- teslalinux: AOSP drawable state (View.java) ----
+	 * The view's state set (window_focused, selected, focused, enabled, pressed, activated, plus what
+	 * subclasses add in onCreateDrawableState: checked, ...) is built from its real flags, cached, and
+	 * rebuilt by refreshDrawableState(), which tells drawableStateChanged() so state-list drawables,
+	 * colour state lists (TextView colours, tints) and the parent (addStatesFromChildren) follow it. */
+	private int[] tlDrawableState;
+	private boolean tlDrawableStateDirty = true;
+	private boolean tlSelected;
+	private boolean tlActivated;
+
+	/** AOSP View.dispatchSetSelected: a leaf view has no children (ViewGroup passes the selection on) */
+	protected void dispatchSetSelected(boolean selected) {
+	}
+
+	/** AOSP View.dispatchSetPressed: a leaf view has no children to pass the press to (ViewGroup overrides) */
+	protected void dispatchSetPressed(boolean pressed) {
+	}
+
+	/** AOSP View.dispatchSetActivated: a leaf view has no children (ViewGroup passes it on) */
+	protected void dispatchSetActivated(boolean activated) {
+	}
+
+	/** AOSP: the states this view would show, before subclasses add theirs */
+	private int[] tlBaseDrawableState(int extraSpace) {
+		int n = 0;
+		final int[] s = new int[6 + extraSpace];
+		if (hasWindowFocus())
+			s[n++] = R.attr.state_window_focused;
+		if (tlSelected)
+			s[n++] = R.attr.state_selected;
+		if (isFocused())
+			s[n++] = R.attr.state_focused;
+		if (isEnabled())
+			s[n++] = R.attr.state_enabled;
+		if (pressed)
+			s[n++] = R.attr.state_pressed;
+		if (tlActivated)
+			s[n++] = R.attr.state_activated;
+		final int[] out = new int[n + extraSpace];
+		System.arraycopy(s, 0, out, 0, n);
+		return out;
 	}
 
 	/* ---- teslalinux: View transform properties and view animations (AOSP View + RenderNode + HWUI) ----
