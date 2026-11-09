@@ -1,6 +1,6 @@
-#include <pthread.h>
 // for dladdr
 #define _GNU_SOURCE
+#include <pthread.h>
 
 #include <cairo-svg.h>
 #include <gdk/wayland/gdkwayland.h>
