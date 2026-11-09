@@ -229,6 +229,20 @@ public final class ViewDump {
 					} else if (command.startsWith("textfields")) {
 						// "textfields": every Compose text field core node (size, layout result, text) in every compose root
 						composeTextFields(decor);
+					} else if (command.startsWith("fields ")) {
+						// "fields NAME [DEPTH]": every view whose class name is NAME (full or simple): all
+						// its declared fields up to android.*, with values; objects one level deeper
+						String[] parts = command.trim().split(" ");
+						int depth = parts.length > 2 ? Integer.parseInt(parts[2]) : 1;
+						java.util.List<View> found = new java.util.ArrayList<View>();
+						for (Activity a : snapshotActivities()) {
+							View d = a.getWindow() != null ? a.getWindow().getDecorView() : null;
+							if (d != null)
+								collectByClassName(d, parts[1], found);
+						}
+						for (View v : found)
+							dumpFields("fields", v, depth, new java.util.IdentityHashMap<Object, Boolean>());
+						Log.i(TAG, "fields: " + found.size() + " view(s) named " + parts[1]);
 					} else if (command.startsWith("hit ")) {
 						// "hit X Y": what Compose's own hit test returns at a window position (per compose root)
 						String[] parts = command.trim().split(" ");
@@ -1065,6 +1079,59 @@ public final class ViewDump {
 				Log.i(TAG, sb.toString());
 			} catch (Exception e) {
 				Log.i(TAG, "hit failed: " + e);
+			}
+		}
+	}
+
+	private static java.util.List<Activity> snapshotActivities() {
+		synchronized (sActivities) {
+			return new java.util.ArrayList<Activity>(sActivities);
+		}
+	}
+
+	static void collectByClassName(View v, String name, java.util.List<View> out) {
+		if (v.getClass().getName().equals(name) || v.getClass().getSimpleName().equals(name))
+			out.add(v);
+		if (v instanceof android.view.ViewGroup) {
+			android.view.ViewGroup g = (android.view.ViewGroup) v;
+			for (int i = 0; i < g.getChildCount(); i++)
+				collectByClassName(g.getChildAt(i), name, out);
+		}
+	}
+
+	/** the declared fields of o's class and its app superclasses (stops at android.* / java.*), with values */
+	private static void dumpFields(String prefix, Object o, int depth, java.util.IdentityHashMap<Object, Boolean> seen) {
+		if (o == null || seen.containsKey(o))
+			return;
+		seen.put(o, Boolean.TRUE);
+		for (Class<?> c = o.getClass(); c != null; c = c.getSuperclass()) {
+			String cn = c.getName();
+			if (cn.startsWith("android.") || cn.startsWith("java.") || cn.startsWith("androidx."))
+				break;
+			for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+				if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+					continue;
+				Object val;
+				try {
+					f.setAccessible(true);
+					val = f.get(o);
+				} catch (Throwable t) {
+					val = "<" + t + ">";
+				}
+				String vs;
+				try {
+					vs = String.valueOf(val);
+				} catch (Throwable t) {
+					vs = "<toString: " + t + ">";
+				}
+				if (vs.length() > 160)
+					vs = vs.substring(0, 160) + "...";
+				Log.i(TAG, prefix + " " + cn + "." + f.getName() + " (" + f.getType().getSimpleName() + ") = " + vs);
+				if (depth > 0 && val != null && !f.getType().isPrimitive()) {
+					String vcn = val.getClass().getName();
+					if (vcn.startsWith("com.waze."))
+						dumpFields(prefix + "  " + f.getName() + ":", val, depth - 1, seen);
+				}
 			}
 		}
 	}

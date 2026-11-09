@@ -94,11 +94,30 @@ bool view_dispatch_motionevent(JNIEnv *env, WrapperWidget *wrapper, GtkPropagati
 extern bool tl_force_plain_dispatch;
 static bool dispatch_motionevent_if_JavaWidget(GtkWidget *widget, GtkPropagationPhase phase, jobject motion_event, GtkWidget *toplevel)
 {
-	if (!JAVA_IS_WIDGET(widget))
+	/* tl_view_widget_dispatch: any view's own widget (its WrapperWidget's child), not only JavaWidget:
+	 * a SurfaceView's widget is a GtkGraphicsOffload, a TextView's a label */
+	GtkWidget *view_parent = gtk_widget_get_parent(widget);
+	if (!view_parent || !WRAPPER_IS_WIDGET(view_parent) || WRAPPER_WIDGET(view_parent)->child != widget
+	    || !WRAPPER_WIDGET(view_parent)->jobj)
 		return false;
 	JNIEnv *env = get_jni_env();
 
-	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(widget));
+	WrapperWidget *wrapper = WRAPPER_WIDGET(view_parent);
+	if (getenv("ATL_DEBUG_TOUCH")) {
+		static jmethodID pc, gx, gy, ga;
+		if (!pc) {
+			pc = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getPointerCount", "()I");
+			gx = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getX", "(I)F");
+			gy = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getY", "(I)F");
+			ga = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getAction", "()I");
+		}
+		jint n = (*env)->CallIntMethod(env, motion_event, pc);
+		jint act = (*env)->CallIntMethod(env, motion_event, ga);
+		fprintf(stderr, "[touch]   view widget %s phase=%d action=0x%x pointers=%d", G_OBJECT_TYPE_NAME(widget), phase, act, n);
+		for (jint i = 0; i < n && i < 4; i++)
+			fprintf(stderr, " p%d=%.0f,%.0f", i, (*env)->CallFloatMethod(env, motion_event, gx, i), (*env)->CallFloatMethod(env, motion_event, gy, i));
+		fprintf(stderr, "\n");
+	}
 	bool plain = false;
 	if (widget == toplevel && wrapper->custom_dispatch_touch) {
 		/* the group that is dispatching: its own onInterceptTouchEvent/onTouchEvent, never its
