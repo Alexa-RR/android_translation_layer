@@ -32,8 +32,9 @@ public class PopupWindow {
 		setFocusable(focusable);
 	}
 
+	/** AOSP: a popup made with this constructor is not focusable. */
 	public PopupWindow(View contentView, int width, int height) {
-		this(contentView, width, height, true);
+		this(contentView, width, height, false);
 	}
 
 	private View contentView;
@@ -64,7 +65,81 @@ public class PopupWindow {
 		return native_isShowing(popover);
 	}
 
-	public void setFocusable(boolean focusable) {}
+	/* ---- teslalinux: AOSP focus and touch semantics of a popup (tl_popup_window) ----
+	 * AOSP: a popup that is not focusable (the default) never takes key focus (FLAG_NOT_FOCUSABLE)
+	 * and is never touch modal (FLAG_NOT_FOCUSABLE implies FLAG_NOT_TOUCH_MODAL): touches outside
+	 * it reach the window behind. A focusable, touch-modal popup consumes them. An outside-touchable
+	 * popup gets ACTION_OUTSIDE for a touch elsewhere and dismisses itself (PopupDecorView).
+	 * The popup is a GtkPopover: only a focusable, touch-modal one grabs (autohide: GTK consumes
+	 * the outside click and closes it); the others never take the keyboard (can-focus off) and
+	 * learn about outside touches from the main window's input hook (View.tlPointerDown). */
+	private boolean mFocusable;
+	private boolean mTouchModal = true;
+	private boolean mOutsideTouchable;
+	private View.OnTouchListener mTouchInterceptor;
+	private static final java.util.ArrayList<PopupWindow> tlShowing = new java.util.ArrayList<>();
+
+	public void setFocusable(boolean focusable) {
+		mFocusable = focusable;
+		native_setFocusable(popover, focusable);
+		tlApplyTouchModal();
+	}
+
+	public boolean isFocusable() {
+		return mFocusable;
+	}
+
+	public boolean isTouchModal() {
+		return mTouchModal;
+	}
+
+	public boolean isOutsideTouchable() {
+		return mOutsideTouchable;
+	}
+
+	private void tlApplyTouchModal() {
+		native_setTouchModal(popover, mFocusable && mTouchModal);
+	}
+
+	private void tlShown() {
+		synchronized (tlShowing) {
+			if (!tlShowing.contains(this))
+				tlShowing.add(this);
+		}
+	}
+
+	/**
+	 * A pointer DOWN landed outside this process's popups except the one whose GtkPopover is
+	 * eventPopover (0: none). Every other showing, outside-touchable popup that does not grab gets
+	 * ACTION_OUTSIDE: its touch interceptor first, then it dismisses itself (AOSP PopupDecorView).
+	 */
+	public static void tlDispatchOutsideTouch(long eventPopover) {
+		java.util.ArrayList<PopupWindow> showing;
+		synchronized (tlShowing) {
+			showing = new java.util.ArrayList<>(tlShowing);
+		}
+		for (PopupWindow popup : showing) {
+			if (!popup.isShowing()) {
+				synchronized (tlShowing) {
+					tlShowing.remove(popup);
+				}
+				continue;
+			}
+			if (popup.popover == eventPopover || !popup.mOutsideTouchable || (popup.mFocusable && popup.mTouchModal))
+				continue;
+			if (popup.mTouchInterceptor != null) {
+				long now = android.os.SystemClock.uptimeMillis();
+				android.view.MotionEvent outside = android.view.MotionEvent.obtain(now, now, android.view.MotionEvent.ACTION_OUTSIDE, 0, 0, 0);
+				boolean handled = popup.mTouchInterceptor.onTouch(popup.contentView, outside);
+				outside.recycle();
+				if (handled)
+					continue;
+			}
+			popup.dismiss();
+		}
+	}
+
+	private native void native_setFocusable(long popover, boolean focusable);
 
 	public Drawable getBackground() {
 		return background;
@@ -82,17 +157,19 @@ public class PopupWindow {
 
 	public int getMaxAvailableHeight(View anchor, int yOffset, boolean ignoreKeyboard) { return 500; }
 
+	/** AOSP: the popup is told about touches outside it (ACTION_OUTSIDE) and dismisses itself. */
 	public void setOutsideTouchable(boolean touchable) {
-		/* FIXME: the semantics are different, this seems to specifically exist for cases
-		 * where the popup is *not* modal, so that in addition to the window behind getting
-		 * the real event, the popup gets a special MotionEvent.ACTION_OUTSIDE event */
-		native_setTouchModal(popover, touchable);
+		mOutsideTouchable = touchable;
 	}
 
-	public void setTouchInterceptor(View.OnTouchListener listener) {}
+	/** AOSP: sees the popup's touch events (including ACTION_OUTSIDE) before the popup handles them. */
+	public void setTouchInterceptor(View.OnTouchListener listener) {
+		mTouchInterceptor = listener;
+	}
 
 	public void showAsDropDown(View anchor, int xoff, int yoff, int gravity) {
 		native_showAsDropDown(popover, anchor.widget, xoff, yoff, gravity);
+		tlShown();
 	}
 
 	public View getContentView() {
@@ -109,20 +186,27 @@ public class PopupWindow {
 			return;
 		}
 		native_showAsDropDown(popover, anchor.widget, xoff, yoff, Gravity.NO_GRAVITY);
+		tlShown();
 	}
 
 	public void showAtLocation(View parent, int gravity, int x, int y) {
 		native_showAsDropDown(popover, parent.widget, x, y, gravity);
+		tlShown();
 	}
 
 	public void dismiss() {
+		synchronized (tlShowing) {
+			tlShowing.remove(this);
+		}
 		native_dismiss(popover);
 	}
 
 	public void setAnimationStyle(int animationStyle) {}
 
+	/** AOSP: whether a focusable popup consumes touches outside it. */
 	public void setTouchModal(boolean touchModal) {
-		native_setTouchModal(popover, touchModal);
+		mTouchModal = touchModal;
+		tlApplyTouchModal();
 	}
 
 	public void setElevation(float elevation) {}

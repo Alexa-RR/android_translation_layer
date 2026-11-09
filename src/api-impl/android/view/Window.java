@@ -61,6 +61,7 @@ public class Window {
 		this.context = context;
 		decorView = new FrameLayout(context);
 		decorView.setId(android.R.id.content);
+		tlRegisterWindow(this);
 	}
 
 	public void set_native_window(long native_window) {
@@ -134,8 +135,9 @@ public class Window {
 		return decorView.findViewById(id);
 	}
 
+	/** AOSP: the decor view if it was created; ATL creates it with the window. */
 	public View peekDecorView() {
-		return null;
+		return decorView;
 	}
 
 	public WindowManager.LayoutParams getAttributes() {
@@ -284,5 +286,32 @@ public class Window {
 
 	public int tlGetSoftInputMode() {
 		return tlSoftInputMode;
+	}
+
+	/* ---- teslalinux: the process's windows (tl_touch_mode) ----
+	 * AOSP's WindowManagerGlobal knows every window root of the process (it reports a display-wide
+	 * change such as touch mode to each ViewRootImpl). Windows are held weakly; a window whose
+	 * activity or dialog is gone drops out once collected. */
+	private static final java.util.ArrayList<java.lang.ref.WeakReference<Window>> tlWindows = new java.util.ArrayList<>();
+
+	private static void tlRegisterWindow(Window window) {
+		synchronized (tlWindows) {
+			tlWindows.add(new java.lang.ref.WeakReference<>(window));
+		}
+	}
+
+	/** the live windows of the process, oldest first */
+	public static java.util.List<Window> tlLiveWindows() {
+		java.util.ArrayList<Window> live = new java.util.ArrayList<>();
+		synchronized (tlWindows) {
+			for (java.util.Iterator<java.lang.ref.WeakReference<Window>> it = tlWindows.iterator(); it.hasNext();) {
+				Window w = it.next().get();
+				if (w == null)
+					it.remove();
+				else
+					live.add(w);
+			}
+		}
+		return live;
 	}
 }

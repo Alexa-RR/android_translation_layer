@@ -194,6 +194,9 @@ public final class ViewDump {
 						} catch (Exception e) {
 							Log.i(TAG, "composeapply: " + e);
 						}
+					} else if (command.startsWith("focusstate")) {
+						// "focusstate": per compose owner, the View focus flags, the FocusOwner's fields and every focus target's state
+						composeFocusState(decor);
 					} else if (command.startsWith("textfields")) {
 						// "textfields": every Compose text field core node (size, layout result, text) in every compose root
 						composeTextFields(decor);
@@ -610,6 +613,81 @@ public final class ViewDump {
 			} catch (Exception e) {
 				Log.i(TAG, "textfields: " + e);
 			}
+		}
+	}
+
+	private static void composeFocusState(View root) {
+		java.util.List<View> owners = new java.util.ArrayList<>();
+		collectComposeViews(root, owners);
+		View rootFocus = root.findFocus();
+		Log.i(TAG, "focusstate: decor findFocus=" + (rootFocus == null ? "null" : rootFocus.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(rootFocus))));
+		for (View cv : owners) {
+			StringBuilder sb = new StringBuilder("focusstate: owner ").append(cv.getWidth()).append('x').append(cv.getHeight())
+			  .append('@').append(Integer.toHexString(System.identityHashCode(cv)))
+			  .append(" isFocused=").append(cv.isFocused()).append(" hasFocus=").append(cv.hasFocus()).append(" shown=").append(cv.isShown());
+			try {
+				Object fo = call(cv, "getFocusOwner");
+				for (Class<?> c = fo.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+					for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+						if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+							continue;
+						f.setAccessible(true);
+						Object v = f.get(fo);
+						String vs = v == null ? "null" : v.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(v));
+						if (v instanceof Boolean || v instanceof Number)
+							vs = String.valueOf(v);
+						sb.append(' ').append(f.getName()).append('=').append(vs);
+					}
+				}
+				sb.append(" rootState=").append(call(fo, "getRootState"));
+			} catch (Throwable t) {
+				sb.append(" focusOwner? ").append(t);
+			}
+			Log.i(TAG, sb.toString());
+			try {
+				walkFocusTargets(call(cv, "getRoot"), 0);
+			} catch (Throwable t) {
+				Log.i(TAG, "focusstate: walk? " + t);
+			}
+		}
+	}
+
+	/** a modifier node and, for a DelegatingNode, its delegate chain (focus targets are often delegates) */
+	private static void logFocusTarget(Object n, Object owner, Object ln, int depth, int level) throws Exception {
+		if (n == null || level > 6)
+			return;
+		if (n.getClass().getSimpleName().equals("FocusTargetNode")) {
+			String st;
+			try { st = String.valueOf(call(n, "getFocusState")); } catch (Exception e) { st = "?" + e.getClass().getSimpleName(); }
+			String props = "";
+			try {
+				Object fp = call(n, "fetchFocusProperties$androidx_compose_ui_ui", "fetchFocusProperties$ui_release", "fetchFocusProperties");
+				props = " canFocus=" + call(fp, "getCanFocus");
+			} catch (Exception e) { }
+			Log.i(TAG, "focusstate:   " + indent(depth) + "FocusTargetNode@" + Integer.toHexString(System.identityHashCode(n)) + " state=" + st + props
+			        + (owner != null ? " in " + owner.getClass().getName() : "") + " layout=" + call(ln, "getWidth") + "x" + call(ln, "getHeight") + " depth=" + depth);
+		}
+		Object delegate = null;
+		try { delegate = call(n, "getDelegate$androidx_compose_ui_ui", "getDelegate$ui_release"); } catch (Exception e) { }
+		for (int k = 0; delegate != null && k < 16; k++) {
+			logFocusTarget(delegate, n, ln, depth, level + 1);
+			delegate = call(delegate, "getChild$androidx_compose_ui_ui", "getChild$ui_release", "getChild");
+		}
+	}
+
+	private static void walkFocusTargets(Object ln, int depth) throws Exception {
+		if (ln == null || depth > 80)
+			return;
+		Object nodes = call(ln, "getNodes$androidx_compose_ui_ui", "getNodes$ui_release", "getNodes");
+		Object n = nodes != null ? call(nodes, "getHead$androidx_compose_ui_ui", "getHead$ui_release", "getHead") : null;
+		for (int i = 0; n != null && i < 64; i++) {
+			logFocusTarget(n, null, ln, depth, 0);
+			n = call(n, "getChild$androidx_compose_ui_ui", "getChild$ui_release", "getChild");
+		}
+		Object children = call(ln, "getChildren$androidx_compose_ui_ui", "getChildren$ui_release", "getChildren", "get_children$androidx_compose_ui_ui", "get_children$ui_release");
+		if (children instanceof java.util.List) {
+			for (Object c : (java.util.List<?>) children)
+				walkFocusTargets(c, depth + 1);
 		}
 	}
 

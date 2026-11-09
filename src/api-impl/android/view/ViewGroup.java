@@ -61,6 +61,13 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 		children = new ArrayList<View>();
 		detachedChildren = new ArrayList<View>();
+		/* AOSP initFromAttributes: android:descendantFocusability (tl_touch_mode) */
+		if (attrs != null) {
+			android.content.res.TypedArray a = context.obtainStyledAttributes(attrs, com.android.internal.R.styleable.ViewGroup, defStyleAttr, defStyleRes);
+			if (a.hasValue(com.android.internal.R.styleable.ViewGroup_descendantFocusability))
+				setDescendantFocusability(TL_DESCENDANT_FOCUSABILITY_FLAGS[a.getInt(com.android.internal.R.styleable.ViewGroup_descendantFocusability, 0)]);
+			a.recycle();
+		}
 	}
 
 	public void addView(View child) {
@@ -390,9 +397,17 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 	public void setAddStatesFromChildren(boolean addsStates) {}
 
-	public View getFocusedChild() { return null; }
+	/** AOSP: the direct child that is or contains the window's focused view (tl_touch_mode). */
+	public View getFocusedChild() {
+		for (View child : children) {
+			if (child.hasFocus())
+				return child;
+		}
+		return null;
+	}
 
-	public int getDescendantFocusability() { return 0; }
+	/** AOSP: how this group shares focus with its descendants (tl_touch_mode). */
+	public int getDescendantFocusability() { return tlDescendantFocusability; }
 
 	public void startViewTransition(View view) {}
 	public void endViewTransition(View view) {}
@@ -440,13 +455,17 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 	public void setClipToPadding(boolean clipToPadding) {}
 
+	/**
+	 * AOSP findViewById / ViewGroup.findViewTraversal: this group, then its children in order.
+	 * teslalinux: ATL built a verbose log line on every call (resource name lookup, toString),
+	 * which cost time on each lookup and called getResources() of view subclasses whose
+	 * constructors look up children before their own fields exist (Waze's destination cells).
+	 */
 	public View findViewById(int id) {
-		Slog.v(TAG, "findViewById: looking for id: " + String.format("%x", id) + "(" + getResources().getAssets().getResourceName(id) + ")"
-		            + " | checking: " + this + ",id: " + String.format("%x", this.getId()) + ", id_str: " + this.getIdName());
-		if (this.id == id) {
-			Slog.v(TAG, "findViewById: found: " + this + " | id: " + String.format("%x", this.getId()) + ", id_str: " + this.getIdName());
+		if (id == NO_ID)
+			return null;
+		if (this.id == id)
 			return this;
-		}
 		for (View child : children) {
 			View result = child.findViewById(id);
 			if (result != null)
@@ -984,5 +1003,34 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		for (int i = 0; i < count; i++) {
 			getChildAt(i).dispatchWindowFocusChanged(hasFocus);
 		}
+	}
+
+	/* ---- teslalinux: descendant focusability and focus clearing (tl_touch_mode) ---- */
+	private static final int[] TL_DESCENDANT_FOCUSABILITY_FLAGS = {FOCUS_BEFORE_DESCENDANTS, FOCUS_AFTER_DESCENDANTS, FOCUS_BLOCK_DESCENDANTS};
+	/** AOSP initViewGroup: FOCUS_BEFORE_DESCENDANTS */
+	private int tlDescendantFocusability = FOCUS_BEFORE_DESCENDANTS;
+
+	/** AOSP: sets how this group and its descendants share focus. */
+	@Override
+	public void setDescendantFocusability(int focusability) {
+		switch (focusability) {
+			case FOCUS_BEFORE_DESCENDANTS:
+			case FOCUS_AFTER_DESCENDANTS:
+			case FOCUS_BLOCK_DESCENDANTS:
+				break;
+			default:
+				throw new IllegalArgumentException("must be one of FOCUS_BEFORE_DESCENDANTS, FOCUS_AFTER_DESCENDANTS, FOCUS_BLOCK_DESCENDANTS");
+		}
+		tlDescendantFocusability = focusability;
+	}
+
+	/** AOSP: a group whose child holds focus clears the focus there; otherwise the group itself gives it up. */
+	@Override
+	public void clearFocus() {
+		View focused = getFocusedChild();
+		if (focused == null)
+			super.clearFocus();
+		else
+			focused.clearFocus();
 	}
 }

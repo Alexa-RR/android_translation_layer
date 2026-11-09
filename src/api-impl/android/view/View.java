@@ -1148,11 +1148,11 @@ public class View implements Drawable.Callback {
 		return new int[0];
 	}
 
+	/** AOSP: NO_ID never matches; otherwise this view when the id is its own. */
 	public View findViewById(int id) {
-		if (this.id == id)
-			return this;
-		else
+		if (id == NO_ID)
 			return null;
+		return this.id == id ? this : null;
 	}
 
 	public void onDraw(Canvas canvas) {
@@ -2000,7 +2000,8 @@ public class View implements Drawable.Callback {
 	public void bringToFront() {}
 
 	public boolean isEnabled() { return atl_enabled; }
-	public boolean hasFocus() { return false; }
+	/** AOSP: true when this view or one of its descendants is the window's focused view (tl_touch_mode). */
+	public boolean hasFocus() { return widget != 0 && nativeHasFocus(widget); }
 	public boolean isLayoutRequested() { return layoutRequested; }
 	public int getBaseline() { return -1; }
 	public boolean hasFocusable() { return false; }
@@ -2129,7 +2130,11 @@ public class View implements Drawable.Callback {
 		};
 	}
 
-	public void clearFocus() {}
+	/** AOSP: gives up focus; outside touch mode the root view then picks a new focused view (tl_touch_mode). */
+	public void clearFocus() {
+		final boolean refocus = tlAlwaysAssignFocus() || !isInTouchMode();
+		tlClearFocusInternal(true, refocus);
+	}
 
 	public static View inflate(Context context, int resource, ViewGroup root) {
 		LayoutInflater factory = LayoutInflater.from(context);
@@ -2285,7 +2290,8 @@ public class View implements Drawable.Callback {
 
 	public float getAlpha() { return alpha; }
 
-	public View findFocus() { return this; }
+	/** AOSP: the focused view in this view's subtree (this view itself included), or null (tl_touch_mode). */
+	public View findFocus() { return widget != 0 ? nativeFindFocus(widget) : null; }
 
 	public int getMinimumHeight() { return minHeight; }
 	public int getMinimumWidth() { return minWidth; }
@@ -2336,7 +2342,8 @@ public class View implements Drawable.Callback {
 
 	public boolean canScrollVertically(int value) { return false; }
 
-	public boolean isInTouchMode() { return false; }
+	/** AOSP: the display's touch mode (tl_touch_mode). */
+	public boolean isInTouchMode() { return tlTouchModeState(); }
 
 	public void stopNestedScroll() {
 		if (mNestedScrollingParent != null) {
@@ -3858,4 +3865,169 @@ public class View implements Drawable.Callback {
 		tlWindowFocus = hasFocus;
 		onWindowFocusChanged(hasFocus);
 	}
+
+	/* ---- teslalinux: view focus state and touch mode (tl_touch_mode) ----
+	 * Focus: the focused view of a window is the view whose widget holds the window's GTK focus
+	 * (gtk_root_get_focus; dialogs are layers of the main GtkWindow and share it). hasFocus,
+	 * findFocus and clearFocus read and change that state (native-focus-state.sh) with AOSP's
+	 * meaning: a view "has focus" when it or one of its descendants is the focused view.
+	 * Touch mode: AOSP keeps it per display (WindowManagerService, Android 13+) and every window of
+	 * the display reads it from AttachInfo.mInTouchMode. This platform has one display, so the state
+	 * is process-wide. It starts at config_defaultInTouchMode. The main window's GTK controllers
+	 * call in before an event reaches any view (native-touch-mode.sh): a pointer DOWN or SCROLL
+	 * enters touch mode (ViewRootImpl.EarlyPostImeInputStage.processPointerEvent), a navigation or
+	 * typing key leaves it (ViewRootImpl.checkForLeavingTouchModeAndConsume). A change reaches the
+	 * OnTouchModeChangeListeners of every window and then adjusts that window's focus
+	 * (ViewRootImpl.enterTouchMode / leaveTouchMode). Compose derives its InputModeManager from it,
+	 * which decides whether clickables can take focus (Focusability.SystemDefined). */
+	private static final boolean TL_DEBUG_TOUCH_MODE = System.getenv("ATL_DEBUG_FOCUS") != null;
+	/** 1 in touch mode, 0 not, -1 before the display default was read */
+	private static int tlTouchMode = -1;
+
+	private static boolean tlTouchModeState() {
+		if (tlTouchMode < 0)
+			tlTouchMode = android.content.res.Resources.getSystem().getBoolean(com.android.internal.R.bool.config_defaultInTouchMode) ? 1 : 0;
+		return tlTouchMode == 1;
+	}
+
+	/** AOSP ViewRootImpl.ensureTouchMode for every window of the display; true when focus changed as a result. */
+	static boolean tlEnsureTouchMode(boolean inTouchMode) {
+		if (tlTouchModeState() == inTouchMode)
+			return false;
+		tlTouchMode = inTouchMode ? 1 : 0;
+		if (TL_DEBUG_TOUCH_MODE)
+			android.util.Log.i("View", "[focus] touch mode -> " + inTouchMode);
+		boolean focusChanged = false;
+		for (Window window : Window.tlLiveWindows()) {
+			View root = window.getDecorView();
+			if (root == null || !root.isAttachedToWindow())
+				continue;
+			/* AOSP ensureTouchModeLocally: the window's listeners first, then its focus */
+			if (window.view_tree_observer != null)
+				window.view_tree_observer.dispatchOnTouchModeChanged(inTouchMode);
+			focusChanged |= inTouchMode ? tlEnterTouchMode(root) : tlLeaveTouchMode(root);
+		}
+		return focusChanged;
+	}
+
+	/** AOSP ViewRootImpl.enterTouchMode: a focused view that cannot keep focus in touch mode gives it up. */
+	private static boolean tlEnterTouchMode(View root) {
+		if (root.hasFocus()) {
+			final View focused = root.findFocus();
+			if (focused != null && !focused.isFocusableInTouchMode()) {
+				final ViewGroup ancestorToTakeFocus = tlFindAncestorToTakeFocusInTouchMode(focused);
+				if (ancestorToTakeFocus != null)
+					return ancestorToTakeFocus.requestFocus();
+				focused.tlClearFocusInternal(true, false);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** AOSP ViewRootImpl.findAncestorToTakeFocusInTouchMode (the walk ends at the window's root view). */
+	private static ViewGroup tlFindAncestorToTakeFocusInTouchMode(View focused) {
+		ViewParent parent = focused.getParent();
+		while (parent instanceof ViewGroup) {
+			final ViewGroup vgParent = (ViewGroup) parent;
+			if (vgParent.getDescendantFocusability() == ViewGroup.FOCUS_AFTER_DESCENDANTS && vgParent.isFocusableInTouchMode())
+				return vgParent;
+			parent = vgParent.getParent();
+		}
+		return null;
+	}
+
+	/** AOSP ViewRootImpl.leaveTouchMode: without touch, some view should hold focus for the keys. */
+	private static boolean tlLeaveTouchMode(View root) {
+		if (root.hasFocus()) {
+			View focusedView = root.findFocus();
+			if (!(focusedView instanceof ViewGroup))
+				return false; /* some view has focus, let it keep it */
+			else if (((ViewGroup) focusedView).getDescendantFocusability() != ViewGroup.FOCUS_AFTER_DESCENDANTS)
+				return false; /* a group has focus and does not prefer its children over itself */
+		}
+		return root.restoreDefaultFocus();
+	}
+
+	private static boolean tlIsNavigationKey(KeyEvent keyEvent) {
+		switch (keyEvent.getKeyCode()) {
+			case KeyEvent.KEYCODE_DPAD_LEFT:
+			case KeyEvent.KEYCODE_DPAD_RIGHT:
+			case KeyEvent.KEYCODE_DPAD_UP:
+			case KeyEvent.KEYCODE_DPAD_DOWN:
+			case KeyEvent.KEYCODE_DPAD_CENTER:
+			case KeyEvent.KEYCODE_PAGE_UP:
+			case KeyEvent.KEYCODE_PAGE_DOWN:
+			case KeyEvent.KEYCODE_MOVE_HOME:
+			case KeyEvent.KEYCODE_MOVE_END:
+			case KeyEvent.KEYCODE_TAB:
+			case KeyEvent.KEYCODE_SPACE:
+			case KeyEvent.KEYCODE_ENTER:
+				return true;
+		}
+		return false;
+	}
+
+	/**
+	 * AOSP ViewRootImpl.checkForLeavingTouchModeAndConsume, called by the main window's key controller
+	 * before any view sees the key; true when the key only served to leave touch mode (consumed).
+	 */
+	static boolean tlCheckForLeavingTouchModeAndConsume(KeyEvent event) {
+		if (!tlTouchModeState())
+			return false;
+		final int action = event.getAction();
+		if (action != KeyEvent.ACTION_DOWN && action != KeyEvent.ACTION_MULTIPLE)
+			return false;
+		if ((event.getFlags() & KeyEvent.FLAG_KEEP_TOUCH_MODE) != 0)
+			return false;
+		if (event.hasNoModifiers() && tlIsNavigationKey(event))
+			return tlEnsureTouchMode(false);
+		if (event.getUnicodeChar() > 0) {
+			tlEnsureTouchMode(false); /* typing keys always reach the view */
+			return false;
+		}
+		return false;
+	}
+
+	/**
+	 * A pointer DOWN or SCROLL from any device, before it reaches a view (AOSP processPointerEvent);
+	 * eventPopover is the GtkPopover of the PopupWindow it landed in (0: an activity or dialog window).
+	 * Popups that watch outside touches get theirs (AOSP ACTION_OUTSIDE).
+	 */
+	static void tlPointerDown(long eventPopover) {
+		tlEnsureTouchMode(true);
+		android.widget.PopupWindow.tlDispatchOutsideTouch(eventPopover);
+	}
+
+	/**
+	 * AOSP View.clearFocusInternal: the view gives up focus, is told so (onFocusChanged), and with
+	 * refocus the window's root view picks the next focused view; otherwise the window's global
+	 * focus listeners learn that no view has focus.
+	 */
+	void tlClearFocusInternal(boolean propagate, boolean refocus) {
+		if (widget == 0 || !nativeClearFocus(widget))
+			return;
+		onFocusChanged(false, 0, null);
+		if (propagate && (!refocus || !tlRootViewRequestFocus()) && isAttachedToWindow())
+			getViewTreeObserver().dispatchOnGlobalFocusChange(this, null);
+	}
+
+	/** AOSP rootViewRequestFocus */
+	boolean tlRootViewRequestFocus() {
+		final View root = getRootView();
+		return root != null && root.requestFocus();
+	}
+
+	/** AOSP sAlwaysAssignFocus: apps targeting API < 28 expect a view to be focused again after clearFocus. */
+	boolean tlAlwaysAssignFocus() {
+		android.content.pm.ApplicationInfo ai = getContext() != null ? getContext().getApplicationInfo() : null;
+		return ai != null && ai.targetSdkVersion < android.os.Build.VERSION_CODES.P;
+	}
+
+	/** true when this view's widget subtree holds its window's GTK focus */
+	private static native boolean nativeHasFocus(long widget);
+	/** the view owning the GTK focus widget when that view is this one or a descendant, else null */
+	private static native View nativeFindFocus(long widget);
+	/** drops the window's focus (and a deferred focus request) when this view is the focused one; true if it was */
+	private static native boolean nativeClearFocus(long widget);
 }
