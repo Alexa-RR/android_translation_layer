@@ -89,6 +89,8 @@ public class NinePatch {
 	private final int[] mYDivs;
 	private final int[] mColors;
 	private int mHasAlpha = -1;
+	/** the npLb/npOl insets at the source density (AOSP: Bitmap.getNinePatchInsets()), or null */
+	private InsetStruct mInsets;
 
 	/**
 	 * Create a drawable projection from a bitmap to nine patches.
@@ -170,10 +172,17 @@ public class NinePatch {
 
 	/** teslalinux: decodes a nine-patch from PNG bytes; see {@link #tlDecode(InputStream, int, String)}. */
 	public static NinePatch tlDecode(byte[] png, int density, String srcName) {
-		long paintable = nativeCreateFromBytes(png);
+		final int[] in = new int[11];
+		long paintable = nativeCreateFromBytes(png, in);
 		if (paintable == 0)
 			return null;
-		return new NinePatch(paintable, density, srcName);
+		final NinePatch patch = new NinePatch(paintable, density, srcName);
+		/* AOSP BitmapFactory: NinePatchPeeker.createNinePatchInsets(decodeScale); the texture is not
+		 * scaled at decode here (NinePatchDrawable scales from the density), so the scale is 1 */
+		if (in[0] != 0)
+			patch.mInsets = new InsetStruct(in[1], in[2], in[3], in[4], in[5], in[6], in[7], in[8],
+			                                Float.intBitsToFloat(in[9]), in[10], 1.0f);
+		return patch;
 	}
 
 	/** teslalinux: decodes a nine-patch file (Drawable.createFromPath: no density scaling). */
@@ -204,6 +213,7 @@ public class NinePatch {
 		mYDivs = patch.mYDivs;
 		mColors = patch.mColors;
 		mHasAlpha = patch.mHasAlpha;
+		mInsets = patch.mInsets;
 	}
 
 	@Override
@@ -414,13 +424,21 @@ public class NinePatch {
 		return new Rect(mPadding);
 	}
 
+	/**
+	 * teslalinux: the optical and outline insets of the PNG's npLb/npOl chunks at the source density
+	 * (what AOSP's Bitmap.getNinePatchInsets() returns for the decoded bitmap), or null when it has none.
+	 */
+	public InsetStruct tlGetInsets() {
+		return mInsets;
+	}
+
 	/** teslalinux: the native paintable, for drawables that let GTK paint it. */
 	public long tlPaintable() {
 		return mPaintable;
 	}
 
 	private static native long nativeCreate(byte[] chunk, long texture);
-	private static native long nativeCreateFromBytes(byte[] png);
+	private static native long nativeCreateFromBytes(byte[] png, int[] insets);
 	private static native void nativeGetInfo(long paintable, int[] out);
 	private static native void nativeGetDivs(long paintable, int[] xDivs, int[] yDivs, int[] colors);
 	private static native void nativeDraw(long paintable, long snapshot, float x, float y, float width, float height, float alpha);

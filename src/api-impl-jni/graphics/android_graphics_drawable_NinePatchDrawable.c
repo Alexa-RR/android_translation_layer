@@ -91,7 +91,10 @@ JNIEXPORT jlong JNICALL Java_android_graphics_NinePatch_nativeCreate(JNIEnv *env
 }
 
 /* the PNG comes from an APK, which is untrusted data: every chunk walk is bounds-checked */
-JNIEXPORT jlong JNICALL Java_android_graphics_NinePatch_nativeCreateFromBytes(JNIEnv *env, jclass class, jbyteArray png_array)
+/* insets_array (11 ints, may be NULL), AOSP NinePatchPeeker: [0] 1 when an npLb or npOl chunk exists,
+ * [1..4] optical insets (npLb, layout bounds), [5..8] outline insets, [9] outline radius (float bits),
+ * [10] outline alpha (npOl). aapt writes both chunks as host-order int32 (memcpy), as AOSP reads them. */
+JNIEXPORT jlong JNICALL Java_android_graphics_NinePatch_nativeCreateFromBytes(JNIEnv *env, jclass class, jbyteArray png_array, jintArray insets_array)
 {
 	jsize size = (*env)->GetArrayLength(env, png_array);
 	if (size < 8)
@@ -106,21 +109,39 @@ JNIEXPORT jlong JNICALL Java_android_graphics_NinePatch_nativeCreateFromBytes(JN
 	}
 	struct Res_png_9patch *chunk = NULL;
 	uint32_t chunk_size = 0;
+	jint insets[11] = {0};
 	if (png[0] == 0x89 && png[1] == 'P' && png[2] == 'N' && png[3] == 'G') {
 		size_t pos = 8;
 		while (pos + 8 <= (size_t)size) {
 			uint32_t len = ntohl(*(uint32_t *)(png + pos));
-			if (!strncmp((const char *)png + pos + 4, "npTc", 4)) {
+			const char *tag = (const char *)png + pos + 4;
+			const uint8_t *data = png + pos + 8;
+			if ((size_t)len > (size_t)size - pos - 8)
+				break;
+			if (!strncmp(tag, "npTc", 4) && !chunk) {
 				chunk_size = len + 4; /* the file loader keeps the 4 byte checksum too */
 				if (chunk_size >= sizeof(struct Res_png_9patch) && chunk_size <= 1024 * 1024 && pos + 8 + chunk_size <= (size_t)size) {
 					chunk = malloc(chunk_size);
-					memcpy(chunk, png + pos + 8, chunk_size);
+					memcpy(chunk, data, chunk_size);
 				}
+			} else if (!strncmp(tag, "npLb", 4) && len == 4 * sizeof(int32_t)) {
+				insets[0] = 1;
+				memcpy(&insets[1], data, 4 * sizeof(int32_t));
+			} else if (!strncmp(tag, "npOl", 4) && len == 24) { /* 4 int32, 1 float, 1 int32 holding a byte */
+				int32_t alpha;
+				insets[0] = 1;
+				memcpy(&insets[5], data, 4 * sizeof(int32_t));
+				memcpy(&insets[9], data + 16, sizeof(float));
+				memcpy(&alpha, data + 20, sizeof(int32_t));
+				insets[10] = alpha & 0xff;
+			} else if (!strncmp(tag, "IEND", 4)) {
 				break;
 			}
 			pos += 8 + (size_t)len + 4;
 		}
 	}
+	if (insets_array)
+		(*env)->SetIntArrayRegion(env, insets_array, 0, 11, insets);
 	g_bytes_unref(bytes);
 	GdkPaintable *paintable = chunk ? ninepatch_paintable_new(chunk, chunk_size, texture) : NULL;
 	if (!paintable) {

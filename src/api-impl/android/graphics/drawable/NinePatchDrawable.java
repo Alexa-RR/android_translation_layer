@@ -63,6 +63,8 @@ public class NinePatchDrawable extends Drawable {
 	private PorterDuffColorFilter mTintFilter;
 	private Rect mPadding;
 	private Insets mOpticalInsets = Insets.NONE;
+	private Rect mOutlineInsets;
+	private float mOutlineRadius;
 	private Paint mPaint;
 	private boolean mMutated;
 
@@ -128,7 +130,13 @@ public class NinePatchDrawable extends Drawable {
 	 * Drawable.createFromResourceStream in AOSP.
 	 */
 	public NinePatchDrawable(Resources res, NinePatch patch) {
-		this(new NinePatchState(patch, patch.tlGetPadding()), res);
+		this(new NinePatchState(patch, patch.tlGetPadding(), tlOpticalRect(patch)), res);
+	}
+
+	/** teslalinux: AOSP Bitmap.getOpticalInsets() of the decoded nine-patch (its npLb chunk), or null */
+	private static Rect tlOpticalRect(NinePatch patch) {
+		final NinePatch.InsetStruct insets = patch.tlGetInsets();
+		return insets != null ? insets.opticalRect : null;
 	}
 
 	/**
@@ -267,13 +275,27 @@ public class NinePatchDrawable extends Drawable {
 		}
 	}
 
-	/**
-	 * AOSP takes the outline from the bitmap's nine-patch insets (aapt's npOl chunk); ATL's loader
-	 * reads only the npTc chunk, so the outline is the plain bounds like any drawable without
-	 * outline insets.
-	 */
+	/** AOSP: the outline is the bounds minus the nine-patch's outline insets (aapt's npOl chunk), rounded */
 	@Override
 	public void getOutline(Outline outline) {
+		final Rect bounds = getBounds();
+		if (bounds.isEmpty()) {
+			return;
+		}
+
+		if (mNinePatchState != null && mOutlineInsets != null) {
+			final NinePatch.InsetStruct insets = mNinePatchState.mNinePatch.tlGetInsets();
+			if (insets != null) {
+				outline.setRoundRect(bounds.left + mOutlineInsets.left,
+				                     bounds.top + mOutlineInsets.top,
+				                     bounds.right - mOutlineInsets.right,
+				                     bounds.bottom - mOutlineInsets.bottom,
+				                     mOutlineRadius);
+				outline.setAlpha(insets.outlineAlpha * (getAlpha() / 255.0f));
+				return;
+			}
+		}
+
 		super.getOutline(outline);
 	}
 
@@ -429,7 +451,7 @@ public class NinePatchDrawable extends Drawable {
 
 			state.mNinePatch = patch;
 			state.mPadding = patch.tlGetPadding();
-			state.mOpticalInsets = Insets.NONE;
+			state.mOpticalInsets = Insets.of(tlOpticalRect(patch));
 		}
 
 		state.mAutoMirrored = a.getBoolean(
@@ -676,6 +698,17 @@ public class NinePatchDrawable extends Drawable {
 			ninePatch.getHeight(), sourceDensity, targetDensity, true);
 		mBitmapWidth = Drawable.scaleFromDensity(
 			ninePatch.getWidth(), sourceDensity, targetDensity, true);
+
+		final NinePatch.InsetStruct insets = ninePatch.tlGetInsets();
+		if (insets != null) {
+			Rect outlineRect = insets.outlineRect;
+			mOutlineInsets = NinePatch.InsetStruct.scaleInsets(outlineRect.left, outlineRect.top,
+			                                                   outlineRect.right, outlineRect.bottom, targetDensity / (float) sourceDensity);
+			mOutlineRadius = Drawable.scaleFromDensity(
+				insets.outlineRadius, sourceDensity, targetDensity);
+		} else {
+			mOutlineInsets = null;
+		}
 	}
 
 	/**

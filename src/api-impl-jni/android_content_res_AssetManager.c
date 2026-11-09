@@ -203,6 +203,9 @@ JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_loadResourceValue(J
 		_SET_INT_FIELD(outValue, "data", value.data);
 		_SET_INT_FIELD(outValue, "resourceId", resId);
 		_SET_INT_FIELD(outValue, "assetCookie", JAVA_COOKIE(cookie));
+		/* tl_value_density: AOSP CopyValue with the selected config */
+		_SET_INT_FIELD(outValue, "changingConfigurations", outSpecFlags);
+		_SET_INT_FIELD(outValue, "density", outConfig.density);
 		if (value.dataType == TYPE_STRING) {
 			const struct ResStringPool *string_pool = AssetManager_getStringPoolForCookie(asset_manager, cookie);
 			size_t len;
@@ -465,7 +468,8 @@ JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_retrieveArray(JNIEn
 		const struct ResolvedBag_Entry entry = bag->entries[i];
 		struct Res_value value = entry.value;
 		struct ResTable_config outConfig;
-		uint32_t outSpecFlags;
+		outConfig.density = 0; /* tl_value_density: a plain value has no config */
+		uint32_t outSpecFlags = bag->type_spec_flags;
 		uint32_t ref;
 		ApkAssetsCookie cookie = AssetManager_resolveReference(asset_manager, entry.cookie,
 		                                                       &value, &outConfig,
@@ -475,6 +479,8 @@ JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_retrieveArray(JNIEn
 		array[i * STYLE_NUM_ENTRIES + STYLE_DATA] = value.data;
 		array[i * STYLE_NUM_ENTRIES + STYLE_ASSET_COOKIE] = JAVA_COOKIE(cookie);
 		array[i * STYLE_NUM_ENTRIES + STYLE_RESOURCE_ID] = ref;
+		array[i * STYLE_NUM_ENTRIES + STYLE_CHANGING_CONFIGURATIONS] = outSpecFlags;
+		array[i * STYLE_NUM_ENTRIES + STYLE_DENSITY] = outConfig.density;
 	}
 	(*env)->ReleaseIntArrayElements(env, outArray, array, 0);
 	return bag->entry_count;
