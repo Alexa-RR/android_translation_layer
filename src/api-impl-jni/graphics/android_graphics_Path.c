@@ -20,8 +20,8 @@ JNIEXPORT jlong JNICALL Java_android_graphics_Path_native_1create_1builder(JNIEn
 JNIEXPORT jlong JNICALL Java_android_graphics_Path_native_1create_1path(JNIEnv *env, jclass this, jlong builder_ptr)
 {
 	GskPathBuilder *builder = _PTR(builder_ptr);
-	if (!builder)
-		builder = gsk_path_builder_new();
+	if (!builder) /* teslalinux-gfx: empty path without leaking a builder */
+		return _INTPTR(gsk_path_builder_free_to_path(gsk_path_builder_new()));
 	return _INTPTR(gsk_path_builder_to_path(builder));
 }
 

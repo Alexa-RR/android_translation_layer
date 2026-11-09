@@ -34,6 +34,8 @@ public final class RecordingCanvas extends GskCanvas {
 
 	RecordingCanvas(android.view.RenderNode node, long snapshot, int width, int height) {
 		super(snapshot);
+		// the recording's snapshot belongs to this canvas: transfer modes can compose with its content
+		tlBaseComposable = true;
 		mNode = node;
 		mWidth = width;
 		mHeight = height;

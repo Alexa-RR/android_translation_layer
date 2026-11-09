@@ -72,25 +72,25 @@ public class PorterDuff {
 		   [Sa + Da - Sa*Da,
 		     Sc*(1 - Da) + Dc*(1 - Sa) + min(Sc, Dc)]
 		 */
-		DARKEN(12),
+		DARKEN(16), /* teslalinux: AOSP's nativeInt values are SkBlendMode values (BlendMode.fromValue) */
 		/**
 		   [Sa + Da - Sa*Da,
 		     Sc*(1 - Da) + Dc*(1 - Sa) + max(Sc, Dc)]
 		 */
-		LIGHTEN(13),
+		LIGHTEN(17),
 		/**
 		 * [Sa * Da, Sc * Dc]
 		 */
-		MULTIPLY(14),
+		MULTIPLY(13),
 		/**
 		 * [Sa + Da - Sa * Da, Sc + Dc - Sc * Dc]
 		 */
-		SCREEN(15),
+		SCREEN(14),
 		/**
 		 * Saturate(S + D)
 		 */
-		ADD(16),
-		OVERLAY(17);
+		ADD(12),
+		OVERLAY(15);
 
 		public int nativeInt;
 

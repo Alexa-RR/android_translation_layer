@@ -20,7 +20,7 @@ public class Paint {
 	public long paint; // native paint
 	private Xfermode xfermode;
 	private Shader shader;
-	private Align align = Align.CENTER;
+	private Align align = Align.LEFT; // AOSP's default; the native paint starts left-aligned too
 	private ColorFilter color_filter;
 
 	public Paint() {
@@ -32,8 +32,10 @@ public class Paint {
 		setFlags(flags);
 	}
 
+	/** AOSP: a copy of every setting of the paint (the native part is cloned, the Java state copied). */
 	public Paint(Paint paint) {
 		this.paint = native_clone(paint.paint);
+		tlCopyJavaState(paint);
 	}
 
 	public void setColor(int color) {
@@ -71,8 +73,35 @@ public class Paint {
 			mFlags &= ~ANTI_ALIAS_FLAG;
 	}
 
+	/**
+	 * AOSP: font variation settings ("'wght' 700, 'wdth' 50"); false (and unchanged) when the string
+	 * does not parse. Pango applies the axes to the variable font.
+	 */
 	public boolean setFontVariationSettings(String fvs) {
+		if (fvs == null || fvs.isEmpty()) {
+			mFontVariationSettings = null;
+			native_set_font_variations(paint, null);
+			return true;
+		}
+		android.graphics.fonts.FontVariationAxis[] axes;
+		try {
+			axes = android.graphics.fonts.FontVariationAxis.fromFontVariationSettings(fvs);
+		} catch (IllegalArgumentException e) {
+			return false;
+		}
+		StringBuilder pango = new StringBuilder();
+		for (android.graphics.fonts.FontVariationAxis axis : axes) {
+			if (pango.length() > 0)
+				pango.append(',');
+			pango.append(axis.getTag()).append('=').append(axis.getStyleValue());
+		}
+		mFontVariationSettings = fvs;
+		native_set_font_variations(paint, pango.toString());
 		return true;
+	}
+
+	public String getFontVariationSettings() {
+		return mFontVariationSettings;
 	}
 
 	public void setStrokeWidth(float width) {
@@ -174,6 +203,10 @@ public class Paint {
 			if (blend.getMode() == BlendMode.MODULATE)
 				mode = PorterDuff.Mode.MULTIPLY;
 			native_set_color_filter_mode(paint, mode != null ? mode.ordinal() : PorterDuff.Mode.SRC_IN.ordinal(), blend.getColor());
+		} else if (colorFilter instanceof ColorMatrixColorFilter) {
+			native_set_color_matrix(paint, ((ColorMatrixColorFilter) colorFilter).tlArray());
+		} else if (colorFilter instanceof LightingColorFilter) {
+			native_set_color_matrix(paint, ((LightingColorFilter) colorFilter).tlArray());
 		} else {
 			native_set_color_filter_mode(paint, -1, 0);
 		}
@@ -272,18 +305,39 @@ public class Paint {
 		return (mFlags & DITHER_FLAG) != 0;
 	}
 
-	public /*native*/ void setLinearText(boolean linearText) {}
-	public /*native*/ void setSubpixelText(boolean subpixelText) {}
-	public /*native*/ void setUnderlineText(boolean underlineText) {}
-	public /*native*/ void setStrikeThruText(boolean strikeThruText) {}
-	public /*native*/ void setFakeBoldText(boolean fakeBoldText) {}
+	/* AOSP: these set their flag in the flag word; GskCanvas draws underline and strike-through
+	 * (Skia's positions), linear/subpixel text only select glyph positioning that Pango does anyway. */
+	public void setLinearText(boolean linearText) { tlSetFlag(LINEAR_TEXT_FLAG, linearText); }
+	public void setSubpixelText(boolean subpixelText) { tlSetFlag(SUBPIXEL_TEXT_FLAG, subpixelText); }
+	public void setUnderlineText(boolean underlineText) { tlSetFlag(UNDERLINE_TEXT_FLAG, underlineText); }
+	public void setStrikeThruText(boolean strikeThruText) { tlSetFlag(STRIKE_THRU_TEXT_FLAG, strikeThruText); }
+	public void setFakeBoldText(boolean fakeBoldText) { tlSetFlag(FAKE_BOLD_TEXT_FLAG, fakeBoldText); }
+	public boolean isLinearText() { return (mFlags & LINEAR_TEXT_FLAG) != 0; }
+	public boolean isSubpixelText() { return (mFlags & SUBPIXEL_TEXT_FLAG) != 0; }
+	public boolean isUnderlineText() { return (mFlags & UNDERLINE_TEXT_FLAG) != 0; }
+	public boolean isStrikeThruText() { return (mFlags & STRIKE_THRU_TEXT_FLAG) != 0; }
+
+	private void tlSetFlag(int flag, boolean on) {
+		if (on)
+			mFlags |= flag;
+		else
+			mFlags &= ~flag;
+	}
 
 	public float getStrokeWidth() {
 		return native_get_stroke_width(paint);
 	}
 
-	public /*native*/ float getStrokeMiter() { return 0; }
-	public /*native*/ void setStrokeMiter(float miter) {}
+	/** AOSP: the stroke miter limit (4 by default), kept on the GSK stroke. */
+	public float getStrokeMiter() {
+		return native_get_stroke_miter(paint);
+	}
+
+	/** AOSP: sets the miter limit; negative values are ignored. */
+	public void setStrokeMiter(float miter) {
+		if (miter >= 0)
+			native_set_stroke_miter(paint, miter);
+	}
 	public /*native*/ float getTextSize() {
 		return native_get_text_size(paint);
 	}
@@ -295,8 +349,14 @@ public class Paint {
 	public void setTextScaleX(float scaleX) {
 		mTextScaleX = scaleX;
 	}
-	public /*native*/ float getTextSkewX() { return 0; }
-	public /*native*/ void setTextSkewX(float skewX) {}
+	/** AOSP: horizontal skew of the text (0 by default, -0.25 for synthetic italic); GskCanvas skews the text. */
+	public float getTextSkewX() {
+		return mTextSkewX;
+	}
+
+	public void setTextSkewX(float skewX) {
+		mTextSkewX = skewX;
+	}
 
 	/** AOSP: distance below the baseline recommended by the font. */
 	public float descent() {
@@ -431,11 +491,23 @@ public class Paint {
 		return shader;
 	}
 
+	/** AOSP: the paint's path effect, or null. */
 	public PathEffect getPathEffect() {
-		return new PathEffect();
+		return mPathEffect;
 	}
 
+	/**
+	 * AOSP: sets or clears the path effect. A DashPathEffect also goes onto the GSK stroke, so a
+	 * dashed stroke is drawn by GSK directly; GskCanvas applies every other effect to the geometry.
+	 */
 	public PathEffect setPathEffect(PathEffect effect) {
+		mPathEffect = effect;
+		if (effect instanceof DashPathEffect) {
+			DashPathEffect dash = (DashPathEffect) effect;
+			native_set_dash(paint, dash.tlIntervals(), dash.tlPhase());
+		} else {
+			native_set_dash(paint, null, 0);
+		}
 		return effect;
 	}
 
@@ -510,9 +582,13 @@ public class Paint {
 		return fm;
 	}
 
+	/** AOSP: copies every setting of src into this paint. */
 	public void set(Paint paint) {
+		if (paint == this)
+			return;
 		native_recycle(this.paint);
 		this.paint = native_clone(paint.paint);
+		tlCopyJavaState(paint);
 	}
 
 	public boolean isFilterBitmap() {
@@ -551,7 +627,16 @@ public class Paint {
 		return native_has_glyph(paint, text);
 	}
 
-	public MaskFilter setMaskFilter(MaskFilter filter) { return filter; }
+	/** AOSP: sets or clears the mask filter (BlurMaskFilter is drawn by GskCanvas). */
+	public MaskFilter setMaskFilter(MaskFilter filter) {
+		mMaskFilter = filter;
+		return filter;
+	}
+
+	/** AOSP: the paint's mask filter, or null. */
+	public MaskFilter getMaskFilter() {
+		return mMaskFilter;
+	}
 
 	public boolean isFakeBoldText() {
 		return false;
@@ -562,8 +647,9 @@ public class Paint {
 		paint = native_create();
 		xfermode = null;
 		shader = null;
-		align = Align.CENTER;
+		align = Align.LEFT;
 		color_filter = null;
+		tlResetGfx();
 	}
 
 	private static native long native_create();
@@ -590,7 +676,6 @@ public class Paint {
 
 	/* teslalinux: Paint additions */
 	public long getColorLong() { return Color.pack(getColor()); }
-	public String getFontVariationSettings() { return null; }
 	public void setColor(long color) { setColor((int) (color >> 32)); }
 	public long getColorLongCompat() { return getColorLong(); }
 
@@ -852,4 +937,62 @@ public class Paint {
 
 	/* teslalinux: blend-mode colour filter with the real per-mode result (native-paint-colorfilter-modes.sh) */
 	private static native void native_set_color_filter_mode(long paint, int mode, int color);
+
+	/* ---- teslalinux (gfx): path effects, mask filters, text skew, stroke miter (native/atl_gfx_canvas.c) ---- */
+	private PathEffect mPathEffect;
+	private MaskFilter mMaskFilter;
+	private float mTextSkewX;
+	private String mFontVariationSettings;
+	private static native void native_set_font_variations(long paint, String pangoVariations);
+
+	private static native void native_set_stroke_miter(long paint, float miter);
+	private static native float native_get_stroke_miter(long paint);
+	private static native void native_set_dash(long paint, float[] intervals, float phase);
+	private static native void native_set_color_matrix(long paint, float[] matrix);
+
+	/** AOSP's Paint copy covers every setting; the native clone holds colour, stroke and font, this the rest. */
+	private void tlCopyJavaState(Paint src) {
+		xfermode = src.xfermode;
+		shader = src.shader;
+		align = src.align;
+		color_filter = src.color_filter;
+		tlAntiAlias = src.tlAntiAlias;
+		mTypeface = src.mTypeface;
+		mLocales = src.mLocales;
+		mFontFeatureSettings = src.mFontFeatureSettings;
+		mFlags = src.mFlags;
+		mHinting = src.mHinting;
+		mLetterSpacing = src.mLetterSpacing;
+		mTextScaleX = src.mTextScaleX;
+		mShadowLayerRadius = src.mShadowLayerRadius;
+		mShadowLayerDx = src.mShadowLayerDx;
+		mShadowLayerDy = src.mShadowLayerDy;
+		mShadowLayerColor = src.mShadowLayerColor;
+		mElegantTextHeight = src.mElegantTextHeight;
+		mHasCompatScaling = src.mHasCompatScaling;
+		mCompatScaling = src.mCompatScaling;
+		mInvCompatScaling = src.mInvCompatScaling;
+		mPathEffect = src.mPathEffect;
+		mMaskFilter = src.mMaskFilter;
+		mTextSkewX = src.mTextSkewX;
+		mFontVariationSettings = src.mFontVariationSettings;
+	}
+
+	private void tlResetGfx() {
+		mPathEffect = null;
+		mMaskFilter = null;
+		mTextSkewX = 0;
+	}
+
+	/**
+	 * The transfer mode of the paint as an SkBlendMode value, or -1 for plain source-over drawing
+	 * (no xfermode, or SRC_OVER).
+	 */
+	public int tlBlendModeValue() {
+		if (xfermode instanceof PorterDuffXfermode) {
+			int m = ((PorterDuffXfermode) xfermode).porterDuffMode;
+			return m == PorterDuff.Mode.SRC_OVER.nativeInt ? -1 : m;
+		}
+		return -1;
+	}
 }

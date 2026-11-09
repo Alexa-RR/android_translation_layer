@@ -253,20 +253,38 @@ public class RenderNode {
 		transformed_node = 0;
 	}
 
+	/** AOSP: View.LAYER_TYPE_NONE, _SOFTWARE or _HARDWARE; a layer composites the content with the layer paint. */
 	public boolean setLayerType(int layerType) {
-		return false;
+		boolean changed = tlLayerType != layerType;
+		tlLayerType = layerType;
+		if (changed)
+			tlDropTransformed();
+		return changed;
 	}
 
+	public int getLayerType() {
+		return tlLayerType;
+	}
+
+	/**
+	 * AOSP: whether the content overlaps (true by default). HWUI may then skip the layer for alpha;
+	 * GSK's opacity node always fades the content as one group, which is the overlapping result.
+	 */
 	public boolean hasOverlappingRendering() {
-		return false;
+		return tlOverlapping;
 	}
 
 	public boolean setHasOverlappingRendering(boolean hasOverlappingRendering) {
-		return false;
+		boolean changed = tlOverlapping != hasOverlappingRendering;
+		tlOverlapping = hasOverlappingRendering;
+		return changed;
 	}
 
+	/** AOSP: the paint the layer is composited with (alpha and colour filter). */
 	public boolean setLayerPaint(Paint paint) {
-		return false;
+		tlLayerPaint = paint != null ? new Paint(paint) : null;
+		tlDropTransformed();
+		return true;
 	}
 
 	/** AOSP: the outline is copied into the node (callers reuse and mutate their Outline objects). */
@@ -304,12 +322,18 @@ public class RenderNode {
 			}
 			// HWUI order (native-rendernode-layer.sh): clip, then the layer alpha over the content, then
 			// the layer matrix T(t+p) . 3D camera rotation . rotateZ . scale . T(-p)
-			final long content = clipped != 0 ? clipped : render_node;
+			final long unlayered = clipped != 0 ? clipped : render_node;
+			// a node with a layer (setLayerType, setUseCompositingLayer) is drawn into it and the layer
+			// composited with the layer paint's colour filter and alpha (native-gfx-canvas.sh)
+			final long layered = tlLayerKeep(unlayered);
+			final long content = layered != 0 ? layered : unlayered;
 			final long faded = alpha < 1.0f ? nativeOpacityKeep(content, alpha) : 0;
 			transformed_node = nativeLayerTransformKeep(faded != 0 ? faded : content, scaleX, scaleY, translationX, translationY,
 			                                            rotation, rotationX, rotationY, cameraDistance, pivotX, pivotY);
 			if (faded != 0)
 				nativeUnref(faded);
+			if (layered != 0)
+				nativeUnref(layered);
 			if (clipped != 0)
 				nativeUnref(clipped);
 		}
@@ -322,6 +346,10 @@ public class RenderNode {
 		children.clear();
 		children_nodes.clear();
 		return new GskCanvas(nativeCreateSnapshot()) {
+			{
+				// the display list's own snapshot: transfer modes can compose with its content
+				tlBaseComposable = true;
+			}
 			@Override
 			public void drawRenderNode(RenderNode node) {
 				/* gtk_snapshot_append_node() may unpack container nodes since GTK 4.22 https://gitlab.gnome.org/GNOME/gtk/-/merge_requests/9488
@@ -393,6 +421,73 @@ public class RenderNode {
 	/* teslalinux: clip helpers that leave the input node referenced (native-rendernode-clip.sh) */
 	private static native long nativeClipKeep(long node, float left, float top, float right, float bottom);
 	private static native long nativeRoundedClipKeep(long node, float left, float top, float right, float bottom, float radius);
+
+	/* ---- teslalinux (gfx): layer type and paint, overlapping, shadow colours, inverse matrix ---- */
+	private int tlLayerType;
+	private boolean tlForceLayer;
+	private boolean tlOverlapping = true;
+	private Paint tlLayerPaint;
+	private int tlSpotShadowColor = 0xff000000;
+	private int tlAmbientShadowColor = 0xff000000;
+
+	/** graphics.RenderNode.setUseCompositingLayer: a layer even with LAYER_TYPE_NONE. */
+	protected void tlSetForceLayer(boolean force, Paint paint) {
+		tlForceLayer = force;
+		setLayerPaint(paint);
+	}
+
+	/** The content wrapped in the layer paint's colour filter and alpha, or 0 when there is nothing to apply. */
+	private long tlLayerKeep(long content) {
+		if ((tlLayerType == 0 && !tlForceLayer) || tlLayerPaint == null || content == 0)
+			return 0;
+		android.graphics.ColorFilter f = tlLayerPaint.getColorFilter();
+		boolean filter = f instanceof android.graphics.PorterDuffColorFilter || f instanceof android.graphics.BlendModeColorFilter
+		                 || f instanceof android.graphics.ColorMatrixColorFilter || f instanceof android.graphics.LightingColorFilter;
+		float a = tlLayerPaint.getAlpha() / 255f;
+		if (!filter && a >= 1f)
+			return 0;
+		return nativeLayerPaintKeep(content, filter ? tlLayerPaint.paint : 0, a);
+	}
+
+	private static native long nativeLayerPaintKeep(long node, long paint, float alpha);
+
+	public boolean setSpotShadowColor(int color) {
+		boolean changed = tlSpotShadowColor != color;
+		tlSpotShadowColor = color;
+		return changed;
+	}
+
+	public int getSpotShadowColor() {
+		return tlSpotShadowColor;
+	}
+
+	public boolean setAmbientShadowColor(int color) {
+		boolean changed = tlAmbientShadowColor != color;
+		tlAmbientShadowColor = color;
+		return changed;
+	}
+
+	public int getAmbientShadowColor() {
+		return tlAmbientShadowColor;
+	}
+
+	/** AOSP: the inverse of getMatrix (identity when it cannot be inverted). */
+	public void getInverseMatrix(Matrix outMatrix) {
+		Matrix m = new Matrix();
+		getMatrix(m);
+		if (!m.invert(outMatrix))
+			outMatrix.reset();
+	}
+
+	public boolean getClipToBounds() {
+		return clipToBounds;
+	}
+
+	/** AOSP (hidden, used by Compose): frees the recorded display list. */
+	public void destroyDisplayListData() {
+		if (isValid())
+			discardDisplayList();
+	}
 
 	/* teslalinux: alpha and the full HWUI layer matrix (native-rendernode-layer.sh) */
 	private native long nativeOpacityKeep(long node, float alpha);

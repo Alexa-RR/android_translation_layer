@@ -139,6 +139,7 @@ public final class RenderNode extends android.view.RenderNode {
 		boolean changed = mUseCompositingLayer != forceToLayer || mLayerPaint != paint;
 		mUseCompositingLayer = forceToLayer;
 		mLayerPaint = paint;
+		tlSetForceLayer(forceToLayer, paint);
 		return changed;
 	}
 

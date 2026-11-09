@@ -19,6 +19,13 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeCreateNode(JNIEnv *en
 	return _INTPTR(node);
 }
 
+#define TL_PATCH1(GET, MAKE) { \
+			GskRenderNode *child = patch_node(GET(node), old_child, new_child); \
+			new_node = child != GET(node) ? (MAKE) : gsk_render_node_ref(node); \
+			gsk_render_node_unref(child); \
+			break; \
+		}
+
 static GskRenderNode *patch_node(GskRenderNode *node, GskRenderNode *old_child, GskRenderNode *new_child)
 {
 	if (node == old_child)
@@ -49,6 +56,66 @@ static GskRenderNode *patch_node(GskRenderNode *node, GskRenderNode *old_child, 
 			else
 				new_node = gsk_render_node_ref(node);
 			gsk_render_node_unref(child);
+			break;
+		}
+		/* teslalinux-gfx: every node type with children, so a child under any of them is patched */
+		case GSK_OPACITY_NODE:
+			TL_PATCH1(gsk_opacity_node_get_child, gsk_opacity_node_new(child, gsk_opacity_node_get_opacity(node)))
+		case GSK_COLOR_MATRIX_NODE:
+			TL_PATCH1(gsk_color_matrix_node_get_child, gsk_color_matrix_node_new(child, gsk_color_matrix_node_get_color_matrix(node), gsk_color_matrix_node_get_color_offset(node)))
+		case GSK_ROUNDED_CLIP_NODE:
+			TL_PATCH1(gsk_rounded_clip_node_get_child, gsk_rounded_clip_node_new(child, gsk_rounded_clip_node_get_clip(node)))
+		case GSK_FILL_NODE:
+			TL_PATCH1(gsk_fill_node_get_child, gsk_fill_node_new(child, gsk_fill_node_get_path(node), gsk_fill_node_get_fill_rule(node)))
+		case GSK_STROKE_NODE:
+			TL_PATCH1(gsk_stroke_node_get_child, gsk_stroke_node_new(child, gsk_stroke_node_get_path(node), gsk_stroke_node_get_stroke(node)))
+		case GSK_BLUR_NODE:
+			TL_PATCH1(gsk_blur_node_get_child, gsk_blur_node_new(child, gsk_blur_node_get_radius(node)))
+		case GSK_DEBUG_NODE:
+			TL_PATCH1(gsk_debug_node_get_child, gsk_debug_node_new(child, g_strdup(gsk_debug_node_get_message(node))))
+		case GSK_REPEAT_NODE: {
+			graphene_rect_t rb;
+			gsk_render_node_get_bounds(node, &rb);
+			TL_PATCH1(gsk_repeat_node_get_child, gsk_repeat_node_new(&rb, child, gsk_repeat_node_get_child_bounds(node)))
+		}
+		case GSK_SHADOW_NODE: {
+			gsize ns = gsk_shadow_node_get_n_shadows(node);
+			GskShadow shadows[ns > 0 ? ns : 1];
+			for (gsize i = 0; i < ns; i++)
+				shadows[i] = *gsk_shadow_node_get_shadow(node, i);
+			TL_PATCH1(gsk_shadow_node_get_child, gsk_shadow_node_new(child, shadows, ns))
+		}
+		case GSK_MASK_NODE: {
+			GskRenderNode *src = patch_node(gsk_mask_node_get_source(node), old_child, new_child);
+			GskRenderNode *msk = patch_node(gsk_mask_node_get_mask(node), old_child, new_child);
+			if (src != gsk_mask_node_get_source(node) || msk != gsk_mask_node_get_mask(node))
+				new_node = gsk_mask_node_new(src, msk, gsk_mask_node_get_mask_mode(node));
+			else
+				new_node = gsk_render_node_ref(node);
+			gsk_render_node_unref(src);
+			gsk_render_node_unref(msk);
+			break;
+		}
+		case GSK_BLEND_NODE: {
+			GskRenderNode *bot = patch_node(gsk_blend_node_get_bottom_child(node), old_child, new_child);
+			GskRenderNode *top = patch_node(gsk_blend_node_get_top_child(node), old_child, new_child);
+			if (bot != gsk_blend_node_get_bottom_child(node) || top != gsk_blend_node_get_top_child(node))
+				new_node = gsk_blend_node_new(bot, top, gsk_blend_node_get_blend_mode(node));
+			else
+				new_node = gsk_render_node_ref(node);
+			gsk_render_node_unref(bot);
+			gsk_render_node_unref(top);
+			break;
+		}
+		case GSK_CROSS_FADE_NODE: {
+			GskRenderNode *a = patch_node(gsk_cross_fade_node_get_start_child(node), old_child, new_child);
+			GskRenderNode *b = patch_node(gsk_cross_fade_node_get_end_child(node), old_child, new_child);
+			if (a != gsk_cross_fade_node_get_start_child(node) || b != gsk_cross_fade_node_get_end_child(node))
+				new_node = gsk_cross_fade_node_new(a, b, gsk_cross_fade_node_get_progress(node));
+			else
+				new_node = gsk_render_node_ref(node);
+			gsk_render_node_unref(a);
+			gsk_render_node_unref(b);
 			break;
 		}
 		case GSK_CLIP_NODE: {
