@@ -85,8 +85,33 @@ EGLBoolean bionic_eglPresentationTimeANDROID(EGLDisplay dpy, EGLSurface surface,
 	return EGL_TRUE;
 }
 
+/* teslalinux (native-egl-swapchain.sh): glBufferData without llvmpipe's rasterizer wait */
+static int tl_gl_is_llvmpipe(void)
+{
+	static int is_llvmpipe = -1;
+	if (is_llvmpipe < 0) {
+		const char *renderer = (const char *)glGetString(GL_RENDERER);
+		if (!renderer)
+			return 0; /* no current context: decide on a later call */
+		is_llvmpipe = strstr(renderer, "llvmpipe") != NULL;
+	}
+	return is_llvmpipe;
+}
+
+void bionic_glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenum usage)
+{
+	if (data && size > 0 && tl_gl_is_llvmpipe()) {
+		glBufferData(target, size, NULL, usage); /* new storage; the queued draws keep the old one */
+		glBufferSubData(target, 0, size, data);
+		return;
+	}
+	glBufferData(target, size, data, usage);
+}
+
 void (*bionic_eglGetProcAddress(char const *procname))(void)
 {
+	if (__unlikely__(!strcmp(procname, "glBufferData")))
+		return (void (*)(void))bionic_glBufferData;
 	if (__unlikely__(!strcmp(procname, "eglPresentationTimeANDROID")))
 		return (void (*)(void))bionic_eglPresentationTimeANDROID;
 
@@ -190,7 +215,7 @@ EGLSurface bionic_eglCreatePbufferSurface(EGLDisplay display, EGLConfig config, 
 	}
 }
 
-#define NUM_BUFFERS 3
+#define NUM_BUFFERS 4 /* teslalinux: GTK holds two frames, the app draws one ahead (native-egl-swapchain.sh) */
 
 struct _ATLSurface {
 	GObject parent;
