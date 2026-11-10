@@ -409,18 +409,29 @@ JNIEXPORT void JNICALL Java_android_text_Layout_native_1draw_1custom_1canvas(JNI
 	PangoLayout *pango_layout = PANGO_LAYOUT(_PTR(layout));
 
 	const gchar *text = pango_layout_get_text(pango_layout);
+	/* tl_draw_lines_u16: the paragraph as one UTF-16 string; each line is its UTF-16 range */
+	glong text_u16_len = 0;
+	gunichar2 *text_u16 = g_utf8_to_utf16(text, -1, NULL, &text_u16_len, NULL);
+	jstring text_jstr = (*env)->NewString(env, text_u16 ? text_u16 : (const gunichar2 *)"", text_u16 ? text_u16_len : 0);
+	g_free(text_u16);
 	PangoLayoutIter *pango_iter = pango_layout_get_iter(pango_layout);
 	do {
 		PangoLayoutLine *pango_line = pango_layout_iter_get_line_readonly(pango_iter);
-
-		jstring text_jstr = (*env)->NewStringUTF(env, text + pango_line->start_index);
-		jint end = (*env)->GetStringLength(env, text_jstr);
-		if (pango_line->length < end)
-			end = pango_line->length;
-		jfloat y = (float)pango_layout_iter_get_baseline(pango_iter) / PANGO_SCALE;
-		(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, text_jstr, (jint)0, end, (jfloat)0, y, paint);
-		(*env)->DeleteLocalRef(env, text_jstr);
+		jint start = tl_byte_to_u16(text, pango_line->start_index);
+		jint end = tl_byte_to_u16(text, pango_line->start_index + pango_line->length);
+		if (end > start) {
+			PangoRectangle logical;
+			pango_layout_iter_get_line_extents(pango_iter, NULL, &logical);
+			jfloat x = (float)logical.x / PANGO_SCALE;
+			jfloat y = (float)pango_layout_iter_get_baseline(pango_iter) / PANGO_SCALE;
+			(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, text_jstr, start, end, x, y, paint);
+			if ((*env)->ExceptionCheck(env)) {
+				(*env)->ExceptionDescribe(env);
+				break;
+			}
+		}
 	} while (pango_layout_iter_next_line(pango_iter));
+	(*env)->DeleteLocalRef(env, text_jstr);
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1for_1offset(JNIEnv *env, jclass class, jlong layout, jint offset)
