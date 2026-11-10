@@ -313,17 +313,15 @@ JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1bottom(JNIEnv
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1left(JNIEnv *env, jobject object, jlong layout, jint line)
 {
-	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(PANGO_LAYOUT(_PTR(layout)), line);
-	PangoRectangle logical_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, NULL);
+	PangoRectangle logical_rect; /* tl_line_left_layout: in the layout, alignment included */
+	tl_line_layout_extents(PANGO_LAYOUT(_PTR(layout)), line, &logical_rect);
 	return logical_rect.x / PANGO_SCALE;
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1right(JNIEnv *env, jobject object, jlong layout, jint line)
 {
-	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(PANGO_LAYOUT(_PTR(layout)), line);
-	PangoRectangle logical_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, NULL);
+	PangoRectangle logical_rect; /* tl_line_left_layout: in the layout, alignment included */
+	tl_line_layout_extents(PANGO_LAYOUT(_PTR(layout)), line, &logical_rect);
 	return (logical_rect.x + logical_rect.width) / PANGO_SCALE;
 }
 
@@ -413,7 +411,6 @@ JNIEXPORT void JNICALL Java_android_text_Layout_native_1draw_1custom_1canvas(JNI
 	glong text_u16_len = 0;
 	gunichar2 *text_u16 = g_utf8_to_utf16(text, -1, NULL, &text_u16_len, NULL);
 	jstring text_jstr = (*env)->NewString(env, text_u16 ? text_u16 : (const gunichar2 *)"", text_u16 ? text_u16_len : 0);
-	g_free(text_u16);
 	PangoLayoutIter *pango_iter = pango_layout_get_iter(pango_layout);
 	do {
 		PangoLayoutLine *pango_line = pango_layout_iter_get_line_readonly(pango_iter);
@@ -424,14 +421,40 @@ JNIEXPORT void JNICALL Java_android_text_Layout_native_1draw_1custom_1canvas(JNI
 			pango_layout_iter_get_line_extents(pango_iter, NULL, &logical);
 			jfloat x = (float)logical.x / PANGO_SCALE;
 			jfloat y = (float)pango_layout_iter_get_baseline(pango_iter) / PANGO_SCALE;
-			(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, text_jstr, start, end, x, y, paint);
+			/* tl_draw_ellipsis: an ellipsized line is the kept text with the gap replaced by the
+			 * ellipsis (AOSP draws the Ellipsizer's text); the ellipsis run covers the elided range */
+			PangoGlyphItem *ell = NULL;
+			for (GSList *l = pango_line->runs; l; l = l->next) {
+				PangoGlyphItem *run = l->data;
+				if (run && (run->item->analysis.flags & PANGO_ANALYSIS_FLAG_IS_ELLIPSIS)) {
+					ell = run;
+					break;
+				}
+			}
+			if (ell && text_u16 && end <= text_u16_len) {
+				jint es = CLAMP(tl_byte_to_u16(text, ell->item->offset), start, end);
+				jint ee = CLAMP(tl_byte_to_u16(text, ell->item->offset + ell->item->length), es, end);
+				jsize n = (es - start) + 1 + (end - ee);
+				jchar *buf = g_new(jchar, n);
+				memcpy(buf, text_u16 + start, (gsize)(es - start) * sizeof(jchar));
+				buf[es - start] = 0x2026;
+				memcpy(buf + (es - start) + 1, text_u16 + ee, (gsize)(end - ee) * sizeof(jchar));
+				jstring line_jstr = (*env)->NewString(env, buf, n);
+				g_free(buf);
+				(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, line_jstr, 0, n, x, y, paint);
+				(*env)->DeleteLocalRef(env, line_jstr);
+			} else {
+				(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, text_jstr, start, end, x, y, paint);
+			}
 			if ((*env)->ExceptionCheck(env)) {
 				(*env)->ExceptionDescribe(env);
 				break;
 			}
 		}
 	} while (pango_layout_iter_next_line(pango_iter));
+	pango_layout_iter_free(pango_iter);
 	(*env)->DeleteLocalRef(env, text_jstr);
+	g_free(text_u16);
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1for_1offset(JNIEnv *env, jclass class, jlong layout, jint offset)
@@ -513,16 +536,45 @@ JNIEXPORT void JNICALL Java_android_text_Layout_native_1set_1max_1lines(JNIEnv *
 	pango_layout_set_height(PANGO_LAYOUT(_PTR(layout)), lines > 0 ? -lines : -1);
 }
 
+/* pango_direction_simple (Pango keeps it private): 1 left to right, -1 right to left, 0 neutral */
+static int tl_dir_simple(PangoDirection d)
+{
+	switch (d) {
+		case PANGO_DIRECTION_LTR:
+		case PANGO_DIRECTION_WEAK_LTR:
+		case PANGO_DIRECTION_TTB_RTL:
+			return 1;
+		case PANGO_DIRECTION_RTL:
+		case PANGO_DIRECTION_WEAK_RTL:
+		case PANGO_DIRECTION_TTB_LTR:
+			return -1;
+		default:
+			return 0;
+	}
+}
+
 /* Layout.Alignment ordinal: NORMAL, OPPOSITE, CENTER, LEFT, RIGHT. Pango's LEFT/RIGHT follow each
  * paragraph's direction (auto-dir), which is AOSP's NORMAL/OPPOSITE. */
 JNIEXPORT void JNICALL Java_android_text_Layout_native_1set_1alignment(JNIEnv *env, jobject object, jlong layout, jint align)
 {
+	PangoLayout *pango_layout = PANGO_LAYOUT(_PTR(layout));
+	/* tl_align_absolute: Pango swaps LEFT/RIGHT for a paragraph whose direction is opposite to the
+	 * context's base direction (auto-dir); AOSP's ALIGN_LEFT/RIGHT are absolute, so they are given to
+	 * Pango through the (first) paragraph's resolved direction */
+	gboolean flipped = FALSE;
+	if ((align == 3 || align == 4) && pango_layout_get_auto_dir(pango_layout)) {
+		PangoLayoutLine *first = pango_layout_get_line_readonly(pango_layout, 0);
+		int line_dir = first ? tl_dir_simple((PangoDirection)first->resolved_dir) : 0;
+		int base_dir = tl_dir_simple(pango_context_get_base_dir(pango_layout_get_context(pango_layout)));
+		flipped = line_dir != 0 && line_dir == -base_dir;
+	}
 	PangoAlignment a = PANGO_ALIGN_LEFT;
 	switch (align) {
 		case 1: a = PANGO_ALIGN_RIGHT; break;
 		case 2: a = PANGO_ALIGN_CENTER; break;
-		case 4: a = PANGO_ALIGN_RIGHT; break;
+		case 3: a = flipped ? PANGO_ALIGN_RIGHT : PANGO_ALIGN_LEFT; break;
+		case 4: a = flipped ? PANGO_ALIGN_LEFT : PANGO_ALIGN_RIGHT; break;
 		default: a = PANGO_ALIGN_LEFT; break;
 	}
-	pango_layout_set_alignment(PANGO_LAYOUT(_PTR(layout)), a);
+	pango_layout_set_alignment(pango_layout, a);
 }

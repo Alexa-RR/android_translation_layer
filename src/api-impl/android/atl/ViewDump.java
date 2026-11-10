@@ -250,6 +250,31 @@ public final class ViewDump {
 						for (View v : found)
 							dumpFields("fields", v, depth, new java.util.IdentityHashMap<Object, Boolean>());
 						Log.i(TAG, "fields: " + found.size() + " view(s) named " + parts[1]);
+					} else if (command.startsWith("layoutprobe ")) {
+						// "layoutprobe WIDTH SIZE TEXT": a StaticLayout of TEXT at WIDTH px and SIZE px, as
+						// Compose builds one: each line's range, width and left/right
+						String[] parts = command.trim().split(" ", 4);
+						android.text.TextPaint tp = new android.text.TextPaint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+						tp.setTextSize(Float.parseFloat(parts[2]));
+						String probeText = parts[3];
+						int probeMaxLines = Integer.MAX_VALUE;
+						if (probeText.startsWith("maxlines=")) {
+							int sp = probeText.indexOf(' ');
+							probeMaxLines = Integer.parseInt(probeText.substring(9, sp));
+							probeText = probeText.substring(sp + 1);
+						}
+						parts[3] = probeText;
+						android.text.StaticLayout.Builder pb = android.text.StaticLayout.Builder.obtain(probeText, 0, probeText.length(), tp,
+						    Integer.parseInt(parts[1]));
+						if (probeMaxLines != Integer.MAX_VALUE)
+							pb.setMaxLines(probeMaxLines).setEllipsize(android.text.TextUtils.TruncateAt.END);
+						android.text.StaticLayout sl = pb.build();
+						Log.i(TAG, "layoutprobe: width=" + sl.getWidth() + " lines=" + sl.getLineCount() + " desired="
+						      + android.text.Layout.getDesiredWidth(parts[3], tp) + " measureText=" + tp.measureText(parts[3]));
+						for (int i = 0; i < sl.getLineCount(); i++)
+							Log.i(TAG, "layoutprobe: line " + i + " [" + sl.getLineStart(i) + "," + sl.getLineEnd(i) + ") width="
+							      + sl.getLineWidth(i) + " left=" + sl.getLineLeft(i) + " right=" + sl.getLineRight(i)
+							      + " text=\"" + parts[3].substring(sl.getLineStart(i), sl.getLineEnd(i)) + "\"");
 					} else if (command.startsWith("tvinfo ")) {
 						// "tvinfo TEXT": every TextView showing TEXT: its size, typeface, measured and laid-out
 						// widths next to Paint.measureText and the text layout's own width
