@@ -57,4 +57,17 @@
 #define JAVA_ENUM(name) \
 	name = JOIN3(JAVA_ENUM_CLASS, _, name)
 
+/* teslalinux (native-gsk-rotate-snap.sh): rotations within 1e-4 degree of a multiple of 90 degrees
+ * are that multiple (GTK 4.18's GL renderer drops content rotated by a few 1e-6 degrees). The GTK
+ * headers come first so their prototypes are not macro-expanded. */
+#include <gtk/gtk.h>
+#include <math.h>
+static inline float tl_gsk_angle(float degrees)
+{
+	const float quarter = roundf(degrees / 90.0f) * 90.0f;
+	return fabsf(degrees - quarter) < 1e-4f ? quarter : degrees;
+}
+#define gtk_snapshot_rotate(snapshot, angle) (gtk_snapshot_rotate)((snapshot), tl_gsk_angle(angle))
+#define gsk_transform_rotate(next, angle) (gsk_transform_rotate)((next), tl_gsk_angle(angle))
+
 #endif

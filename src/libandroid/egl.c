@@ -238,6 +238,7 @@ struct _ATLSurface {
 	GAsyncQueue *vsync;
 	GAsyncQueue *unused_buffers;
 	gboolean destroyed;
+	GdkGLContext *tl_import_context; /* native-egl-import-context.sh */
 };
 G_DECLARE_FINAL_TYPE(ATLSurface, atl_surface, ATL, SURFACE, GObject);
 
@@ -256,18 +257,57 @@ static GdkSurface *tl_surface_for_widget(GtkWidget *widget)
 	g_list_free(tops);
 	return surface;
 }
+/* teslalinux (native-egl-import-context.sh): make the surface's import context current, creating and
+ * realizing it on first use; returns the context that was current before (to restore), or sets *ok */
+static GdkGLContext *tl_import_context_begin(ATLSurface *atl_surface, gboolean create, gboolean *ok)
+{
+	GdkGLContext *previous = gdk_gl_context_get_current();
+	*ok = FALSE;
+	if (!atl_surface->tl_import_context && create) {
+		GError *error = NULL;
+		GdkSurface *surface = tl_surface_for_widget(GTK_WIDGET(atl_surface->surface_view_widget));
+		GdkGLContext *context = surface ? gdk_surface_create_gl_context(surface, &error) : NULL;
+		if (context && !gdk_gl_context_realize(context, &error))
+			g_clear_object(&context);
+		if (!context) {
+			static int warned;
+			if (!warned++)
+				fprintf(stderr, "[egl] no GL context to import SurfaceView frames into GTK: %s\n", error ? error->message : "no GdkSurface");
+			g_clear_error(&error);
+			return previous;
+		}
+		atl_surface->tl_import_context = context;
+	}
+	if (!atl_surface->tl_import_context)
+		return previous;
+	gdk_gl_context_make_current(atl_surface->tl_import_context);
+	*ok = gdk_gl_context_get_current() == atl_surface->tl_import_context;
+	return previous;
+}
+
+static void tl_import_context_end(GdkGLContext *previous)
+{
+	if (previous)
+		gdk_gl_context_make_current(previous);
+	else
+		gdk_gl_context_clear_current();
+}
+
 static void atl_surface_dispose(GObject *object)
 {
 	ATLSurface *atl_surface = ATL_SURFACE(object);
-	GdkGLContext *gtk_gl_context = gdk_surface_create_gl_context(tl_surface_for_widget(GTK_WIDGET(atl_surface->surface_view_widget)), NULL);
-	gdk_gl_context_make_current(gtk_gl_context);
+	gboolean current;
+	GdkGLContext *previous = tl_import_context_begin(atl_surface, FALSE, &current);
 	for (int i = 0; i < NUM_BUFFERS; i++) {
 		if (atl_surface->buffers[i].texture_builder) {
 			GLuint texture_id = gdk_gl_texture_builder_get_id(atl_surface->buffers[i].texture_builder);
-			glDeleteTextures(1, &texture_id);
-			g_object_unref(atl_surface->buffers[i].texture_builder);
+			if (current) /* never in another context: the number may name one of GTK's textures */
+				glDeleteTextures(1, &texture_id);
+			g_clear_object(&atl_surface->buffers[i].texture_builder);
 		}
 	}
+	tl_import_context_end(previous);
+	g_clear_object(&atl_surface->tl_import_context);
 	g_async_queue_unref(atl_surface->unused_buffers);
 	g_async_queue_unref(atl_surface->vsync);
 	g_object_unref(atl_surface->surface_view_widget);
@@ -470,8 +510,16 @@ static gboolean queue_texture(gpointer data)
 	struct atl_surface_buffer *buffer = atl_surface->front_buffer;
 	if (!buffer->texture_builder) {
 		GLuint texture_id;
-		GdkGLContext *gtk_gl_context = gdk_surface_create_gl_context(tl_surface_for_widget(GTK_WIDGET(atl_surface->surface_view_widget)), NULL);
-		gdk_gl_context_make_current(gtk_gl_context);
+		gboolean current;
+		GdkGLContext *previous = tl_import_context_begin(atl_surface, TRUE, &current);
+		if (!current) {
+			/* no context to import into: the frame is consumed and dropped (its buffer goes back) */
+			tl_import_context_end(previous);
+			g_async_queue_push(atl_surface->unused_buffers, buffer);
+			g_async_queue_push(atl_surface->vsync, GINT_TO_POINTER(1));
+			g_object_unref(atl_surface);
+			return G_SOURCE_REMOVE;
+		}
 		glGenTextures(1, &texture_id);
 		glBindTexture(GL_TEXTURE_2D, texture_id);
 		if (!glEGLImageTargetTexture2DOES)
@@ -481,12 +529,12 @@ static gboolean queue_texture(gpointer data)
 		eglDestroyImage(eglGetCurrentDisplay(), buffer->egl_image);
 		buffer->egl_image = NULL;
 		buffer->texture_builder = gdk_gl_texture_builder_new();
-		gdk_gl_texture_builder_set_context(buffer->texture_builder, gtk_gl_context);
+		gdk_gl_texture_builder_set_context(buffer->texture_builder, atl_surface->tl_import_context);
 		gdk_gl_texture_builder_set_id(buffer->texture_builder, texture_id);
 		gdk_gl_texture_builder_set_format(buffer->texture_builder, GDK_MEMORY_R8G8B8A8_PREMULTIPLIED);
 		gdk_gl_texture_builder_set_width(buffer->texture_builder, atl_surface->width);
 		gdk_gl_texture_builder_set_height(buffer->texture_builder, atl_surface->height);
-		gdk_gl_context_clear_current();
+		tl_import_context_end(previous);
 	}
 	atl_surface->surface_view_widget->frame_callback_data = atl_surface->vsync;
 	atl_surface->surface_view_widget->frame_callback = frame_callback;
