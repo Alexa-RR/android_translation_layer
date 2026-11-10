@@ -1079,6 +1079,7 @@ srcs = [
 	'javax/microedition/khronos/opengles/GL11.java',
 	'javax/microedition/khronos/opengles/GL11Ext.java',
 	'javax/microedition/khronos/opengles/GL11ExtensionPack.java',
+	'libcore/util/FP16.java',
 	'org/apache/harmony/xnet/provider/jsse/SSLParametersImpl.java',
 ]
 java_args = [
