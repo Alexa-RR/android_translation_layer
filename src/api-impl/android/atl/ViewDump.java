@@ -310,6 +310,11 @@ public final class ViewDump {
 								findObjects(a, parts[2], depth, new java.util.IdentityHashMap<Object, Boolean>(), a.getClass().getSimpleName(), found);
 						}
 						Log.i(TAG, "objects: " + found[0] + " object(s) of " + parts[2]);
+					} else if (command.startsWith("ctree ")) {
+						// "ctree X Y W H": every Compose LayoutNode whose bounds meet the window rect: bounds,
+						// placed state, measure policy, modifier nodes and any text they hold
+						String[] parts = command.trim().split(" ");
+						composeTree(decor, Float.parseFloat(parts[1]), Float.parseFloat(parts[2]), Float.parseFloat(parts[3]), Float.parseFloat(parts[4]));
 					} else if (command.startsWith("hit ")) {
 						// "hit X Y": what Compose's own hit test returns at a window position (per compose root)
 						String[] parts = command.trim().split(" ");
@@ -1031,6 +1036,92 @@ public final class ViewDump {
 			for (Object c : (java.util.List<?>) children)
 				walkTextFields(c, depth + 1, sb, owner);
 		}
+	}
+
+	static void composeTree(View root, float x, float y, float w, float h) {
+		java.util.ArrayList<View> composeViews = new java.util.ArrayList<>();
+		collectByName(root, "AndroidComposeView", composeViews);
+		for (View cv : composeViews) {
+			if (!cv.isAttachedToWindow() || cv.getWidth() == 0)
+				continue;
+			int[] loc = new int[2];
+			cv.getLocationInWindow(loc);
+			Log.i(TAG, "ctree " + cv.getWidth() + "x" + cv.getHeight() + " @" + loc[0] + "," + loc[1]);
+			try {
+				ClassLoader cl = cv.getClass().getClassLoader();
+				Class<?> lc = Class.forName("androidx.compose.ui.layout.LayoutCoordinates", true, cl);
+				java.lang.reflect.Method boundsInRoot = Class.forName("androidx.compose.ui.layout.LayoutCoordinatesKt", true, cl).getMethod("boundsInRoot", lc);
+				composeTreeNode(call(cv, "getRoot"), 0, x - loc[0], y - loc[1], w, h, boundsInRoot, new int[] {0});
+			} catch (Throwable e) {
+				Log.i(TAG, "ctree: " + e);
+			}
+		}
+	}
+
+	private static void composeTreeNode(Object ln, int depth, float x, float y, float w, float h, java.lang.reflect.Method boundsInRoot, int[] count) throws Exception {
+		if (ln == null || count[0] > 400)
+			return;
+		Object coords = call(ln, "getCoordinates");
+		Object rect = boundsInRoot.invoke(null, coords);
+		float l = (Float) call(rect, "getLeft"), t = (Float) call(rect, "getTop"), r = (Float) call(rect, "getRight"), b = (Float) call(rect, "getBottom");
+		boolean meets = r >= x && l <= x + w && b >= y && t <= y + h;
+		if (meets) {
+			count[0]++;
+			StringBuilder sb = new StringBuilder();
+			for (int i = 0; i < depth && i < 40; i++)
+				sb.append(' ');
+			sb.append('#').append(call(ln, "getSemanticsId")).append(' ').append((int) l).append(',').append((int) t).append('-').append((int) r).append(',').append((int) b);
+			try {
+				sb.append(" w=").append(call(ln, "getWidth")).append(" h=").append(call(ln, "getHeight"));
+			} catch (Exception ignored) {
+			}
+			try {
+				if (!(Boolean) call(ln, "isPlaced"))
+					sb.append(" NOTPLACED");
+			} catch (Exception ignored) {
+			}
+			try {
+				Object mp = call(ln, "getMeasurePolicy");
+				sb.append(" mp=").append(mp.getClass().getName());
+			} catch (Exception ignored) {
+			}
+			try {
+				Object chain = call(ln, "getNodes$ui_release", "getNodes$androidx_compose_ui_ui", "getNodes");
+				Object node = call(chain, "getHead$ui_release", "getHead$androidx_compose_ui_ui", "getHead");
+				sb.append(" [");
+				for (int i = 0; node != null && i < 30; i++) {
+					String sn = node.getClass().getSimpleName();
+					if (!sn.equals("TailModifierNode") && !sn.contains("SentinelHead"))
+						sb.append(sn.length() <= 2 ? node.getClass().getName() : sn).append(' ');
+					for (Class<?> c = node.getClass(); c != null && c != Object.class; c = c.getSuperclass()) {
+						for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+							if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+								continue;
+							Class<?> ft = f.getType();
+							if (ft == String.class || CharSequence.class.isAssignableFrom(ft)) {
+								f.setAccessible(true);
+								Object v = f.get(node);
+								if (v != null && v.toString().length() > 0)
+									sb.append(f.getName()).append("=\"").append(v.toString().replace('\n', ' ')).append("\" ");
+							} else if (sn.startsWith("Draw") || sn.contains("Background") || sn.contains("Graphics")) {
+								if (ft == float.class && f.getName().toLowerCase().contains("alpha")) {
+									f.setAccessible(true);
+									sb.append(f.getName()).append('=').append(f.getFloat(node)).append(' ');
+								}
+							}
+						}
+					}
+					node = call(node, "getChild$ui_release", "getChild$androidx_compose_ui_ui", "getChild");
+				}
+				sb.append(']');
+			} catch (Exception e) {
+				sb.append(" nodes?").append(e.getClass().getSimpleName());
+			}
+			Log.i(TAG, "ctree " + sb);
+		}
+		java.util.List<?> children = (java.util.List<?>) call(ln, "getChildren$ui_release", "getChildren$androidx_compose_ui_ui", "getChildren");
+		for (Object c : children)
+			composeTreeNode(c, depth + 1, x, y, w, h, boundsInRoot, count);
 	}
 
 	static void composeHitTest(View root, float x, float y) {

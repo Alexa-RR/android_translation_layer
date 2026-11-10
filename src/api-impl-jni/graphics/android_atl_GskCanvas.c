@@ -250,7 +250,11 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRenderNode(JNIEnv 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipPath(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong path_ptr, jint fill_rule)
 {
 	GdkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
-	gtk_snapshot_push_fill(snapshot, (GskPath *)_PTR(path_ptr), fill_rule ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING);
+	/* tl_clip_path_mask: the content is masked by the alpha of the filled path (a fill node lost
+	 * GTK widget content); the mask child is closed here, the content's pop is the caller's */
+	gtk_snapshot_push_mask(snapshot, GSK_MASK_MODE_ALPHA);
+	gtk_snapshot_append_fill(snapshot, (GskPath *)_PTR(path_ptr), fill_rule ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING, &(GdkRGBA){0, 0, 0, 1});
+	gtk_snapshot_pop(snapshot);
 }
 
 /* clipOutPath (Region.Op.DIFFERENCE): the drawn content is masked by the inverse alpha of the filled
