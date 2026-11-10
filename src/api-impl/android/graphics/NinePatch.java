@@ -321,7 +321,16 @@ public class NinePatch {
 		ColorFilter filter = paint != null ? paint.getColorFilter() : null;
 		boolean pushed = filter != null && gsk.tlPushColorFilter(filter);
 		float alpha = paint != null ? paint.getAlpha() / 255f : 1f;
-		nativeDraw(mPaintable, gsk.snapshot, left, top, width, height, alpha);
+		/* the section edges are snapped to whole pixels of the canvas root when the canvas maps
+		 * axis-aligned (Skia lays a lattice out in device pixels; fractional edges leave seams) */
+		gsk.getMatrix(mTlMatrix);
+		mTlMatrix.getValues(mTlValues);
+		final boolean snap = mTlValues[Matrix.MSKEW_X] == 0 && mTlValues[Matrix.MSKEW_Y] == 0
+		                     && mTlValues[Matrix.MPERSP_0] == 0 && mTlValues[Matrix.MPERSP_1] == 0 && mTlValues[Matrix.MPERSP_2] == 1
+		                     && mTlValues[Matrix.MSCALE_X] > 0 && mTlValues[Matrix.MSCALE_Y] > 0;
+		final float sx = snap ? mTlValues[Matrix.MSCALE_X] : 0, sy = snap ? mTlValues[Matrix.MSCALE_Y] : 0;
+		nativeDraw(mPaintable, gsk.snapshot, left, top, width, height, alpha,
+		           sx, snap ? mTlValues[Matrix.MTRANS_X] + sx * left : 0, sy, snap ? mTlValues[Matrix.MTRANS_Y] + sy * top : 0);
 		if (pushed)
 			gsk.tlPopGroup();
 		if (scaled)
@@ -457,7 +466,10 @@ public class NinePatch {
 	private static native long nativeCreateFromBytes(byte[] png, int[] insets);
 	private static native void nativeGetInfo(long paintable, int[] out);
 	private static native void nativeGetDivs(long paintable, int[] xDivs, int[] yDivs, int[] colors);
-	private static native void nativeDraw(long paintable, long snapshot, float x, float y, float width, float height, float alpha);
+	private final Matrix mTlMatrix = new Matrix();
+	private final float[] mTlValues = new float[9];
+	private static native void nativeDraw(long paintable, long snapshot, float x, float y, float width, float height, float alpha,
+	                                      float scaleX, float offsetX, float scaleY, float offsetY);
 	private static native boolean nativeHasAlpha(long paintable);
 	private static native void nativeRef(long paintable);
 	private static native void nativeUnref(long paintable);

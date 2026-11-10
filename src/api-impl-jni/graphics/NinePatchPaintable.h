@@ -32,3 +32,7 @@ struct _NinePatchPaintable {
 G_DECLARE_FINAL_TYPE(NinePatchPaintable, ninepatch_paintable, NINEPATCH, PAINTABLE, GObject)
 
 GdkPaintable *ninepatch_paintable_new(struct Res_png_9patch *chunk, uint32_t chunk_size, GdkTexture *texture);
+/* draws at width x height; with scale_x/scale_y > 0 the section edges snap to whole pixels of the
+ * canvas root (an edge at local x lies at offset_x + scale_x * x there) */
+void ninepatch_paintable_draw(NinePatchPaintable *ninepatch, GdkSnapshot *snapshot, double width, double height,
+                              double scale_x, double offset_x, double scale_y, double offset_y);

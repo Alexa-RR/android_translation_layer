@@ -187,14 +187,15 @@ JNIEXPORT void JNICALL Java_android_graphics_NinePatch_nativeGetDivs(JNIEnv *env
 	(*env)->SetIntArrayRegion(env, color_array, 0, c->numColors, (jint *)((void *)c + c->colorsOffset));
 }
 
-JNIEXPORT void JNICALL Java_android_graphics_NinePatch_nativeDraw(JNIEnv *env, jclass class, jlong paintable_ptr, jlong snapshot_ptr, jfloat x, jfloat y, jfloat width, jfloat height, jfloat alpha)
+JNIEXPORT void JNICALL Java_android_graphics_NinePatch_nativeDraw(JNIEnv *env, jclass class, jlong paintable_ptr, jlong snapshot_ptr, jfloat x, jfloat y, jfloat width, jfloat height, jfloat alpha,
+                                                               jfloat scale_x, jfloat offset_x, jfloat scale_y, jfloat offset_y)
 {
 	GtkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
 	gtk_snapshot_save(snapshot);
 	if (alpha < 1.0f)
 		gtk_snapshot_push_opacity(snapshot, alpha);
 	gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(x, y));
-	gdk_paintable_snapshot(GDK_PAINTABLE(_PTR(paintable_ptr)), GDK_SNAPSHOT(snapshot), width, height);
+	ninepatch_paintable_draw(NINEPATCH_PAINTABLE(_PTR(paintable_ptr)), GDK_SNAPSHOT(snapshot), width, height, scale_x, offset_x, scale_y, offset_y);
 	if (alpha < 1.0f)
 		gtk_snapshot_pop(snapshot);
 	gtk_snapshot_restore(snapshot);
