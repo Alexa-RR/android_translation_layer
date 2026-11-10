@@ -546,8 +546,10 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	public boolean drawChild(Canvas canvas, View child, long drawingTime) {
 		if (System.getenv("ATL_DEBUG_SURFACE") != null && child instanceof SurfaceView && (sDrawChildTrace++ % 100) == 0)
 			android.util.Log.i("ViewGroup", "[surface] drawChild #" + sDrawChildTrace + " " + getClass().getName() + " -> " + child.getClass().getName() + " canvas=" + canvas.getClass().getName());
-		if (canvas instanceof GskCanvas)
-			native_drawChild(widget, child.widget, ((GskCanvas)canvas).snapshot);
+		/* teslalinux (offscreen): any canvas with a target, a Canvas(Bitmap) included */
+		final GskCanvas tlGsk = canvas.tlGskCanvas();
+		if (tlGsk != null)
+			native_drawChild(widget, child.widget, tlGsk.snapshot);
 		return false;
 	}
 

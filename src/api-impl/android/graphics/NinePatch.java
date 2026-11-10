@@ -301,9 +301,9 @@ public class NinePatch {
 	}
 
 	private void draw(Canvas canvas, float left, float top, float width, float height, Paint paint) {
-		if (!(canvas instanceof GskCanvas))
+		final GskCanvas gsk = canvas.tlGskCanvas(); /* a Canvas(Bitmap) draws through its GSK canvas too */
+		if (gsk == null)
 			return;
-		GskCanvas gsk = (GskCanvas) canvas;
 		ColorFilter filter = paint != null ? paint.getColorFilter() : null;
 		boolean pushed = filter != null && gsk.tlPushColorFilter(filter);
 		float alpha = paint != null ? paint.getAlpha() / 255f : 1f;

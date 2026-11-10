@@ -65,8 +65,10 @@ public class Layout {
 	}
 
 	public void draw(Canvas canvas) {
-		if (canvas instanceof GskCanvas)
-			native_draw(layout, ((GskCanvas)canvas).snapshot, paint.paint);
+		/* teslalinux (offscreen): a Canvas(Bitmap) draws the layout through its GSK canvas, as on screen */
+		final GskCanvas tlGsk = canvas.tlGskCanvas();
+		if (tlGsk != null)
+			native_draw(layout, tlGsk.snapshot, paint.paint);
 		else
 			native_draw_custom_canvas(layout, canvas, paint);
 	}

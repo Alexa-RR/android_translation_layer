@@ -152,8 +152,8 @@ public class Drawable {
 	 * the tint list and the current state, AOSP) is applied as a GSK colour matrix around it.
 	 */
 	public void draw(Canvas canvas) {
-		if (canvas instanceof GskCanvas) {
-			GskCanvas gsk = (GskCanvas) canvas;
+		final GskCanvas gsk = canvas.tlGskCanvas(); /* a Canvas(Bitmap) draws through its GSK canvas too */
+		if (gsk != null) {
 			if (mTlAlpha == 0)
 				return;
 			/* the alpha is a DST_IN filter with the alpha as the filter colour: every channel keeps
@@ -872,7 +872,8 @@ public class Drawable {
 	 * then filters each draw itself).
 	 */
 	static int tlPushLayer(Canvas canvas, int alpha, ColorFilter filter) {
-		if (!(canvas instanceof GskCanvas))
+		final GskCanvas gsk = canvas.tlGskCanvas();
+		if (gsk == null)
 			return -1;
 		PorterDuffColorFilter pd = null;
 		if (filter instanceof PorterDuffColorFilter) {
@@ -886,7 +887,6 @@ public class Drawable {
 		} else if (filter != null) {
 			return -1;
 		}
-		GskCanvas gsk = (GskCanvas) canvas;
 		int pushed = 0;
 		alpha &= 0xFF;
 		if (alpha != 0xFF && gsk.tlPushColorFilter(new PorterDuffColorFilter(alpha << 24, PorterDuff.Mode.DST_IN)))
@@ -899,6 +899,6 @@ public class Drawable {
 	/** Closes the groups tlPushLayer opened. */
 	static void tlPopLayer(Canvas canvas, int pushed) {
 		for (int i = 0; i < pushed; i++)
-			((GskCanvas) canvas).tlPopGroup();
+			canvas.tlGskCanvas().tlPopGroup();
 	}
 }

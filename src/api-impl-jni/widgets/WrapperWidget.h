@@ -52,4 +52,7 @@ void _setOnTouchListener(JNIEnv *env, jobject this, GtkWidget *widget);
 /* tl_layout_clip: pushes the clipToPadding clip of a group wrapper; TRUE when a clip was pushed */
 gboolean tl_wrapper_push_padding_clip(WrapperWidget *wrapper, GtkSnapshot *snapshot);
 
+/* native-zoffscreen-draw.sh: gtk_widget_snapshot_child() that also draws a view that is not on screen */
+void tl_snapshot_child(GtkWidget *parent, GtkWidget *child, GtkSnapshot *snapshot);
+
 #endif

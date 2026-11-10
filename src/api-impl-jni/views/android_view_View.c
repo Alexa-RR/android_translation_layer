@@ -1147,14 +1147,14 @@ JNIEXPORT void JNICALL Java_android_view_View_native_1drawBackground(JNIEnv *env
 	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(GTK_WIDGET(_PTR(widget_ptr))));
 	GdkSnapshot *snapshot = GDK_SNAPSHOT(_PTR(snapshot_ptr));
 	if (wrapper->background)
-		gtk_widget_snapshot_child(&wrapper->parent_instance, wrapper->background, snapshot);
+		tl_snapshot_child(&wrapper->parent_instance, wrapper->background, snapshot);
 }
 
 JNIEXPORT void JNICALL Java_android_view_View_native_1drawContent(JNIEnv *env, jobject this, jlong widget_ptr, jlong snapshot_ptr)
 {
 	WrapperWidget *wrapper = WRAPPER_WIDGET(gtk_widget_get_parent(GTK_WIDGET(_PTR(widget_ptr))));
 	GdkSnapshot *snapshot = GDK_SNAPSHOT(_PTR(snapshot_ptr));
-	gtk_widget_snapshot_child(&wrapper->parent_instance, wrapper->child, snapshot);
+	tl_snapshot_child(&wrapper->parent_instance, wrapper->child, snapshot);
 }
 
 JNIEXPORT void JNICALL Java_android_view_View_nativeSetFullscreen(JNIEnv *env, jobject this, jlong widget_ptr, jboolean fullscreen)

@@ -361,7 +361,7 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 		while (child) {
 			/* tl_layout_clip: the children widget of a group clips to the padding box */
 			const gboolean tl_padding_clip = child == wrapper->child && tl_wrapper_push_padding_clip(wrapper, target);
-			gtk_widget_snapshot_child(widget, child, target);
+			tl_snapshot_child(widget, child, target);
 			if (tl_padding_clip)
 				gtk_snapshot_pop(target);
 			child = gtk_widget_get_next_sibling(child);
@@ -783,4 +783,95 @@ void wrapper_widget_consume_touch_events(WrapperWidget *wrapper)
 	g_signal_connect(controller, "event", G_CALLBACK(on_touch_event_consume), NULL);
 	gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
 	g_object_set_data(G_OBJECT(wrapper), "on_touch_listener", controller);
+}
+
+/*
+ * native-zoffscreen-draw.sh: gtk_widget_snapshot_child(), and for a child of an unmapped parent (a
+ * view tree that is not in a window, drawn into a Bitmap by View.draw) what GTK would draw if it were
+ * mapped: the child's transform relative to the parent, its opacity, then its class's snapshot (a plain
+ * container's children through this function again). Invisible children are skipped as GTK skips them.
+ */
+/* the child's transform as 2D GSK transforms (translate, rotate, skew, scale), which every GSK
+ * renderer draws; a matrix3d transform node is one the cairo renderer cannot draw */
+static void tl_offscreen_transform(GtkSnapshot *snapshot, const graphene_matrix_t *m)
+{
+	double sx, ky, kx, sy, tx, ty;
+	if (!graphene_matrix_to_2d(m, &sx, &ky, &kx, &sy, &tx, &ty)) {
+		gtk_snapshot_transform_matrix(snapshot, m);
+		return;
+	}
+	gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(tx, ty));
+	if (kx == 0 && ky == 0) {
+		if (sx != 1 || sy != 1)
+			gtk_snapshot_scale(snapshot, sx, sy);
+		return;
+	}
+	const double a = sqrt(sx * sx + ky * ky);
+	if (a == 0)
+		return;
+	const double theta = atan2(ky, sx);
+	const double c = cos(theta), s = sin(theta);
+	const double k = kx * c + sy * s;
+	const double d = sy * c - kx * s;
+	gtk_snapshot_rotate(snapshot, theta * 180.0 / G_PI);
+	if (k != 0 && d != 0) {
+		GskTransform *skew = gsk_transform_skew(NULL, atan(k / d) * 180.0 / G_PI, 0);
+		gtk_snapshot_transform(snapshot, skew);
+		gsk_transform_unref(skew);
+	}
+	gtk_snapshot_scale(snapshot, a, d);
+}
+
+void tl_snapshot_child(GtkWidget *parent, GtkWidget *child, GtkSnapshot *snapshot)
+{
+	if (gtk_widget_get_mapped(parent) || gtk_widget_get_mapped(child)) {
+		gtk_widget_snapshot_child(parent, child, snapshot);
+		return;
+	}
+	if (!gtk_widget_get_visible(child) || !gtk_widget_get_child_visible(child))
+		return;
+	const double opacity = gtk_widget_get_opacity(child);
+	if (opacity <= 0)
+		return;
+	/* a view's widgets get their Android size in GTK's allocation pass, which never runs for a tree
+	 * outside a window: allocate the view to its laid-out size (its children follow) */
+	if (WRAPPER_IS_WIDGET(child)) {
+		WrapperWidget *wrapper = WRAPPER_WIDGET(child);
+		if (gtk_widget_get_width(child) != wrapper->real_width || gtk_widget_get_height(child) != wrapper->real_height) {
+			graphene_point_t origin;
+			if (!gtk_widget_compute_point(child, parent, &GRAPHENE_POINT_INIT(0, 0), &origin))
+				origin = GRAPHENE_POINT_INIT(0, 0);
+			gtk_widget_size_allocate(child, &(GtkAllocation){.x = origin.x, .y = origin.y, .width = wrapper->real_width, .height = wrapper->real_height}, -1);
+		}
+	}
+	graphene_matrix_t transform;
+	if (!gtk_widget_compute_transform(child, parent, &transform))
+		return;
+	static void (*base_snapshot)(GtkWidget *, GtkSnapshot *);
+	if (!base_snapshot)
+		base_snapshot = GTK_WIDGET_CLASS(g_type_class_peek(GTK_TYPE_WIDGET))->snapshot;
+	gtk_snapshot_save(snapshot);
+	tl_offscreen_transform(snapshot, &transform);
+	if (opacity < 1)
+		gtk_snapshot_push_opacity(snapshot, opacity);
+	/* the widget's CSS background and border (View.setBackgroundColor is widget CSS), as GTK draws
+	 * them before the class's snapshot */
+	const int width = gtk_widget_get_width(child), height = gtk_widget_get_height(child);
+	if (width > 0 && height > 0) {
+		G_GNUC_BEGIN_IGNORE_DEPRECATIONS
+		GtkStyleContext *style = gtk_widget_get_style_context(child);
+		gtk_snapshot_render_background(snapshot, style, 0, 0, width, height);
+		gtk_snapshot_render_frame(snapshot, style, 0, 0, width, height);
+		G_GNUC_END_IGNORE_DEPRECATIONS
+	}
+	GtkWidgetClass *klass = GTK_WIDGET_GET_CLASS(child);
+	if (klass->snapshot == base_snapshot) {
+		for (GtkWidget *c = gtk_widget_get_first_child(child); c; c = gtk_widget_get_next_sibling(c))
+			tl_snapshot_child(child, c, snapshot);
+	} else if (klass->snapshot) {
+		klass->snapshot(child, snapshot);
+	}
+	if (opacity < 1)
+		gtk_snapshot_pop(snapshot);
+	gtk_snapshot_restore(snapshot);
 }

@@ -1189,22 +1189,28 @@ public class View implements Drawable.Callback {
 		return this.id == id ? this : null;
 	}
 
+	/* teslalinux (offscreen): a view draws into any canvas with a target, a Canvas(Bitmap) included
+	 * (AOSP View.draw on a bitmap canvas, androidx drawToBitmap); see Canvas.tlGskCanvas and
+	 * native-zoffscreen-draw.sh for views that are not on screen */
 	public void onDraw(Canvas canvas) {
-		if (canvas instanceof GskCanvas)
-			native_drawContent(widget, ((GskCanvas)canvas).snapshot);
+		final GskCanvas gsk = canvas.tlGskCanvas();
+		if (gsk != null)
+			native_drawContent(widget, gsk.snapshot);
 	}
 
 	protected void dispatchDraw(Canvas canvas) {
-		if (canvas instanceof GskCanvas)
-			native_drawChildren(widget, ((GskCanvas)canvas).snapshot);
+		final GskCanvas gsk = canvas.tlGskCanvas();
+		if (gsk != null)
+			native_drawChildren(widget, gsk.snapshot);
 	}
 	private static final String ATL_DEBUG_DRAW = System.getenv("ATL_DEBUG_DRAW");
 	private static final boolean ATL_DEBUG_TOUCH_JAVA = System.getenv("ATL_DEBUG_TOUCH") != null;
 	public void draw(Canvas canvas) {
 		if (ATL_DEBUG_DRAW != null && getClass().getName().contains(ATL_DEBUG_DRAW))
 			android.util.Log.i("View", "[draw] " + getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(this)) + " " + getWidth() + "x" + getHeight() + " canvas=" + canvas.getClass().getSimpleName() + " parent=" + (parent == null ? "null" : parent.getClass().getSimpleName()));
-		if (canvas instanceof GskCanvas)
-			native_drawBackground(widget, ((GskCanvas)canvas).snapshot);
+		final GskCanvas tlGsk = canvas.tlGskCanvas();
+		if (tlGsk != null)
+			native_drawBackground(widget, tlGsk.snapshot);
 		onDraw(canvas);
 		// HACK: catch non critical exceptions happening in some composeUI apps
 		try {

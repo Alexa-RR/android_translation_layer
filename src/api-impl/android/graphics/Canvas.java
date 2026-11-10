@@ -76,6 +76,18 @@ public class Canvas {
 		return gsk_canvas;
 	}
 
+	/**
+	 * @hide The GSK canvas this canvas draws through: itself for a view/RenderNode canvas, the bitmap's
+	 * for a Canvas(Bitmap), null without a target. Code that draws through GTK/GSK natives (views,
+	 * drawables backed by a paintable, nine-patches, text layouts) uses it, so drawing into a Bitmap
+	 * draws the same as on screen (AOSP: View.draw on a bitmap canvas, androidx drawToBitmap).
+	 */
+	public GskCanvas tlGskCanvas() {
+		if (this instanceof GskCanvas)
+			return (GskCanvas) this;
+		return tlNoTarget() ? null : gc();
+	}
+
 	/** A plain Canvas without a bitmap draws nothing (Skia's canvas without a device). */
 	private boolean tlNoTarget() {
 		return bitmap == null || gsk_canvas == null;

@@ -76,7 +76,7 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChildren(JNIEnv *
 	tl_prepare_child_snapshot(wrapper->child, wrapper->child, 0);
 	/* tl_layout_clip: AOSP dispatchDraw clips the children to the padding box (clipToPadding) */
 	const gboolean tl_padding_clip = tl_wrapper_push_padding_clip(wrapper, snapshot);
-	gtk_widget_snapshot_child(&wrapper->parent_instance, wrapper->child, snapshot);
+	tl_snapshot_child(&wrapper->parent_instance, wrapper->child, snapshot);
 	if (tl_padding_clip)
 		gtk_snapshot_pop(snapshot);
 }
@@ -88,7 +88,7 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChild(JNIEnv *env
 	GdkSnapshot *snapshot = GDK_SNAPSHOT(_PTR(snapshot_ptr));
 	gtk_widget_queue_draw(child); // FIXME: why didn't compose UI invalidate the child?
 	tl_prepare_child_snapshot(child, child, 0);
-	gtk_widget_snapshot_child(widget, child, snapshot);
+	tl_snapshot_child(widget, child, snapshot);
 }
 
 /* FIXME: put this in a header */
