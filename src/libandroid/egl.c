@@ -232,6 +232,9 @@ struct _ATLSurface {
 		GdkGLTextureBuilder *texture_builder;
 		uint32_t gl_texture;
 		uint32_t gl_framebuffer;
+		EGLSync tl_frame_fence;          /* native-egl-import-fence.sh: the app's commands for this frame */
+		EGLDisplay tl_frame_fence_display;
+		void *tl_gtk_sync;               /* the GLsync GTK waits on (import context) */
 	} buffers[NUM_BUFFERS];
 	struct atl_surface_buffer *back_buffer;
 	struct atl_surface_buffer *front_buffer;
@@ -486,10 +489,29 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 	return ret;
 }
 
+/* native-egl-import-fence.sh: glFenceSync/glDeleteSync of the import context */
+static void *(*tl_gl_fence_sync)(unsigned int condition, unsigned int flags);
+static void (*tl_gl_delete_sync)(void *sync);
+static void tl_frame_fence_procs(void)
+{
+	if (!tl_gl_fence_sync) {
+		tl_gl_fence_sync = (void *(*)(unsigned int, unsigned int))eglGetProcAddress("glFenceSync");
+		tl_gl_delete_sync = (void (*)(void *))eglGetProcAddress("glDeleteSync");
+	}
+}
+
 /* runs on main thread */
 static void destroy_texture(void *data)
 {
 	struct atl_surface_buffer *buffer = data;
+	if (buffer->tl_gtk_sync) {
+		gboolean current;
+		GdkGLContext *previous = tl_import_context_begin(buffer->surface, FALSE, &current);
+		if (current && tl_gl_delete_sync)
+			tl_gl_delete_sync(buffer->tl_gtk_sync);
+		buffer->tl_gtk_sync = NULL;
+		tl_import_context_end(previous);
+	}
 	g_async_queue_push(buffer->surface->unused_buffers, buffer);
 	g_object_unref(buffer->surface);
 }
@@ -536,6 +558,24 @@ static gboolean queue_texture(gpointer data)
 		gdk_gl_texture_builder_set_height(buffer->texture_builder, atl_surface->height);
 		tl_import_context_end(previous);
 	}
+	if (buffer->tl_frame_fence || !buffer->tl_gtk_sync) {
+		gboolean current;
+		GdkGLContext *previous = tl_import_context_begin(atl_surface, FALSE, &current);
+		if (buffer->tl_frame_fence) {
+			EGLDisplay fence_display = buffer->tl_frame_fence_display;
+			if (!current || !eglWaitSync(fence_display, buffer->tl_frame_fence, 0))
+				eglClientWaitSync(fence_display, buffer->tl_frame_fence, 0, 100000000); /* 100 ms */
+			eglDestroySync(fence_display, buffer->tl_frame_fence);
+			buffer->tl_frame_fence = NULL;
+		}
+		tl_frame_fence_procs();
+		if (current && tl_gl_fence_sync && !buffer->tl_gtk_sync) {
+			buffer->tl_gtk_sync = tl_gl_fence_sync(0x9117 /* GL_SYNC_GPU_COMMANDS_COMPLETE */, 0);
+			glFlush();
+		}
+		gdk_gl_texture_builder_set_sync(buffer->texture_builder, buffer->tl_gtk_sync);
+		tl_import_context_end(previous);
+	}
 	atl_surface->surface_view_widget->frame_callback_data = atl_surface->vsync;
 	atl_surface->surface_view_widget->frame_callback = frame_callback;
 	surface_view_widget_set_texture(atl_surface->surface_view_widget, gdk_gl_texture_builder_build(buffer->texture_builder, destroy_texture, buffer), TRUE);
@@ -563,6 +603,15 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	}
 	ATLSurface *atl_surface = surface;
 
+	if (atl_surface->back_buffer) { /* native-egl-import-fence.sh */
+		struct atl_surface_buffer *b = atl_surface->back_buffer;
+		if (b->tl_frame_fence)
+			eglDestroySync(b->tl_frame_fence_display, b->tl_frame_fence);
+		b->tl_frame_fence_display = eglGetCurrentDisplay();
+		b->tl_frame_fence = eglCreateSync(b->tl_frame_fence_display, EGL_SYNC_FENCE, NULL);
+		if (b->tl_frame_fence == EGL_NO_SYNC)
+			b->tl_frame_fence = NULL;
+	}
 	glFlush();
 	if (getenv("ATL_DEBUG_SURFACE")) { /* tl_frame_probe */
 		static int probes = 0;
