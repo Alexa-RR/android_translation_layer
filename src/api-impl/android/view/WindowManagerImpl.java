@@ -83,9 +83,16 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		public void onStopNestedScroll(View target) {
 		}
 
-		/** ViewRootImpl: a descendant is dirty; the next frame redraws it (the widget queued its draw). */
+		/** ViewRootImpl.onDescendantInvalidated: invalidate(), the next frame redraws the window. A
+		 * View.invalidate() has queued its widget already; Compose's layer moves and property changes
+		 * (RenderNode position, translation, alpha) report only this, so the target's widget is queued
+		 * here, or its new layer state would show only when something else redraws. */
 		@Override
 		public void onDescendantInvalidated(View child, View target) {
+			if (target != null)
+				target.tlQueueWindowRedraw();
+			else if (child != null)
+				child.tlQueueWindowRedraw();
 		}
 
 		/** ViewRootImpl.invalidateChild: ends in invalidateChildInParent. */

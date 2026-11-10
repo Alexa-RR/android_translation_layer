@@ -692,12 +692,6 @@ public final class Choreographer {
 	public long getVsyncId() { return 0; }
 	/* teslalinux: AOSP's FrameDisplayEventReceiver over the toplevel's GTK frame clock */
 	private long mTimestampNanos;
-	private final Runnable mVsyncFrame = new Runnable() {
-		@Override
-		public void run() {
-			doFrame(mTimestampNanos, 0);
-		}
-	};
 
 	/** Requests one vsync from the frame clock; false when the toplevel has no frame clock yet. */
 	private boolean scheduleVsyncLocked() {
@@ -722,16 +716,23 @@ public final class Choreographer {
 		}
 	}
 
-	/** The frame clock's update phase (main thread): AOSP FrameDisplayEventReceiver.onVsync. */
+	/**
+	 * The frame clock's update phase (main thread): AOSP FrameDisplayEventReceiver.onVsync, which
+	 * leads to doFrame. On Android doFrame runs input, animation and traversal (layout and draw) in
+	 * one pass per vsync, so a frame never shows state the animation callbacks have not processed.
+	 * Here layout and paint are the frame clock's LAYOUT and PAINT phases, which follow UPDATE, so
+	 * doFrame runs right here, as a GTK tick callback does: posting it to the looper ran it after
+	 * that frame's paint, every animation frame was shown one frame late, and a paint between a state
+	 * change and the recomposition that animates it showed the end state for a frame (Waze's menu
+	 * flashed open before sliding in).
+	 */
 	private void tlOnVsync(long timestampNanos) {
 		long now = System.nanoTime();
 		if (timestampNanos > now) {
 			timestampNanos = now;
 		}
 		mTimestampNanos = timestampNanos;
-		Message msg = Message.obtain(mHandler, mVsyncFrame);
-		msg.setAsynchronous(true);
-		mHandler.sendMessageAtTime(msg, timestampNanos / NANOS_PER_MS);
+		doFrame(timestampNanos, 0);
 	}
 
 	private native boolean nativeScheduleVsync();
