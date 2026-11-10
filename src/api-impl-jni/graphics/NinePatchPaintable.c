@@ -51,36 +51,45 @@ static void ninepatch_paintable_snapshot(GdkPaintable *paintable, GdkSnapshot *s
 			graphene_vec4_init(&color_offset, ((ninepatch->tint >> 16) & 0xFF) / 255.f, ((ninepatch->tint >> 8) & 0xFF) / 255.f, ((ninepatch->tint >> 0) & 0xFF) / 255.f, 0);
 			gtk_snapshot_push_color_matrix(snapshot, &color_matrix, &color_offset);
 		}
+		/* one colour hint per section, row by row, for every section that is not empty in the
+		 * source image (aapt leaves out an empty first or last column or row); a section that
+		 * becomes empty at this size still has its colour */
 		for (j = 0, rect.origin.y = 0; j < chunk->numYDivs + 1; j++, rect.origin.y += rect.size.height) {
 			int ydiv_start = j ? yDivs[j - 1] : 0;
 			int ydiv_end = (j == chunk->numYDivs) ? ninepatch->height : yDivs[j];
+			if (ydiv_end <= ydiv_start) {
+				rect.size.height = 0;
+				continue;
+			}
 			float actual_stretch_factor_height = (j % 2) ? strech_factor_height : fixed_factor_height;
 			float patch_height = (ydiv_end - ydiv_start) * actual_stretch_factor_height; // odd sections are stretchable
 			rect.size.height = patch_height;
-			if (!patch_height) // skip empty sections
-				continue;
 			for (i = 0, rect.origin.x = 0; i < chunk->numXDivs + 1; i++, rect.origin.x += rect.size.width) {
 				int xdiv_start = i ? xDivs[i - 1] : 0;
 				int xdiv_end = (i == chunk->numXDivs) ? ninepatch->width : xDivs[i];
+				if (xdiv_end <= xdiv_start) {
+					rect.size.width = 0;
+					continue;
+				}
 				float actual_stretch_factor_width = (i % 2) ? strech_factor_width : fixed_factor_width;
 				float patch_width = (xdiv_end - xdiv_start) * actual_stretch_factor_width; // odd sections are stretchable
 				rect.size.width = patch_width;
-				if (!patch_width) // skip empty sections
-					continue;
-				if (*color == NO_COLOR) {
-					gtk_snapshot_push_clip(snapshot, &rect);
-					graphene_rect_t texture_bounds = GRAPHENE_RECT_INIT(rect.origin.x - xdiv_start * actual_stretch_factor_width,
-					                                                    rect.origin.y - ydiv_start * actual_stretch_factor_height,
-					                                                    gdk_texture_get_width(ninepatch->texture) * actual_stretch_factor_width,
-					                                                    gdk_texture_get_height(ninepatch->texture) * actual_stretch_factor_height);
-					gtk_snapshot_append_texture(snapshot, ninepatch->texture, &texture_bounds);
-					gtk_snapshot_pop(snapshot);
-				} else if (*color != TRANSPARENT_COLOR) {
-					rgba.alpha = (*color >> 24 & 0xFF) / 255.f;
-					rgba.red = (*color >> 16 & 0xFF) / 255.f;
-					rgba.green = (*color >> 8 & 0xFF) / 255.f;
-					rgba.blue = (*color & 0xFF) / 255.f;
-					gtk_snapshot_append_color(snapshot, &rgba, &rect);
+				if (patch_width > 0 && patch_height > 0) {
+					if (*color == NO_COLOR) {
+						gtk_snapshot_push_clip(snapshot, &rect);
+						graphene_rect_t texture_bounds = GRAPHENE_RECT_INIT(rect.origin.x - xdiv_start * actual_stretch_factor_width,
+						                                                    rect.origin.y - ydiv_start * actual_stretch_factor_height,
+						                                                    gdk_texture_get_width(ninepatch->texture) * actual_stretch_factor_width,
+						                                                    gdk_texture_get_height(ninepatch->texture) * actual_stretch_factor_height);
+						gtk_snapshot_append_texture(snapshot, ninepatch->texture, &texture_bounds);
+						gtk_snapshot_pop(snapshot);
+					} else if (*color != TRANSPARENT_COLOR) {
+						rgba.alpha = (*color >> 24 & 0xFF) / 255.f;
+						rgba.red = (*color >> 16 & 0xFF) / 255.f;
+						rgba.green = (*color >> 8 & 0xFF) / 255.f;
+						rgba.blue = (*color & 0xFF) / 255.f;
+						gtk_snapshot_append_color(snapshot, &rgba, &rect);
+					}
 				}
 				color++;
 			}
