@@ -312,6 +312,7 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 	snapshot_in_progress++;
 
 	WrapperWidget *wrapper = WRAPPER_WIDGET(widget);
+	g_object_set_data(G_OBJECT(wrapper), "tl-frame-pending", NULL); /* tl_pending_draw: drawn now */
 	/* tl_layout_clip: the view clips to its bounds unless its parent has clipChildren off */
 	const gboolean tl_clip_bounds = wrapper->real_height > 0 && wrapper->real_width > 0 && !g_object_get_data(G_OBJECT(wrapper), "tl-no-clip");
 	if (tl_clip_bounds) {
@@ -456,6 +457,8 @@ static guint queue_queue_redraw(GtkWidget *widget)
 void wrapper_widget_queue_draw(WrapperWidget *wrapper)
 {
 	if (wrapper->draw_method) {
+		/* tl_pending_draw: a parent recording before the idle below finds the mark and snapshots this widget */
+		g_object_set_data(G_OBJECT(wrapper), "tl-frame-pending", GINT_TO_POINTER(1));
 		/* schedule the call to gtk_widget_queue_draw for a future event loop pass in case we're currently inside the snapshot */
 		/* GTK+ uses G_PRIORITY_HIGH_IDLE + 10 for resizing operations, and G_PRIORITY_HIGH_IDLE + 20 for redrawing operations. */
 		g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, G_SOURCE_FUNC(queue_queue_redraw), g_object_ref(wrapper), NULL);
