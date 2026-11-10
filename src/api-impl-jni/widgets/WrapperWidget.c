@@ -228,6 +228,32 @@ static gboolean tl_node_debug(JNIEnv *env, WrapperWidget *wrapper)
 	return match == 2;
 }
 
+
+/* teslalinux: tl_close_view_canvas (native-wrapper-canvas-close.sh): what the View's draw left open
+ * on the widget's canvas is closed before the widget's snapshot goes on */
+static void tl_close_view_canvas(JNIEnv *env, jobject canvas)
+{
+	static jmethodID close_method = NULL;
+	if (!canvas)
+		return;
+	if (!close_method) {
+		/* the widget canvas is an android.atl.GskCanvas (WrapperWidget creates it); its own class
+		 * resolves the method without a class loader lookup from this native callback */
+		jclass canvas_class = (*env)->GetObjectClass(env, canvas);
+		close_method = (*env)->GetMethodID(env, canvas_class, "tlCloseRecording", "()V");
+		(*env)->DeleteLocalRef(env, canvas_class);
+		if ((*env)->ExceptionCheck(env)) {
+			(*env)->ExceptionClear(env);
+			return;
+		}
+	}
+	if (!close_method)
+		return;
+	(*env)->CallVoidMethod(env, canvas, close_method);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
 static void tl_node_debug_report(WrapperWidget *wrapper, GskRenderNode *node)
 {
 	int n = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(wrapper), "tl-node-debug-count"));
@@ -309,6 +335,7 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 			(*env)->CallVoidMethod(env, wrapper->jobj, wrapper->draw_method, wrapper->canvas);
 			if ((*env)->ExceptionCheck(env))
 				(*env)->ExceptionDescribe(env);
+			tl_close_view_canvas(env, wrapper->canvas);
 			GskRenderNode *node = gtk_snapshot_free_to_node(sub);
 			tl_node_debug_report(wrapper, node);
 			if (node) {
@@ -320,6 +347,7 @@ static void wrapper_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
 			(*env)->CallVoidMethod(env, wrapper->jobj, wrapper->draw_method, wrapper->canvas);
 			if ((*env)->ExceptionCheck(env))
 				(*env)->ExceptionDescribe(env);
+			tl_close_view_canvas(env, wrapper->canvas);
 		}
 	} else {
 		GtkWidget *widget = &wrapper->parent_instance;

@@ -279,13 +279,43 @@ public class RenderNode {
 		nativeUnref(tn);
 	}
 
-	/** an empty node, held for the process: what a node without a display list draws */
-	private static long sTlEmptyNode;
+	/**
+	 * What this node draws without a display list: an empty node of its own. It must not be shared:
+	 * a parent finds its children's nodes in its tree by identity (nativePatchNode), so two children
+	 * returning the same node would be patched as one.
+	 */
+	private long tlEmpty;
 
 	private long tlEmptyNode() {
-		if (sTlEmptyNode == 0)
-			sTlEmptyNode = nativeCreateNode(nativeCreateSnapshot());
-		return sTlEmptyNode;
+		if (tlEmpty == 0)
+			tlEmpty = nativeCreateNode(nativeCreateSnapshot());
+		return tlEmpty;
+	}
+
+	/**
+	 * The native nodes this object still holds are released with it, on the main thread like every
+	 * other node operation (a node can hold GL textures).
+	 */
+	@Override
+	protected void finalize() throws Throwable {
+		try {
+			final long rn = render_node, tn = transformed_node, en = tlEmpty;
+			render_node = 0;
+			transformed_node = 0;
+			tlEmpty = 0;
+			if (rn != 0 || tn != 0 || en != 0) {
+				new android.os.Handler(android.os.Looper.getMainLooper()).post(new Runnable() {
+					@Override
+					public void run() {
+						nativeUnref(rn);
+						nativeUnref(tn);
+						nativeUnref(en);
+					}
+				});
+			}
+		} finally {
+			super.finalize();
+		}
 	}
 
 	/** AOSP: View.LAYER_TYPE_NONE, _SOFTWARE or _HARDWARE; a layer composites the content with the layer paint. */
