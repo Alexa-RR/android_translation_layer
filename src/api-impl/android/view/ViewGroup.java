@@ -1714,14 +1714,7 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 	// ---- focus ----
 
-	/** AOSP: a child (or a descendant through it) takes focus; the ancestors learn it in turn */
-	public void requestChildFocus(View child, View focused) {
-		if (getDescendantFocusability() == FOCUS_BLOCK_DESCENDANTS)
-			return;
-		// the previous holder loses focus through ATL's focus model (the GTK focus moves)
-		if (parent instanceof ViewGroup)
-			((ViewGroup) parent).requestChildFocus(this, focused);
-	}
+	/* requestChildFocus is the focus model's (ViewGroup.java.repl, tl_focus_model) */
 
 	/**
 	 * AOSP: a descendant became focusable; the report travels up to the window root, which gives

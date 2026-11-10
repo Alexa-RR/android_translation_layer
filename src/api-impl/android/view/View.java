@@ -5890,8 +5890,7 @@ public class View implements Drawable.Callback {
 	}
 
 	// ---- teslalinux (vcore): plain View state AOSP keeps ----
-	/** AOSP: focusable when clickable (setFocusable(int)) */
-	public static final int FOCUSABLE_AUTO = 0x00000010;
+	/* FOCUSABLE_AUTO, setFocusable(int) and getFocusable() are the focus model's (View.java.repl, tl_focus_model) */
 	public static final int SCROLL_INDICATOR_TOP = 0x1;
 	public static final int SCROLL_INDICATOR_BOTTOM = 0x2;
 	public static final int SCROLL_INDICATOR_LEFT = 0x4;
@@ -5900,7 +5899,6 @@ public class View implements Drawable.Callback {
 	public static final int SCROLL_INDICATOR_END = 0x20;
 	static final int SCROLL_INDICATORS_ALL = SCROLL_INDICATOR_TOP | SCROLL_INDICATOR_BOTTOM | SCROLL_INDICATOR_LEFT
 						 | SCROLL_INDICATOR_RIGHT | SCROLL_INDICATOR_START | SCROLL_INDICATOR_END;
-	private boolean tlFocusableAuto;
 	private View.OnCreateContextMenuListener tlOnCreateContextMenuListener;
 	private int tlAccessibilityLiveRegion;
 	private int tlScrollIndicators;
