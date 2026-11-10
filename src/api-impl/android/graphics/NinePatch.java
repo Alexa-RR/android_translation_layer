@@ -304,12 +304,28 @@ public class NinePatch {
 		final GskCanvas gsk = canvas.tlGskCanvas(); /* a Canvas(Bitmap) draws through its GSK canvas too */
 		if (gsk == null)
 			return;
+		/* AOSP (Canvas.drawPatch, hwui drawNinePatch): on a canvas with a density of its own (a
+		 * bitmap's), a patch of another density is drawn scaled by canvas density / patch density;
+		 * view canvases have none and NinePatchDrawable scales for them */
+		final int dstDensity = canvas.getDensity();
+		final boolean scaled = dstDensity != 0 && mDensity != 0 && dstDensity != mDensity;
+		if (scaled) {
+			final float scale = dstDensity / (float) mDensity;
+			canvas.save();
+			canvas.translate(left, top);
+			canvas.scale(scale, scale);
+			width /= scale;
+			height /= scale;
+			left = top = 0;
+		}
 		ColorFilter filter = paint != null ? paint.getColorFilter() : null;
 		boolean pushed = filter != null && gsk.tlPushColorFilter(filter);
 		float alpha = paint != null ? paint.getAlpha() / 255f : 1f;
 		nativeDraw(mPaintable, gsk.snapshot, left, top, width, height, alpha);
 		if (pushed)
 			gsk.tlPopGroup();
+		if (scaled)
+			canvas.restore();
 	}
 
 	/**

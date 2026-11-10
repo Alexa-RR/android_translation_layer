@@ -20,8 +20,20 @@ static void ninepatch_paintable_snapshot(GdkPaintable *paintable, GdkSnapshot *s
 		int32_t *xDivs = (void *)chunk + chunk->xDivsOffset;
 		int32_t *yDivs = (void *)chunk + chunk->yDivsOffset;
 		int32_t *color = (void *)chunk + chunk->colorsOffset;
-		float strech_factor_width = (width - (ninepatch->width - ninepatch->strechy_width)) / ninepatch->strechy_width;
-		float strech_factor_height = (height - (ninepatch->height - ninepatch->strechy_height)) / ninepatch->strechy_height;
+		/* Skia's lattice: the stretchable sections share what the fixed ones leave; a target smaller
+		 * than the fixed sections shrinks them proportionally and the stretchable ones vanish */
+		const float fixed_width = ninepatch->width - ninepatch->strechy_width;
+		const float fixed_height = ninepatch->height - ninepatch->strechy_height;
+		float fixed_factor_width = 1, fixed_factor_height = 1;
+		float strech_factor_width = 0, strech_factor_height = 0;
+		if (width < fixed_width)
+			fixed_factor_width = fixed_width > 0 ? width / fixed_width : 0;
+		else if (ninepatch->strechy_width > 0)
+			strech_factor_width = (width - fixed_width) / ninepatch->strechy_width;
+		if (height < fixed_height)
+			fixed_factor_height = fixed_height > 0 ? height / fixed_height : 0;
+		else if (ninepatch->strechy_height > 0)
+			strech_factor_height = (height - fixed_height) / ninepatch->strechy_height;
 
 		graphene_rect_t rect;
 		GdkRGBA rgba;
@@ -42,20 +54,16 @@ static void ninepatch_paintable_snapshot(GdkPaintable *paintable, GdkSnapshot *s
 		for (j = 0, rect.origin.y = 0; j < chunk->numYDivs + 1; j++, rect.origin.y += rect.size.height) {
 			int ydiv_start = j ? yDivs[j - 1] : 0;
 			int ydiv_end = (j == chunk->numYDivs) ? ninepatch->height : yDivs[j];
-			float actual_stretch_factor_height = (j % 2) ? strech_factor_height : 1;
-			float patch_height = ydiv_end - ydiv_start;
-			if (j % 2) // odd sections are stretchable
-				patch_height *= strech_factor_height;
+			float actual_stretch_factor_height = (j % 2) ? strech_factor_height : fixed_factor_height;
+			float patch_height = (ydiv_end - ydiv_start) * actual_stretch_factor_height; // odd sections are stretchable
 			rect.size.height = patch_height;
 			if (!patch_height) // skip empty sections
 				continue;
 			for (i = 0, rect.origin.x = 0; i < chunk->numXDivs + 1; i++, rect.origin.x += rect.size.width) {
 				int xdiv_start = i ? xDivs[i - 1] : 0;
 				int xdiv_end = (i == chunk->numXDivs) ? ninepatch->width : xDivs[i];
-				float actual_stretch_factor_width = (i % 2) ? strech_factor_width : 1;
-				float patch_width = xdiv_end - xdiv_start;
-				if (i % 2) // odd sections are stretchable
-					patch_width *= strech_factor_width;
+				float actual_stretch_factor_width = (i % 2) ? strech_factor_width : fixed_factor_width;
+				float patch_width = (xdiv_end - xdiv_start) * actual_stretch_factor_width; // odd sections are stretchable
 				rect.size.width = patch_width;
 				if (!patch_width) // skip empty sections
 					continue;
