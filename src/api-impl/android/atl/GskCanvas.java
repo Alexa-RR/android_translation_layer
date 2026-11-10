@@ -391,6 +391,23 @@ public class GskCanvas extends DisplayListCanvas {
 		push_history[save_count]++;
 	}
 
+	/**
+	 * AOSP RenderNode.endRecording (HWUI finishes the recording with its saves implicitly restored):
+	 * what the recording still has open ends with it, the saves and layers and the clips pushed at
+	 * the base level (Compose clips a layer with clipPath without a save). GTK otherwise popped them
+	 * itself when the snapshot became a node, with a warning per recording.
+	 */
+	public void tlCloseRecording() {
+		if (snapshot == 0)
+			return;
+		while (getSaveCount() > 1)
+			restore();
+		if (push_history != null && push_history.length > 1 && push_history[1] > 0) {
+			native_pop(snapshot, push_history[1]);
+			push_history[1] = 0;
+		}
+	}
+
 	private static int tlFillRule(Path path) {
 		Path.FillType ft = path.getFillType();
 		return (ft == Path.FillType.EVEN_ODD || ft == Path.FillType.INVERSE_EVEN_ODD) ? 1 : 0;

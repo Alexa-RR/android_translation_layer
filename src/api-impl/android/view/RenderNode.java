@@ -265,11 +265,27 @@ public class RenderNode {
 		return setTranslationY(translationY + offset);
 	}
 
+	/**
+	 * AOSP: frees the display list; until the next recording the node draws nothing (isValid() is
+	 * false). The recorded children go with it: they belonged to the display list.
+	 */
 	public void discardDisplayList() {
-		nativeUnref(render_node);
-		nativeUnref(transformed_node);
+		final long rn = render_node, tn = transformed_node;
 		render_node = 0;
 		transformed_node = 0;
+		children.clear();
+		children_nodes.clear();
+		nativeUnref(rn);
+		nativeUnref(tn);
+	}
+
+	/** an empty node, held for the process: what a node without a display list draws */
+	private static long sTlEmptyNode;
+
+	private long tlEmptyNode() {
+		if (sTlEmptyNode == 0)
+			sTlEmptyNode = nativeCreateNode(nativeCreateSnapshot());
+		return sTlEmptyNode;
 	}
 
 	/** AOSP: View.LAYER_TYPE_NONE, _SOFTWARE or _HARDWARE; a layer composites the content with the layer paint. */
@@ -317,6 +333,11 @@ public class RenderNode {
 	}
 
 	public long getGskNode() {
+		/* AOSP: a node without a display list (never recorded, or discarded: Compose's
+		 * destroyDisplayListData) draws nothing. Its parent may still draw it; a NULL node patched
+		 * into the parent's tree crashed GSK (gsk_container_node_new, fault address 0x8). */
+		if (render_node == 0)
+			return tlEmptyNode();
 		long old_render_node = render_node;
 		for (int i = 0; i < children.size(); i++) {
 			long new_child_node = children.get(i).getGskNode();
@@ -387,6 +408,7 @@ public class RenderNode {
 	}
 
 	public void end(DisplayListCanvas canvas) {
+		((GskCanvas)canvas).tlCloseRecording(); /* AOSP: the recording ends with its saves restored */
 		nativeUnref(render_node);
 		render_node = nativeCreateNode(((GskCanvas)canvas).snapshot);
 		((GskCanvas)canvas).snapshot = 0;

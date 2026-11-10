@@ -76,6 +76,7 @@ public final class RenderNode extends android.view.RenderNode {
 			throw new IllegalStateException("No recording in progress, forgot to call #beginRecording()?");
 		RecordingCanvas canvas = mCurrentRecordingCanvas;
 		mCurrentRecordingCanvas = null;
+		canvas.tlCloseRecording();
 		long snapshot = canvas.snapshot;
 		canvas.snapshot = 0;
 		atlEndRecording(snapshot);
