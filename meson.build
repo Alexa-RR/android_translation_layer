@@ -227,7 +227,7 @@ executable('android-translation-layer', [
 # which ART cannot bootstrap here; D8 desugars them and keeps default/static interface methods)
 r8_jar = get_option('r8_jar')
 if r8_jar != ''
-	dexer = [find_program('java'), '-cp', r8_jar, 'com.android.tools.r8.D8', '--min-api', '24', '--output', '@OUTPUT@', '@INPUT@']
+	dexer = [find_program('sh'), files('build-aux/d8.sh'), r8_jar, '@OUTPUT@', '@INPUT@']
 else
 	dexer = ['dx', '--dex', '--incremental', '--output=@OUTPUT@', '@INPUT@']
 endif
