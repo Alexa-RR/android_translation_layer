@@ -342,14 +342,12 @@ public class ImageView extends View {
 		return mMaxHeight;
 	}
 
-	/** AOSP onMeasure for adjustViewBounds and maxWidth/maxHeight; otherwise the GtkPicture's own
-	 * measure (the drawable's intrinsic size plus padding, as AOSP) */
+	/** AOSP onMeasure: the drawable's intrinsic size plus padding (adjustViewBounds, maxWidth and
+	 * maxHeight applied). Always in Java: GtkPicture measures its paintable, and paintables without an
+	 * intrinsic size (NinePatchPaintable) measured as anything but the drawable's size (Waze's alert
+	 * card drew its 8 px route track as a 69 px black block). */
 	@Override
 	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
-		if (!mAdjustViewBounds && mMaxWidth == Integer.MAX_VALUE && mMaxHeight == Integer.MAX_VALUE) {
-			super.onMeasure(widthMeasureSpec, heightMeasureSpec);
-			return;
-		}
 		int w, h;
 		float desiredAspect = 0.0f;
 		boolean resizeWidth = false, resizeHeight = false;
