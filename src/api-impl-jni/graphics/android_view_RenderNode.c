@@ -243,3 +243,15 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeLayerTransformKeep(JN
 	gsk_transform_unref(t);
 	return _INTPTR(transformed);
 }
+
+/* teslalinux: path clip (native-rendernode-pathclip.sh); the input keeps its reference */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativePathClipKeep(JNIEnv *env, jclass clazz, jlong node_ptr, jlong path_ptr, jboolean even_odd)
+{
+	GskRenderNode *node = _PTR(node_ptr);
+	GskPath *path = _PTR(path_ptr);
+	if (!node)
+		return 0;
+	if (!path)
+		return _INTPTR(gsk_render_node_ref(node));
+	return _INTPTR(gsk_fill_node_new(node, path, even_odd ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING));
+}

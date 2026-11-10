@@ -140,7 +140,12 @@ public final class Outline {
 	 * @see android.view.View#setClipToOutline(boolean)
 	 */
 	public boolean canClip() {
-		return true;
+		/* teslalinux: AOSP 12L (API 32) clips only rectangles, circles and round rects; API 33
+		 * clips any outline. ATL reports the SDK level the app runs with, and Compose relies on
+		 * this answer: where the outline cannot clip, it clips the layer with clipPath itself (a
+		 * bottom sheet's top-rounded shape is a path; without either clip its rows' hidden swipe
+		 * actions showed beside it). android.view.RenderNode clips path outlines from API 33. */
+		return mMode != MODE_PATH || android.os.Build.VERSION.SDK_INT >= 33;
 	}
 
 	/**

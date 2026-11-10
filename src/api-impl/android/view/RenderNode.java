@@ -332,7 +332,13 @@ public class RenderNode {
 			 * empty or path outline); clipToBounds clips to the node's size when it has one. */
 			long clipped = 0;
 			Rect bounds = new Rect();
-			if (clipToOutline && outline != null && outline.mMode == Outline.MODE_ROUND_RECT && outline.getRect(bounds) && !bounds.isEmpty()) {
+			if (clipToOutline && outline != null && outline.mMode == Outline.MODE_PATH && outline.mPath != null
+			    && android.os.Build.VERSION.SDK_INT >= 33 && !outline.mPath.isInverseFillType()) {
+				/* AOSP 13 HWUI clips to any outline path (Outline.canClip from API 33); inverse fills
+				 * are never valid outlines */
+				android.graphics.Path.FillType ft = outline.mPath.getFillType();
+				clipped = nativePathClipKeep(render_node, outline.mPath.getGskPath(), ft == android.graphics.Path.FillType.EVEN_ODD);
+			} else if (clipToOutline && outline != null && outline.mMode == Outline.MODE_ROUND_RECT && outline.getRect(bounds) && !bounds.isEmpty()) {
 				float radius = outline.getRadius();
 				clipped = radius > 0 ? nativeRoundedClipKeep(render_node, bounds.left, bounds.top, bounds.right, bounds.bottom, radius)
 				                     : nativeClipKeep(render_node, bounds.left, bounds.top, bounds.right, bounds.bottom);
@@ -521,4 +527,8 @@ public class RenderNode {
 			transformed_node = 0;
 		}
 	}
+
+	/* teslalinux: the node clipped to a path's fill (GskFillNode); the input keeps its reference
+	 * (native-rendernode-pathclip.sh) */
+	private static native long nativePathClipKeep(long node, long gskPath, boolean evenOdd);
 }
