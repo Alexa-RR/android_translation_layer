@@ -41,10 +41,10 @@ import java.util.Objects;
  * The Typeface class specifies the typeface and intrinsic style of a font.
  *
  * teslalinux: AOSP API and semantics for everything that lives in Java (styles, weights, builders,
- * resource/asset/file loading through {@link Font}, caches). Rendering: ATL draws text with Pango,
- * which uses the system font matched by family name and style; the custom font files carried by a
- * Typeface are not handed to Pango yet (see TODO-real.md), so they render with the default family
- * at the requested weight/slant.
+ * resource/asset/file loading through {@link Font}, caches). Rendering: ATL draws text with Pango.
+ * A system typeface is a fontconfig family (AOSP's fonts.xml aliases mapped in TlTextAttrs.Face);
+ * a typeface of font files names, per family, the Pango face of the font minikin would pick, whose
+ * file is registered with Pango's font map on first use (Font.tlPangoFamily, native/atl_fonts.c).
  */
 public class Typeface {
 	private static final String TAG = "Typeface";

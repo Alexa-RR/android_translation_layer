@@ -70,29 +70,18 @@ public final class TlTextAttrs {
 		public String features;
 
 		public static Face of(Typeface tf, boolean fakeBold, float skewX) {
+			android.graphics.fonts.Font.tlSyncPending();
 			Face f = new Face();
 			if (tf != null) {
 				f.weight = tf.getWeight();
 				f.italic = tf.isItalic();
+				String custom = customFamilies(tf, f);
 				String name = tf.getSystemFontFamilyName();
-				if (name != null) {
-					int aliasWeight = -1;
-					switch (name) {
-						case "sans-serif-thin": aliasWeight = 100; name = "sans-serif"; break;
-						case "sans-serif-light": aliasWeight = 300; name = "sans-serif"; break;
-						case "sans-serif-medium": aliasWeight = 500; name = "sans-serif"; break;
-						case "sans-serif-black": aliasWeight = 900; name = "sans-serif"; break;
-						case "sans-serif-condensed": f.stretch = 2; name = "sans-serif"; break;
-						case "sans-serif-condensed-light": f.stretch = 2; aliasWeight = 300; name = "sans-serif"; break;
-						case "sans-serif-condensed-medium": f.stretch = 2; aliasWeight = 500; name = "sans-serif"; break;
-						case "sans-serif-smallcaps": f.features = "\"smcp\" 1"; name = "sans-serif"; break;
-						case "serif-monospace": name = "monospace"; break;
-						case "casual": name = "cursive"; break;
-						default: break;
-					}
-					if (aliasWeight > 0 && !tf.isBold())
-						f.weight = aliasWeight;
-					f.family = name;
+				if (custom != null) {
+					/* the typeface's own fonts, then its system fallback family (AOSP: setSystemFallback) */
+					f.family = name != null ? custom + "," + systemAlias(name, f, tf, false) : custom;
+				} else if (name != null) {
+					f.family = systemAlias(name, f, tf, true);
 				}
 			}
 			if (fakeBold && f.weight < 700)
@@ -100,6 +89,77 @@ public final class TlTextAttrs {
 			if (skewX != 0)
 				f.italic = true;
 			return f;
+		}
+
+		/*
+		 * A typeface built from font files (resources, assets, files): the Pango family of the font
+		 * minikin would pick in each of its families (FontFamily.getClosestFont), comma-separated so
+		 * Pango falls back through them in order, or null for a system typeface. The face asks for the
+		 * weight and slant of the primary font's file, which selects that file; it asks for bold or
+		 * italic beyond the file only where minikin fakes them (FontFamily::computeFakery: bold when
+		 * the wanted weight is >= 600 and 200 above the font's, italic when the font is upright), and
+		 * fontconfig then synthesizes them.
+		 */
+		private static String customFamilies(Typeface tf, Face f) {
+			final java.util.List<android.graphics.fonts.FontFamily> families = tf.getFontFamilies();
+			if (families.isEmpty())
+				return null;
+			final android.graphics.fonts.FontStyle wanted = new android.graphics.fonts.FontStyle(tf.getWeight(),
+				tf.isItalic() ? android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC : android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT);
+			StringBuilder names = null;
+			android.graphics.fonts.Font primary = null;
+			for (android.graphics.fonts.FontFamily family : families) {
+				final android.graphics.fonts.Font font = family.getClosestFont(wanted);
+				final String name = font.tlPangoFamily();
+				if (name == null)
+					continue;
+				if (primary == null) {
+					primary = font;
+					names = new StringBuilder(name);
+				} else {
+					names.append(',').append(name);
+				}
+			}
+			if (primary == null)
+				return null;
+			final android.graphics.fonts.FontStyle actual = primary.getStyle();
+			final boolean fakeBold = wanted.getWeight() >= 600 && wanted.getWeight() - actual.getWeight() >= 200;
+			final boolean fakeItalic = wanted.getSlant() == android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC
+				&& actual.getSlant() == android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT;
+			f.weight = fakeBold ? Math.max(700, primary.tlPangoWeight()) : primary.tlPangoWeight();
+			f.italic = fakeItalic || primary.tlPangoItalic();
+			return names.toString();
+		}
+
+		/*
+		 * AOSP fonts.xml aliases: the Pango family of a system family name. For a system typeface
+		 * (primary) the alias's weight, width and features apply to f; as the fallback of a custom
+		 * typeface only the family is used.
+		 */
+		private static String systemAlias(String name, Face f, Typeface tf, boolean primary) {
+			int aliasWeight = -1;
+			int stretch = f.stretch;
+			String features = f.features;
+			switch (name) {
+				case "sans-serif-thin": aliasWeight = 100; name = "sans-serif"; break;
+				case "sans-serif-light": aliasWeight = 300; name = "sans-serif"; break;
+				case "sans-serif-medium": aliasWeight = 500; name = "sans-serif"; break;
+				case "sans-serif-black": aliasWeight = 900; name = "sans-serif"; break;
+				case "sans-serif-condensed": stretch = 2; name = "sans-serif"; break;
+				case "sans-serif-condensed-light": stretch = 2; aliasWeight = 300; name = "sans-serif"; break;
+				case "sans-serif-condensed-medium": stretch = 2; aliasWeight = 500; name = "sans-serif"; break;
+				case "sans-serif-smallcaps": features = "\"smcp\" 1"; name = "sans-serif"; break;
+				case "serif-monospace": name = "monospace"; break;
+				case "casual": name = "cursive"; break;
+				default: break;
+			}
+			if (primary) {
+				if (aliasWeight > 0 && !tf.isBold())
+					f.weight = aliasWeight;
+				f.stretch = stretch;
+				f.features = features;
+			}
+			return name;
 		}
 	}
 

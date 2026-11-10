@@ -36,9 +36,10 @@ import java.util.Objects;
  * A font class can be used for creating FontFamily.
  *
  * teslalinux: the AOSP public API with the font data held in Java (the font file bytes, style,
- * ttc index and variation axes). AOSP hands these to minikin through a native pointer; ATL draws
- * text through Pango, which does not consume per-Typeface font files yet, so there is no native
- * side here. The data is complete so a Pango/fontconfig app-font integration can use it later.
+ * ttc index and variation axes). AOSP hands these to minikin through a native pointer; ATL shapes
+ * text with Pango, so the first time a typeface lays out text with this font, its file is added to
+ * Pango's font map as an application font (native/atl_fonts.c), and the typeface selects it by the
+ * face's own family, weight and slant (see tlPangoFamily and TlTextAttrs.Face).
  */
 public final class Font {
 	private static final String TAG = "Font";
@@ -289,6 +290,57 @@ public final class Font {
 	public int getSourceIdentifier() {
 		return mFile != null ? mFile.getAbsolutePath().hashCode() : mAssetPath != null ? mAssetPath.hashCode() : System.identityHashCode(mBuffer);
 	}
+
+	/* teslalinux: the face Pango knows this font by, once registered (native/atl_fonts.c) */
+	private boolean mTlRegistered;
+	private @Nullable String mTlFamily;
+	private int mTlWeight = FontStyle.FONT_WEIGHT_NORMAL;
+	private boolean mTlItalic;
+	/** set when a font was registered off the main thread and waits to be added to the UI font map */
+	private static volatile boolean sTlPending;
+
+	/**
+	 * @hide The family name of this font's face in Pango's font map, registering the font file on
+	 * first use; null when the data is not a font fontconfig can read (the text then falls back
+	 * to the system fallback family, as minikin falls back when a font fails to load).
+	 */
+	public synchronized @Nullable String tlPangoFamily() {
+		if (!mTlRegistered) {
+			mTlRegistered = true;
+			final int[] out = new int[3];
+			mTlFamily = native_register(mBuffer, mFile != null ? mFile.getAbsolutePath() : null, mTtcIndex, out);
+			if (mTlFamily != null) {
+				mTlWeight = out[0];
+				mTlItalic = out[1] != 0;
+				if (out[2] != 0)
+					sTlPending = true;
+			}
+		}
+		return mTlFamily;
+	}
+
+	/** @hide the weight (1..1000) of the face in the font file, as Pango matches it */
+	public synchronized int tlPangoWeight() {
+		tlPangoFamily();
+		return mTlWeight;
+	}
+
+	/** @hide whether the face in the font file is italic or oblique */
+	public synchronized boolean tlPangoItalic() {
+		tlPangoFamily();
+		return mTlItalic;
+	}
+
+	/** @hide on the main thread: adds the fonts that other threads registered to the UI font map */
+	public static void tlSyncPending() {
+		if (sTlPending && android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) {
+			sTlPending = false;
+			native_sync_pending();
+		}
+	}
+
+	private static native String native_register(ByteBuffer buffer, String path, int ttcIndex, int[] out);
+	private static native void native_sync_pending();
 
 	/** @hide */
 	public boolean paramEquals(@NonNull Font f) {

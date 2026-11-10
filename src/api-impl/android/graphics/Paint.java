@@ -112,12 +112,13 @@ public class Paint {
 	}
 
 	/* teslalinux: AOSP Paint keeps the typeface it was given (null means the default); ATL used to
-	 * drop it and hand back a fresh default from getTypeface(). Pango still picks the actual font
-	 * by family/style, see Typeface. */
+	 * drop it and hand back a fresh default from getTypeface(). Its face also goes to the native
+	 * font description (tlApplyFace), for drawText and the measuring calls. */
 	private Typeface mTypeface;
 
 	public Typeface setTypeface(Typeface typeface) {
 		mTypeface = typeface;
+		tlApplyFace();
 		return typeface;
 	}
 	public void getTextBounds(String text, int start, int end, Rect bounds) {
@@ -153,6 +154,7 @@ public class Paint {
 	public void setFlags(int flags) {
 		mFlags = flags;
 		setAntiAlias((flags & ANTI_ALIAS_FLAG) != 0);
+		tlApplyFace();
 	}
 
 	public void setStyle(Style style) {
@@ -311,7 +313,10 @@ public class Paint {
 	public void setSubpixelText(boolean subpixelText) { tlSetFlag(SUBPIXEL_TEXT_FLAG, subpixelText); }
 	public void setUnderlineText(boolean underlineText) { tlSetFlag(UNDERLINE_TEXT_FLAG, underlineText); }
 	public void setStrikeThruText(boolean strikeThruText) { tlSetFlag(STRIKE_THRU_TEXT_FLAG, strikeThruText); }
-	public void setFakeBoldText(boolean fakeBoldText) { tlSetFlag(FAKE_BOLD_TEXT_FLAG, fakeBoldText); }
+	public void setFakeBoldText(boolean fakeBoldText) {
+		tlSetFlag(FAKE_BOLD_TEXT_FLAG, fakeBoldText);
+		tlApplyFace();
+	}
 	public boolean isLinearText() { return (mFlags & LINEAR_TEXT_FLAG) != 0; }
 	public boolean isSubpixelText() { return (mFlags & SUBPIXEL_TEXT_FLAG) != 0; }
 	public boolean isUnderlineText() { return (mFlags & UNDERLINE_TEXT_FLAG) != 0; }
@@ -638,8 +643,9 @@ public class Paint {
 		return mMaskFilter;
 	}
 
+	/** AOSP: whether FAKE_BOLD_TEXT_FLAG is set (text drawn bolder than its font when the font has no bold face). */
 	public boolean isFakeBoldText() {
-		return false;
+		return (mFlags & FAKE_BOLD_TEXT_FLAG) != 0;
 	}
 
 	public void reset() {
@@ -938,6 +944,19 @@ public class Paint {
 	/* teslalinux: blend-mode colour filter with the real per-mode result (native-paint-colorfilter-modes.sh) */
 	private static native void native_set_color_filter_mode(long paint, int mode, int color);
 
+
+	/*
+	 * teslalinux (native-font-files.sh): the face of the typeface (family, weight, slant, width, as
+	 * TextView and Layout resolve it, see TlTextAttrs.Face) and the fake-bold flag on the native
+	 * Pango font description. Text skew is not part of it: GskCanvas shears the text itself.
+	 */
+	private void tlApplyFace() {
+		final android.text.TlTextAttrs.Face face = android.text.TlTextAttrs.Face.of(mTypeface, (mFlags & FAKE_BOLD_TEXT_FLAG) != 0, 0);
+		native_set_face(paint, face.family, face.weight, face.italic, face.stretch);
+	}
+
+	private static native void native_set_face(long paint, String family, int weight, boolean italic, int stretch);
+
 	/* ---- teslalinux (gfx): path effects, mask filters, text skew, stroke miter (native/atl_gfx_canvas.c) ---- */
 	private PathEffect mPathEffect;
 	private MaskFilter mMaskFilter;
@@ -982,6 +1001,8 @@ public class Paint {
 		mPathEffect = null;
 		mMaskFilter = null;
 		mTextSkewX = 0;
+		mTypeface = null; /* AOSP reset: the default typeface */
+		tlApplyFace();
 	}
 
 	/**
