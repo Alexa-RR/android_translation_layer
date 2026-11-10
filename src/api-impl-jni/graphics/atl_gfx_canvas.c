@@ -8,7 +8,7 @@
  *    with the content recorded so far in the current layer (Skia: result = lerp(dst, mode(src, dst),
  *    coverage)). GSK mask and blend nodes express the Porter-Duff and separable modes.
  *  - shaders: LinearGradient, RadialGradient and SweepGradient as GSK gradient nodes with Skia's
- *    tile modes and Skia's unpremultiplied colour interpolation; BitmapShader tiling helpers.
+ *    tile modes and Android's premultiplied colour interpolation; BitmapShader tiling helpers.
  *  - mask filters (BlurMaskFilter) and the blur/mask pushes they need.
  *
  * Mode numbers are SkBlendMode values (android.graphics.BlendMode / PorterDuffXfermode.porterDuffMode):
@@ -259,8 +259,11 @@ static void argb_to_rgba(jint c, GdkRGBA *out)
 #define TL_INTERP_STEPS 8
 
 /*
- * Skia interpolates gradient colours unpremultiplied; GSK (as CSS) interpolates premultiplied. Where
- * two neighbouring stops differ in alpha and colour, intermediate stops reproduce Skia's curve.
+ * Android interpolates gradient colours premultiplied (hwui Shader.cpp passes Skia's
+ * kInterpolateColorsInPremul_Flag to every gradient), so white -> transparent fades without a grey
+ * middle. GSK's GL renderer interpolates premultiplied too, but its cairo renderer (pixman) does not;
+ * where two neighbouring stops differ in alpha and colour, intermediate stops computed in
+ * premultiplied space give Android's curve under either renderer.
  * mirror: the stop list is followed by its reflection over [0, 1] (offsets halved), for a repeating
  * gradient of twice the length. Returns the stop count; *out is g_free'd by the caller.
  */
@@ -269,7 +272,7 @@ static int build_stops(JNIEnv *env, jintArray colors_arr, jfloatArray pos_arr, g
 	int n = (*env)->GetArrayLength(env, colors_arr);
 	jint *colors = (*env)->GetIntArrayElements(env, colors_arr, NULL);
 	jfloat *pos = pos_arr ? (*env)->GetFloatArrayElements(env, pos_arr, NULL) : NULL;
-	int max = (n * (TL_INTERP_STEPS + 1) + 2) * (mirror ? 2 : 1);
+	int max = (n * (TL_INTERP_STEPS + 2) + 2) * (mirror ? 2 : 1);
 	GskColorStop *stops = g_new0(GskColorStop, max);
 	int k = 0;
 	float last = 0.f;
@@ -281,6 +284,19 @@ static int build_stops(JNIEnv *env, jintArray colors_arr, jfloatArray pos_arr, g
 			off = 1.f;
 		GdkRGBA c;
 		argb_to_rgba(colors[i], &c);
+		/* premultiplied, a transparent stop has no colour of its own: it takes its neighbour's on each
+		 * side (a second stop at the same offset when the next colour differs), which is exact under
+		 * an unpremultiplied interpolation too */
+		if (k > 0 && c.alpha == 0.f) {
+			c.red = stops[k - 1].color.red;
+			c.green = stops[k - 1].color.green;
+			c.blue = stops[k - 1].color.blue;
+		} else if (k > 0 && stops[k - 1].color.alpha == 0.f && c.alpha > 0.f) {
+			stops[k].offset = stops[k - 1].offset;
+			stops[k].color = c;
+			stops[k].color.alpha = 0.f;
+			k++;
+		}
 		if (k > 0) {
 			GdkRGBA p = stops[k - 1].color;
 			float poff = stops[k - 1].offset;
@@ -288,11 +304,16 @@ static int build_stops(JNIEnv *env, jintArray colors_arr, jfloatArray pos_arr, g
 				for (int s = 1; s < TL_INTERP_STEPS; s++) {
 					float f = (float)s / TL_INTERP_STEPS;
 					GskColorStop *st = &stops[k++];
+					const float a = p.alpha + (c.alpha - p.alpha) * f;
 					st->offset = poff + (off - poff) * f;
-					st->color.red = p.red + (c.red - p.red) * f;
-					st->color.green = p.green + (c.green - p.green) * f;
-					st->color.blue = p.blue + (c.blue - p.blue) * f;
-					st->color.alpha = p.alpha + (c.alpha - p.alpha) * f;
+					st->color.alpha = a;
+					if (a > 0.f) { /* premultiplied interpolation, stored unpremultiplied */
+						st->color.red = (p.red * p.alpha + (c.red * c.alpha - p.red * p.alpha) * f) / a;
+						st->color.green = (p.green * p.alpha + (c.green * c.alpha - p.green * p.alpha) * f) / a;
+						st->color.blue = (p.blue * p.alpha + (c.blue * c.alpha - p.blue * p.alpha) * f) / a;
+					} else {
+						st->color.red = st->color.green = st->color.blue = 0.f;
+					}
 				}
 			}
 		}
