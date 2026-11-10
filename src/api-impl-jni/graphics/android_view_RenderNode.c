@@ -253,5 +253,14 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativePathClipKeep(JNIEnv *
 		return 0;
 	if (!path)
 		return _INTPTR(gsk_render_node_ref(node));
-	return _INTPTR(gsk_fill_node_new(node, path, even_odd ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING));
+	/* tl_path_clip_mask: the node masked by the alpha of the filled path */
+	graphene_rect_t bounds;
+	if (!gsk_path_get_bounds(path, &bounds))
+		return _INTPTR(gsk_container_node_new(NULL, 0)); /* an empty path clips everything away */
+	GskRenderNode *color = gsk_color_node_new(&(GdkRGBA){0, 0, 0, 1}, &bounds);
+	GskRenderNode *fill = gsk_fill_node_new(color, path, even_odd ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING);
+	GskRenderNode *masked = gsk_mask_node_new(node, fill, GSK_MASK_MODE_ALPHA);
+	gsk_render_node_unref(fill);
+	gsk_render_node_unref(color);
+	return _INTPTR(masked);
 }
