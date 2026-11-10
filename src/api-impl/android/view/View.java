@@ -1985,6 +1985,7 @@ public class View implements Drawable.Callback {
 		}
 		tlLaidOut = true;
 		tlFrameMaybeChanged();
+		tlAnimAfterLayout();
 	}
 
 	private void tlLayoutImpl(int l, int t, int r, int b) {
@@ -2008,6 +2009,7 @@ public class View implements Drawable.Callback {
 		}
 		tlLaidOut = true;
 		tlFrameMaybeChanged();
+		tlAnimAfterLayout();
 	}
 
 	private void tlLayoutInternalImpl(int width, int height) {
@@ -3225,16 +3227,19 @@ public class View implements Drawable.Callback {
 		refreshDrawableState();
 	}
 
-	/** AOSP: attaches the animation; it runs from its start time (START_ON_FIRST_FRAME: the next frame) */
+	/** AOSP: attaches the animation and resets it (it initializes again against this view's size at its
+	 * first frame); it runs from its start time (START_ON_FIRST_FRAME: the next frame). An app may
+	 * start the same Animation object again and again (Waze's progress ring). */
 	public void setAnimation(Animation animation) {
-		if (tlAnimation == animation)
-			return;
-		if (tlAnimation != null)
+		if (tlAnimation != null && tlAnimation != animation)
 			clearAnimation();
 		tlAnimation = animation;
 		tlAnimStartReported = false;
-		if (animation != null)
+		tlAnimWaitingForLayout = false;
+		if (animation != null) {
+			animation.reset();
 			tlScheduleAnimationFrame();
+		}
 	}
 
 	/** AOSP: the action goes to performAccessibilityActionInternal (an accessibility delegate would see it first). */
@@ -5383,6 +5388,16 @@ public class View implements Drawable.Callback {
 	private int tlLayerH = -1;
 
 	private Animation tlAnimation;
+	/** the animation's first frame waits for this view's first layout (tlStepAnimation) */
+	private boolean tlAnimWaitingForLayout;
+
+	/** after a layout: an animation that waited for it starts now */
+	private void tlAnimAfterLayout() {
+		if (tlAnimWaitingForLayout && tlAnimation != null) {
+			tlAnimWaitingForLayout = false;
+			tlScheduleAnimationFrame();
+		}
+	}
 	private final android.view.animation.Transformation tlAnimTransformation = new android.view.animation.Transformation();
 	private boolean tlAnimApplied;
 	private float tlAnimAlpha = 1f;
@@ -5490,6 +5505,13 @@ public class View implements Drawable.Callback {
 		if (a == null)
 			return;
 		if (!a.isInitialized()) {
+			// AOSP initializes a legacy animation in draw(), after the frame's layout; this frame
+			// callback runs before it, so a view that has not been laid out yet waits for its layout
+			// (otherwise percentage pivots resolve against a 0x0 view: a ring spinning around its corner)
+			if (!isLaidOut()) {
+				tlAnimWaitingForLayout = true;
+				return;
+			}
 			final View p = parent instanceof View ? (View) parent : null;
 			a.initialize(getWidth(), getHeight(), p != null ? p.getWidth() : getWidth(), p != null ? p.getHeight() : getHeight());
 		}
