@@ -348,11 +348,27 @@ public class LayoutInflater {
 			// Inflate all children.
 			rInflate(childParser, view, childAttrs, true);
 
-			TypedArray ta = context.obtainStyledAttributes(attrs, new int[] {com.android.internal.R.attr.id});
+			/* AOSP LayoutInflater.parseInclude: the <include> tag's android:id and android:visibility
+			 * override the included root's (Include_id, Include_visibility; attributes in ascending order).
+			 * The visibility was dropped, so an included block the layout hides (visibility="gone") showed:
+			 * Waze's audio panel drew its playlist page over the app chooser. */
+			TypedArray ta = context.obtainStyledAttributes(attrs, new int[] {com.android.internal.R.attr.id, com.android.internal.R.attr.visibility});
 			int id = ta.getResourceId(0, 0);
+			int includeVisibility = ta.getInt(1, -1);
 			if (id != 0)
 				view.setId(id);
 			ta.recycle();
+			switch (includeVisibility) {
+				case 0:
+					view.setVisibility(View.VISIBLE);
+					break;
+				case 1:
+					view.setVisibility(View.INVISIBLE);
+					break;
+				case 2:
+					view.setVisibility(View.GONE);
+					break;
+			}
 
 			group.addView(view);
 		}
