@@ -1104,16 +1104,17 @@ public class View implements Drawable.Callback {
 				paddingTop = paddingVertical;
 				paddingBottom = paddingVertical;
 			} else {
-				paddingTop = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingTop, 0);
-				paddingBottom = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingBottom, 0);
+				/* AOSP: a padding attribute that is not set keeps the background's padding */
+				paddingTop = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingTop, paddingTop);
+				paddingBottom = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingBottom, paddingBottom);
 			}
 
 			if (paddingHorizontal >= 0) {
 				paddingLeft = paddingHorizontal;
 				paddingRight = paddingHorizontal;
 			} else {
-				paddingLeft = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingLeft, 0);
-				paddingRight = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingRight, 0);
+				paddingLeft = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingLeft, paddingLeft);
+				paddingRight = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingRight, paddingRight);
 
 				if (paddingStart >= 0)
 					paddingLeft = paddingStart;
@@ -2064,10 +2065,18 @@ public class View implements Drawable.Callback {
 	}
 
 	public void setBackgroundDrawable(Drawable backgroundDrawable) {
-		if (this.background != backgroundDrawable)
+		final boolean changed = this.background != backgroundDrawable;
+		if (changed)
 			tlPostRebuildOutline();
 		this.background = backgroundDrawable;
 		if (backgroundDrawable != null) {
+			/* AOSP: a new background with padding (a nine-patch's padding box, an inset, a layer
+			 * list's) becomes the view's padding; XML padding attributes are applied after it */
+			if (changed) {
+				final android.graphics.Rect padding = new android.graphics.Rect();
+				if (backgroundDrawable.getPadding(padding))
+					setPadding(padding.left, padding.top, padding.right, padding.bottom);
+			}
 			backgroundDrawable.setCallback(this);
 			// AOSP setBackgroundDrawable(): the view's background tint applies to every new background
 			applyBackgroundTint();
