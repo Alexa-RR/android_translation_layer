@@ -223,6 +223,15 @@ executable('android-translation-layer', [
 						'-DINSTALL_DATADIR="'+join_paths(get_option('prefix'), get_option('datadir'))+'"'
                                         ])
 
+# dexer: dx by default; D8 from r8.jar when -Dr8_jar is given (dx emits invoke-custom for lambdas,
+# which ART cannot bootstrap here; D8 desugars them and keeps default/static interface methods)
+r8_jar = get_option('r8_jar')
+if r8_jar != ''
+	dexer = [find_program('java'), '-cp', r8_jar, 'com.android.tools.r8.D8', '--min-api', '24', '--output', '@OUTPUT@', '@INPUT@']
+else
+	dexer = ['dx', '--dex', '--incremental', '--output=@OUTPUT@', '@INPUT@']
+endif
+
 # hax.jar
 subdir('src/api-impl')
 
@@ -230,7 +239,7 @@ subdir('src/api-impl')
 custom_target('api-impl.jar', build_by_default: true, input: [hax_jar], output: ['api-impl.jar'],
               install: true,
               install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
-              command: ['dx', '--dex', '--incremental', '--output='+join_paths(builddir_base, 'api-impl.jar'), hax_jar.full_path()])
+              command: dexer)
 
 # gstub.jar
 subdir('src/gstub')
@@ -238,7 +247,7 @@ subdir('src/gstub')
 custom_target('gstub.jar', build_by_default: true, input: [gstub_jar], output: ['gstub.jar'],
               install: true,
               install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
-              command: ['dx', '--dex', '--incremental', '--output='+join_paths(builddir_base, 'gstub.jar'), gstub_jar.full_path()])
+              command: dexer)
 
 # test-runner.jar
 subdir('src/test-runner')
@@ -246,7 +255,7 @@ subdir('src/test-runner')
 custom_target('test_runner.jar', build_by_default: false, input: [test_runner_jar], output: ['test_runner.jar'],
               install: true,
               install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
-              command: ['dx', '--dex', '--incremental', '--output='+join_paths(builddir_base, 'test_runner.jar'), test_runner_jar.full_path()])
+              command: dexer)
 
 #framework-res.apk
 subdir('res/framework-res')
