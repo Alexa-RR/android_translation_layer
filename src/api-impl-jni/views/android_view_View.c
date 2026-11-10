@@ -944,7 +944,8 @@ JNIEXPORT void JNICALL Java_android_view_View_native_1measure(JNIEnv *env, jobje
 			height = height_spec_size;
 	}
 	if (width == -1) {
-		gtk_widget_measure(widget, GTK_ORIENTATION_HORIZONTAL, height, NULL, &width, NULL, NULL);
+		/* tl_measure_width_free: the desired width, not the narrowest one that fits the height */
+		gtk_widget_measure(widget, GTK_ORIENTATION_HORIZONTAL, -1, NULL, &width, NULL, NULL);
 		if (width_spec_mode == MEASURE_SPEC_AT_MOST && width > width_spec_size)
 			width = width_spec_size;
 	}

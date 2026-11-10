@@ -250,6 +250,29 @@ public final class ViewDump {
 						for (View v : found)
 							dumpFields("fields", v, depth, new java.util.IdentityHashMap<Object, Boolean>());
 						Log.i(TAG, "fields: " + found.size() + " view(s) named " + parts[1]);
+					} else if (command.startsWith("tvinfo ")) {
+						// "tvinfo TEXT": every TextView showing TEXT: its size, typeface, measured and laid-out
+						// widths next to Paint.measureText and the text layout's own width
+						String want = command.trim().substring(7);
+						for (Activity a : snapshotActivities()) {
+							View d = a.getWindow() != null ? a.getWindow().getDecorView() : null;
+							if (d != null)
+								tvInfo(d, want);
+						}
+					} else if (command.startsWith("invalidate ")) {
+						// "invalidate NAME": View.invalidate() on every view whose class name is NAME (full or
+						// simple), as the app would; shows whether a view that stopped redrawing comes back
+						String[] parts = command.trim().split(" ");
+						java.util.List<View> found = new java.util.ArrayList<View>();
+						for (Activity a : snapshotActivities()) {
+							View d = a.getWindow() != null ? a.getWindow().getDecorView() : null;
+							if (d != null)
+								collectByClassName(d, parts[1], found);
+						}
+						for (View v : found) {
+							v.invalidate();
+							Log.i(TAG, "invalidate: " + v + " " + v.getWidth() + "x" + v.getHeight() + " shown=" + v.isShown());
+						}
 					} else if (command.startsWith("objects ")) {
 						// "objects ACTIVITY CLASS [DEPTH]": walk the fields of every live activity whose class
 						// name contains ACTIVITY (app objects, collections, maps, up to DEPTH levels, default 6)
@@ -418,6 +441,27 @@ public final class ViewDump {
 			return line == null ? "" : line;
 		} catch (java.io.IOException e) {
 			return "";
+		}
+	}
+
+	private static void tvInfo(View v, String want) {
+		if (v instanceof android.widget.TextView) {
+			android.widget.TextView tv = (android.widget.TextView) v;
+			CharSequence t = tv.getText();
+			if (t != null && t.toString().equals(want)) {
+				android.text.Layout l = tv.getLayout();
+				Log.i(TAG, "tvinfo: " + v.getClass().getName() + " \"" + t + "\" textSize=" + tv.getTextSize()
+				      + " typeface=" + tv.getTypeface() + " style=" + (tv.getTypeface() != null ? tv.getTypeface().getStyle() : -1)
+				      + " measured=" + v.getMeasuredWidth() + "x" + v.getMeasuredHeight() + " size=" + v.getWidth() + "x" + v.getHeight()
+				      + " paint.measureText=" + tv.getPaint().measureText(t.toString()) + " paintSize=" + tv.getPaint().getTextSize()
+				      + " pad=" + tv.getCompoundPaddingLeft() + "," + tv.getCompoundPaddingRight()
+				      + " layoutWidth=" + (l != null ? l.getWidth() + " lines=" + l.getLineCount() + " line0=" + l.getLineWidth(0) : "null"));
+			}
+		}
+		if (v instanceof ViewGroup) {
+			ViewGroup g = (ViewGroup) v;
+			for (int i = 0; i < g.getChildCount(); i++)
+				tvInfo(g.getChildAt(i), want);
 		}
 	}
 
@@ -1182,9 +1226,11 @@ public final class ViewDump {
 		if (o == null || seen.containsKey(o))
 			return;
 		seen.put(o, Boolean.TRUE);
+		// an androidx object (a Compose interop holder, say) shows its androidx fields too
+		final boolean androidxObject = o.getClass().getName().startsWith("androidx.");
 		for (Class<?> c = o.getClass(); c != null; c = c.getSuperclass()) {
 			String cn = c.getName();
-			if (cn.startsWith("android.") || cn.startsWith("java.") || cn.startsWith("androidx."))
+			if (cn.startsWith("android.") || cn.startsWith("java.") || (cn.startsWith("androidx.") && !androidxObject))
 				break;
 			for (java.lang.reflect.Field f : c.getDeclaredFields()) {
 				if (java.lang.reflect.Modifier.isStatic(f.getModifiers()))
