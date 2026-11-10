@@ -210,10 +210,15 @@ public final class AssetManager {
 	 * identifier for the current configuration / skin.
 	 */
 	/*package*/ final CharSequence getResourceText(int id) {
+		/* AOSP: null when the id does not resolve to a value (0 never does), so Resources.getText
+		 * throws NotFoundException. ATL returned "" for 0, which apps falling back on
+		 * NotFoundException took as the text (Waze's search field placeholder: its string lookup
+		 * calls getString(getIdentifier(text)) and keeps the text only when that throws). */
 		if (id == 0)
-			return "";
+			return null;
 		TypedValue value = new TypedValue();
-		loadResourceValue(id, (short)0, value, true);
+		if (loadResourceValue(id, (short)0, value, true) < 0)
+			return null;
 		return value.coerceToString();
 	}
 
