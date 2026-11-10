@@ -80,7 +80,14 @@ public final class ViewDump {
 								View d = w != null ? w.getDecorView() : null;
 								android.graphics.Rect r = new android.graphics.Rect();
 								boolean vis = d != null && d.getGlobalVisibleRect(r);
-								Log.i(TAG, "windows: " + a.getClass().getName() + " destroyed=" + a.isDestroyed() + " finishing=" + a.isFinishing()
+								String life = "-";
+								try {
+									Object lc = a.getClass().getMethod("getLifecycle").invoke(a);
+									life = String.valueOf(lc.getClass().getMethod("getCurrentState").invoke(lc));
+								} catch (Throwable t) {
+									// not a LifecycleOwner
+								}
+								Log.i(TAG, "windows: " + a.getClass().getName() + " lifecycle=" + life + " destroyed=" + a.isDestroyed() + " finishing=" + a.isFinishing()
 								           + " window=" + w + " decor=" + (d != null ? d.getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(d)) : null)
 								           + " attached=" + (d != null && d.isAttachedToWindow()) + " rootInsets=" + (d != null ? d.getRootWindowInsets() : null)
 								           + " visible=" + vis + " " + r + " size=" + (d != null ? d.getWidth() + "x" + d.getHeight() : "-"));
@@ -243,6 +250,18 @@ public final class ViewDump {
 						for (View v : found)
 							dumpFields("fields", v, depth, new java.util.IdentityHashMap<Object, Boolean>());
 						Log.i(TAG, "fields: " + found.size() + " view(s) named " + parts[1]);
+					} else if (command.startsWith("objects ")) {
+						// "objects ACTIVITY CLASS [DEPTH]": walk the fields of every live activity whose class
+						// name contains ACTIVITY (app objects, collections, maps, up to DEPTH levels, default 6)
+						// and print every object whose class name contains CLASS with all its fields
+						String[] parts = command.trim().split(" ");
+						int depth = parts.length > 3 ? Integer.parseInt(parts[3]) : 6;
+						int[] found = new int[1];
+						for (Activity a : snapshotActivities()) {
+							if (a.getClass().getName().contains(parts[1]))
+								findObjects(a, parts[2], depth, new java.util.IdentityHashMap<Object, Boolean>(), a.getClass().getSimpleName(), found);
+						}
+						Log.i(TAG, "objects: " + found[0] + " object(s) of " + parts[2]);
 					} else if (command.startsWith("hit ")) {
 						// "hit X Y": what Compose's own hit test returns at a window position (per compose root)
 						String[] parts = command.trim().split(" ");
@@ -1089,6 +1108,65 @@ public final class ViewDump {
 		}
 	}
 
+	/** objects reachable from o (app classes, arrays, collections, maps) whose class name contains want */
+	private static void findObjects(Object o, String want, int depth, java.util.IdentityHashMap<Object, Boolean> seen, String path, int[] found) {
+		if (o == null || depth < 0 || seen.containsKey(o) || seen.size() > 200000)
+			return;
+		seen.put(o, Boolean.TRUE);
+		Class<?> oc = o.getClass();
+		if (oc.getName().contains(want)) {
+			found[0]++;
+			Log.i(TAG, "objects: " + path + " -> " + oc.getName() + "@" + Integer.toHexString(System.identityHashCode(o)));
+			dumpFields("objects   ", o, 0, new java.util.IdentityHashMap<Object, Boolean>());
+		}
+		if (oc.isArray()) {
+			if (!oc.getComponentType().isPrimitive()) {
+				Object[] arr = (Object[]) o;
+				for (int i = 0; i < arr.length && i < 500; i++)
+					findObjects(arr[i], want, depth - 1, seen, path + "[" + i + "]", found);
+			}
+			return;
+		}
+		if (o instanceof java.util.Collection) {
+			int i = 0;
+			try {
+				for (Object e : (java.util.Collection<?>) o) {
+					if (i++ >= 500)
+						break;
+					findObjects(e, want, depth - 1, seen, path + "[" + (i - 1) + "]", found);
+				}
+			} catch (Throwable t) {
+				// concurrent modification while walking: skip
+			}
+			return;
+		}
+		if (o instanceof java.util.Map) {
+			try {
+				for (java.util.Map.Entry<?, ?> e : ((java.util.Map<?, ?>) o).entrySet())
+					findObjects(e.getValue(), want, depth - 1, seen, path + "{" + e.getKey() + "}", found);
+			} catch (Throwable t) {
+				// skip
+			}
+			return;
+		}
+		for (Class<?> c = oc; c != null && c != Object.class; c = c.getSuperclass()) {
+			String cn = c.getName();
+			boolean app = !(cn.startsWith("java.") || cn.startsWith("android.") || cn.startsWith("libcore.") || cn.startsWith("dalvik.") || cn.startsWith("sun."));
+			if (!app && !(o instanceof Activity) && !cn.startsWith("androidx.lifecycle"))
+				continue;
+			for (java.lang.reflect.Field f : c.getDeclaredFields()) {
+				if (java.lang.reflect.Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive())
+					continue;
+				try {
+					f.setAccessible(true);
+					findObjects(f.get(o), want, depth - 1, seen, path + "." + f.getName(), found);
+				} catch (Throwable t) {
+					// inaccessible: skip
+				}
+			}
+		}
+	}
+
 	static void collectByClassName(View v, String name, java.util.List<View> out) {
 		if (v.getClass().getName().equals(name) || v.getClass().getSimpleName().equals(name))
 			out.add(v);
@@ -1124,8 +1202,8 @@ public final class ViewDump {
 				} catch (Throwable t) {
 					vs = "<toString: " + t + ">";
 				}
-				if (vs.length() > 160)
-					vs = vs.substring(0, 160) + "...";
+				if (vs.length() > 3000)
+					vs = vs.substring(0, 3000) + "...";
 				Log.i(TAG, prefix + " " + cn + "." + f.getName() + " (" + f.getType().getSimpleName() + ") = " + vs);
 				if (depth > 0 && val != null && !f.getType().isPrimitive()) {
 					String vcn = val.getClass().getName();
