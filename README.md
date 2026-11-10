@@ -1,3 +1,56 @@
+# Android Translation Layer — Waze fork
+
+This is a fork of [Android Translation Layer](https://gitlab.com/android_translation_layer/android_translation_layer)
+(ATL) made to run **Waze**, the Android navigation app, on Linux. Its target is a Raspberry Pi that
+serves the app to a car's web browser; development and testing happen on arm64 Linux VMs.
+
+Upstream ATL runs simple apps and games well. Waze is a large modern app: Jetpack Compose UI,
+a Godot-based OpenGL map, Google Play services, media playback, location and many framework APIs,
+so this fork implements a much bigger part of the Android framework.
+
+### What works with Waze
+
+Waze 5.25 runs end to end: the map, search with the on-screen or a hardware keyboard, categories
+and place cards, route overview, turn-by-turn navigation with voice prompts, map pins and alerts,
+settings, menus, dialogs and popups.
+
+### What this fork changes
+
+The rule throughout is to follow AOSP behaviour: missing classes and methods are ported from AOSP
+or implemented for real on GTK, never left as placeholders.
+
+- **Framework classes from AOSP**: widgets (ProgressBar, SeekBar, Switch, PopupWindow,
+  ListPopupWindow and more), drawables, text spans and layout, touch mode and focus, connectivity
+  and media classes, among many others.
+- **Rendering on GTK4/GSK**: Canvas layers and transfer modes, shaders and gradients (interpolated
+  premultiplied, as Android does), path effects, PathMeasure, regions and path operations, clipping,
+  ImageView scale types and image matrices, Bitmap drawing in software, and View.draw into a Bitmap
+  for views that are not on screen.
+- **Text**: Pango attributes for spans, font metrics, and app font files (res/font, assets)
+  registered with Pango, so apps render in their own typefaces.
+- **Windows and input**: dialogs and popups as layers of the app window, AOSP touch mode and focus
+  handling, the on-screen keyboard and hardware keys, Choreographer vsync.
+- **Graphics and media**: a SurfaceView/EGL swapchain with a fence per frame, fixes for GTK's GL
+  renderer, MediaCodec through FFmpeg, AudioTrack, and a configurable location source.
+
+The fork is based on upstream commit `f4622e36` (July 2026). Upstream's later changes are being
+merged in.
+
+### Building
+
+The build is upstream's (see [doc/Build.md](doc/Build.md)), with one addition: the Java code uses
+lambdas, which `dx` turns into `invoke-custom` instructions that ART cannot run here. Dex it with
+D8 instead by passing the path to `r8.jar` (from Google Maven, `com.android.tools:r8`):
+
+```sh
+meson setup builddir -Dr8_jar=/path/to/r8.jar
+ninja -C builddir
+```
+
+---
+
+## Upstream README
+
 A translation layer that allows running Android apps on a Linux system
 
 ![Angry Birds 3.2.0, Worms 2 Armageddon, and Gravity Defied running side by side by side](https://gitlab.com/android_translation_layer/android_translation_layer/-/raw/master/screenshot.png)
