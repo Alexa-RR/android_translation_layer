@@ -96,13 +96,15 @@ public class View implements Drawable.Callback {
 	 * This view does not want keystrokes. Use with TAKES_FOCUS_MASK when
 	 * calling setFlags.
 	 */
-	private static final int NOT_FOCUSABLE = 0x00000000;
+	public static final int NOT_FOCUSABLE = 0x00000000;
 
 	/**
 	 * This view wants keystrokes. Use with TAKES_FOCUS_MASK when calling
 	 * setFlags.
 	 */
-	private static final int FOCUSABLE = 0x00000001;
+	public static final int FOCUSABLE = 0x00000001;
+	/** AOSP (API 26): the view decides itself; focusable when clickable (tl_focus_model) */
+	public static final int FOCUSABLE_AUTO = 0x00000010;
 
 	/**
 	 * Mask for use with setFlags indicating bits used for focus.
@@ -973,7 +975,8 @@ public class View implements Drawable.Callback {
 	protected int paddingBottom = 0;
 
 	private boolean atl_enabled = true;
-	private boolean atl_focusable = true;
+	/** AOSP: NOT_FOCUSABLE, FOCUSABLE or FOCUSABLE_AUTO (the default when nothing sets it) (tl_focus_model) */
+	private int tlFocusableMode = FOCUSABLE_AUTO;
 
 	public static final Property<View, Float> TRANSLATION_X = new Property<View, Float>(Float.class, "translationX") {
 		@Override
@@ -1062,7 +1065,15 @@ public class View implements Drawable.Callback {
 			}
 		}
 		if (a.hasValue(com.android.internal.R.styleable.View_focusable)) {
-			atl_focusable = a.getBoolean(com.android.internal.R.styleable.View_focusable, true);
+			/* AOSP getFocusableAttribute: android:focusable is a boolean or "auto" */
+			if (a.hasValue(com.android.internal.R.styleable.View_focusable)) {
+				android.util.TypedValue fv = new android.util.TypedValue();
+				a.getValue(com.android.internal.R.styleable.View_focusable, fv);
+				if (fv.type == android.util.TypedValue.TYPE_INT_BOOLEAN)
+					tlFocusableMode = fv.data == 0 ? NOT_FOCUSABLE : FOCUSABLE;
+				else
+					tlFocusableMode = fv.data;
+			}
 		}
 		if (a.hasValue(com.android.internal.R.styleable.View_visibility)) {
 			visibility = VISIBILITY_FLAGS[a.getInt(com.android.internal.R.styleable.View_visibility, 0)];
@@ -1435,54 +1446,59 @@ public class View implements Drawable.Callback {
 		mOnKeyListener = l;
 	}
 
+	/** AOSP: whether this view can take focus. */
 	public void setFocusable(boolean focusable) {
-		atl_focusable = focusable;
+		setFocusable(focusable ? FOCUSABLE : NOT_FOCUSABLE);
 	}
-	/**
-	 * AOSP: FOCUSABLE, NOT_FOCUSABLE or FOCUSABLE_AUTO (focusable when clickable); not focusable also
-	 * clears focusable-in-touch-mode.
-	 */
+	/** AOSP: NOT_FOCUSABLE, FOCUSABLE or FOCUSABLE_AUTO; a view that is no longer focusable loses focus. */
 	public void setFocusable(int focusable) {
-		tlFocusableAuto = (focusable & FOCUSABLE_AUTO) != 0;
 		if ((focusable & (FOCUSABLE_AUTO | FOCUSABLE)) == 0)
 			tlFocusableInTouchMode = false;
-		setFocusable(tlFocusableAuto ? isClickable() : (focusable & FOCUSABLE) != 0);
+		tlFocusableMode = focusable & (FOCUSABLE_AUTO | FOCUSABLE);
+		if (!isFocusable() && tlFocused)
+			clearFocus();
 	}
-
-	/** AOSP: FOCUSABLE_AUTO when set so, else FOCUSABLE or NOT_FOCUSABLE */
+	/** AOSP: the focusable setting as set (FOCUSABLE_AUTO when the view decides). */
 	public int getFocusable() {
-		if (tlFocusableAuto)
-			return FOCUSABLE_AUTO;
-		return isFocusable() ? FOCUSABLE : NOT_FOCUSABLE;
+		return (tlFocusableMode & FOCUSABLE_AUTO) != 0 ? FOCUSABLE_AUTO : (isFocusable() ? FOCUSABLE : NOT_FOCUSABLE);
 	}
-	/** AOSP: focusable in touch mode implies focusable. */
+	/**
+	 * AOSP: focusable in touch mode implies focusable; giving it up while in touch mode drops the
+	 * focus (setFlags: a view that cannot keep focus in touch mode).
+	 */
 	public void setFocusableInTouchMode(boolean focusableInTouchMode) {
 		tlFocusableInTouchMode = focusableInTouchMode;
 		if (focusableInTouchMode)
-			setFocusable(true);
+			setFocusable(FOCUSABLE);
+		else if (tlFocused && isInTouchMode())
+			clearFocus();
 	}
-	private boolean tlFocusableInTouchMode;
+	boolean tlFocusableInTouchMode;
 	public final boolean requestFocus() {
 		return requestFocus(View.FOCUS_DOWN);
 	}
 	public final boolean requestFocus(int direction) {
 		return requestFocus(direction, null);
 	}
+	/**
+	 * AOSP requestFocus/requestFocusNoSearch (tl_focus_model): the view takes focus when it can
+	 * (visible, focusable, enabled, focusable in touch mode while in touch mode, no ancestor blocking
+	 * its descendants); the focus is view state of its window, and GTK's focus follows it when the
+	 * window is the focused one.
+	 */
 	public boolean requestFocus(int direction, Rect previouslyFocusedRect) {
-		boolean ok = atl_enabled && atl_focusable && visibility == VISIBLE;
+		boolean ok = tlRequestFocusNoSearch(direction, previouslyFocusedRect);
 		if (TL_DEBUG_FOCUS)
-			android.util.Log.i("View", "[focus] requestFocus " + getClass().getName() + " ok=" + ok + " enabled=" + atl_enabled + " focusable=" + atl_focusable
-			                   + " vis=" + visibility + " attached=" + isAttachedToWindow() + " windowFocus=" + hasWindowFocus() + " focused=" + isFocused(), TL_DEBUG_FOCUS_STACK ? new Throwable() : null);
-		if (ok) {
-			nativeRequestFocus(widget, direction);
-			return true;
-		}
-		return false;
+			android.util.Log.i("View", "[focus] requestFocus " + getClass().getName() + " ok=" + ok + " enabled=" + atl_enabled + " focusable=" + isFocusable()
+			                   + " inTouchMode=" + isFocusableInTouchMode() + " vis=" + visibility + " attached=" + isAttachedToWindow() + " windowFocus=" + hasWindowFocus(), TL_DEBUG_FOCUS_STACK ? new Throwable() : null);
+		return ok;
 	}
 	private static final boolean TL_DEBUG_FOCUS = System.getenv("ATL_DEBUG_FOCUS") != null;
 	private static final boolean TL_DEBUG_FOCUS_STACK = "stack".equals(System.getenv("ATL_DEBUG_FOCUS"));
+	/** AOSP: leaves touch mode first, so a view that is focusable only outside touch mode can take focus. */
 	public final boolean requestFocusFromTouch() {
-		// TODO: if (isInTouchMode()) leave touch mode
+		if (isInTouchMode())
+			tlEnsureTouchMode(false);
 		return requestFocus(View.FOCUS_DOWN);
 	}
 	private native void nativeRequestFocus(long widget, int direction);
@@ -1624,6 +1640,9 @@ public class View implements Drawable.Callback {
 		if ((visibility == View.GONE) != (this.visibility == View.GONE) && parent instanceof ViewGroup) {
 			((ViewGroup)parent).requestLayout();
 		}
+		/* AOSP setFlags: a view that stops being visible gives up focus */
+		if (visibility != VISIBLE && hasFocus())
+			clearFocus();
 		this.visibility = visibility;
 		native_setVisibility(widget, visibility, alpha, atl_enabled);
 		dispatchVisibilityChanged(this, visibility);
@@ -2185,8 +2204,8 @@ public class View implements Drawable.Callback {
 	public void bringToFront() {}
 
 	public boolean isEnabled() { return atl_enabled; }
-	/** AOSP: true when this view or one of its descendants is the window's focused view (tl_touch_mode). */
-	public boolean hasFocus() { return widget != 0 && nativeHasFocus(widget); }
+	/** AOSP: whether this view is the focused view of its window (ViewGroup: or contains it). */
+	public boolean hasFocus() { return tlFocused; }
 	public boolean isLayoutRequested() { return layoutRequested; }
 	public int getBaseline() { return -1; }
 	/**
@@ -2199,8 +2218,9 @@ public class View implements Drawable.Callback {
 		return isFocusable();
 	}
 	private static native boolean nativeIsFocused(long widget);
+	/** AOSP: whether this view is the focused view of its window. */
 	public boolean isFocused() {
-		return nativeIsFocused(widget);
+		return tlFocused;
 	}
 
 	/** AOSP: detaches the animation (its end listener fires if it was running) and drops its transformation */
@@ -2488,7 +2508,12 @@ public class View implements Drawable.Callback {
 
 	// (layout) setOnApplyWindowInsetsListener: see View+layout.frag (AOSP window insets)
 
-	public final boolean isFocusable() { return atl_focusable; }
+	/** AOSP: FOCUSABLE, or FOCUSABLE_AUTO on a clickable view. */
+	public final boolean isFocusable() {
+		if ((tlFocusableMode & FOCUSABLE_AUTO) != 0)
+			return isClickable();
+		return (tlFocusableMode & FOCUSABLE) != 0;
+	}
 	public boolean isClickable() { return mClickable; }
 	public boolean isLongClickable() { return mLongClickable; }
 
@@ -2582,8 +2607,8 @@ public class View implements Drawable.Callback {
 
 	public float getAlpha() { return alpha; }
 
-	/** AOSP: the focused view in this view's subtree (this view itself included), or null (tl_touch_mode). */
-	public View findFocus() { return widget != 0 ? nativeFindFocus(widget) : null; }
+	/** AOSP: this view when it is focused (ViewGroup: the focused view in its subtree), else null. */
+	public View findFocus() { return tlFocused ? this : null; }
 
 	public int getMinimumHeight() { return minHeight; }
 	public int getMinimumWidth() { return minWidth; }
@@ -3821,8 +3846,9 @@ public class View implements Drawable.Callback {
 		views.add(this);
 	}
 
+	/** AOSP: whether this view can take focus while the display is in touch mode. */
 	public boolean isFocusableInTouchMode() {
-		return isFocusable();
+		return tlFocusableInTouchMode && isFocusable();
 	}
 
 	/** Called by the view system when the focus state of this view changes (AOSP: notifies the listener and drops the pressed state). */
@@ -4639,18 +4665,147 @@ public class View implements Drawable.Callback {
 		WindowManagerImpl.tlDispatchOutsideTouch(x, y);
 	}
 
+	/* ---- teslalinux: the AOSP focus model (tl_focus_model) ----
+	 * Focus is view state, per window: a focused view has tlFocused (AOSP PFLAG_FOCUSED) and every
+	 * group on its path to the window's root has it as tlFocusedChild (mFocused). GTK has one focus
+	 * per toplevel and every window here (activity, dialogs, app windows) is a layer of one GtkWindow,
+	 * so GTK's focus is a projection: it shows the focused view of the focused window (the topmost
+	 * dialog or focusable app window, else the activity's). Focus that GTK moves on its own (a tap
+	 * into an EditText's GtkText) comes back through tlGtkFocusChanged. */
+	boolean tlFocused;
+
+	/** AOSP canTakeFocus */
+	private boolean tlCanTakeFocus() {
+		return visibility == VISIBLE && isFocusable() && isEnabled();
+	}
+
+	/** AOSP hasAncestorThatBlocksDescendantFocus */
+	private boolean tlHasAncestorThatBlocksDescendantFocus() {
+		ViewParent ancestor = parent;
+		while (ancestor instanceof ViewGroup) {
+			final ViewGroup vgAncestor = (ViewGroup) ancestor;
+			if (vgAncestor.getDescendantFocusability() == ViewGroup.FOCUS_BLOCK_DESCENDANTS)
+				return true;
+			ancestor = vgAncestor.getParent();
+		}
+		return false;
+	}
+
+	/** AOSP requestFocusNoSearch */
+	boolean tlRequestFocusNoSearch(int direction, Rect previouslyFocusedRect) {
+		if (!tlCanTakeFocus())
+			return false;
+		if (isInTouchMode() && !isFocusableInTouchMode())
+			return false;
+		if (tlHasAncestorThatBlocksDescendantFocus())
+			return false;
+		tlHandleFocusGainInternal(direction, previouslyFocusedRect);
+		return true;
+	}
+
+	/** AOSP handleFocusGainInternal: this view becomes its window's focused view. */
+	void tlHandleFocusGainInternal(int direction, Rect previouslyFocusedRect) {
+		if (tlFocused)
+			return;
+		tlFocused = true;
+		final View oldFocus = getRootView().findFocus();
+		if (parent instanceof ViewGroup)
+			((ViewGroup) parent).requestChildFocus(this, this);
+		if (isAttachedToWindow())
+			getViewTreeObserver().dispatchOnGlobalFocusChange(oldFocus, this);
+		onFocusChanged(true, direction, previouslyFocusedRect);
+		refreshDrawableState();
+		tlProjectFocus(direction);
+	}
+
+	/** AOSP unFocus: loses focus without telling the parents (they move it themselves). */
+	void tlUnFocus(View focused) {
+		tlClearFocusInternal(focused, false, false);
+	}
+
 	/**
-	 * AOSP View.clearFocusInternal: the view gives up focus, is told so (onFocusChanged), and with
+	 * AOSP clearFocusInternal: the view gives up focus, is told so (onFocusChanged), and with
 	 * refocus the window's root view picks the next focused view; otherwise the window's global
 	 * focus listeners learn that no view has focus.
 	 */
-	void tlClearFocusInternal(boolean propagate, boolean refocus) {
-		if (widget == 0 || !nativeClearFocus(widget))
+	void tlClearFocusInternal(View focused, boolean propagate, boolean refocus) {
+		if (!tlFocused)
 			return;
+		tlFocused = false;
+		if (propagate && parent instanceof ViewGroup)
+			((ViewGroup) parent).clearChildFocus(this);
 		onFocusChanged(false, 0, null);
+		refreshDrawableState();
+		if (widget != 0)
+			nativeClearFocus(widget); /* GTK's focus leaves the widget when it had it */
 		if (propagate && (!refocus || !tlRootViewRequestFocus()) && isAttachedToWindow())
 			getViewTreeObserver().dispatchOnGlobalFocusChange(this, null);
 	}
+
+	void tlClearFocusInternal(boolean propagate, boolean refocus) {
+		tlClearFocusInternal(null, propagate, refocus);
+	}
+
+	/* ---- the focused window and GTK's focus ---- */
+	/** windows above the activity that take focus (showing dialogs, focusable app windows), topmost last */
+	private static final java.util.ArrayList<View> tlFocusWindows = new java.util.ArrayList<>();
+
+	private static View tlFocusedWindowRoot() {
+		return tlFocusWindows.isEmpty() ? null : tlFocusWindows.get(tlFocusWindows.size() - 1);
+	}
+
+	/** whether this view's window is the focused one (an activity window is, when nothing is above it) */
+	boolean tlInFocusedWindow() {
+		View top = tlFocusedWindowRoot();
+		return top == null ? !tlFocusWindows.contains(getRootView()) : getRootView() == top;
+	}
+
+	/** GTK's focus shows this view when its window is the focused window */
+	private void tlProjectFocus(int direction) {
+		if (tlFocusWindows.isEmpty())
+			tlActivityRoot = new java.lang.ref.WeakReference<>(getRootView());
+		if (widget != 0 && !tlFocusFromGtk && tlInFocusedWindow())
+			nativeRequestFocus(widget, direction);
+	}
+	/** the root of the activity window, whose focused view gets GTK's focus back when the windows above go */
+	private static java.lang.ref.WeakReference<View> tlActivityRoot;
+	private static boolean tlFocusFromGtk;
+
+	/**
+	 * A window that takes focus was shown (shown=true) or went away: the focused window changes, and
+	 * GTK's focus shows its focused view, or none (keys then reach the window itself, as on AOSP when
+	 * the focused window has no focused view).
+	 */
+	public static void tlFocusWindowChanged(View root, boolean shown) {
+		if (root == null)
+			return;
+		tlFocusWindows.remove(root);
+		if (shown)
+			tlFocusWindows.add(root);
+		View top = tlFocusedWindowRoot();
+		if (top == null)
+			top = tlActivityRoot != null ? tlActivityRoot.get() : null;
+		View focused = top != null ? top.findFocus() : null;
+		if (focused != null && focused.widget != 0)
+			focused.nativeRequestFocus(focused.widget, FOCUS_DOWN);
+		else
+			nativeDropWindowFocus();
+	}
+	/**
+	 * GTK moved its focus to a widget of this view (a tap into a GtkText, GTK's own focus
+	 * navigation): the view becomes its window's focused view, as if it had requested it.
+	 */
+	static void tlGtkFocusChanged(View view) {
+		if (view == null || view.tlFocused)
+			return;
+		tlFocusFromGtk = true;
+		try {
+			view.tlHandleFocusGainInternal(FOCUS_DOWN, null);
+		} finally {
+			tlFocusFromGtk = false;
+		}
+	}
+
 
 	/** AOSP rootViewRequestFocus */
 	boolean tlRootViewRequestFocus() {
@@ -4664,12 +4819,10 @@ public class View implements Drawable.Callback {
 		return ai != null && ai.targetSdkVersion < android.os.Build.VERSION_CODES.P;
 	}
 
-	/** true when this view's widget subtree holds its window's GTK focus */
-	private static native boolean nativeHasFocus(long widget);
-	/** the view owning the GTK focus widget when that view is this one or a descendant, else null */
-	private static native View nativeFindFocus(long widget);
-	/** drops the window's focus (and a deferred focus request) when this view is the focused one; true if it was */
+	/** drops GTK's focus (and a deferred focus request) when this view's widget has it; true if it had */
 	private static native boolean nativeClearFocus(long widget);
+	/** GTK's focus goes to no widget: keys reach the window-level dispatch */
+	private static native void nativeDropWindowFocus();
 
 	/* ---- teslalinux: layout change listeners, root namespace, window frames (tl_layout_change) ---- */
 	private java.util.ArrayList<OnLayoutChangeListener> tlLayoutChangeListeners;

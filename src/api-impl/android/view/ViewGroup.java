@@ -166,6 +166,17 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	protected void removeViewInternal(View child) {
 		if (child == null || child.parent != this)
 			return;
+		/* AOSP removeViewInternal: a removed child takes its focus with it */
+		boolean clearChildFocus = false;
+		if (child == tlFocusedChild) {
+			child.tlUnFocus(null);
+			clearChildFocus = true;
+		}
+		if (clearChildFocus) {
+			clearChildFocus(child);
+			if (!tlRootViewRequestFocus() && isAttachedToWindow())
+				getViewTreeObserver().dispatchOnGlobalFocusChange(child, null);
+		}
 		child.parent = null;
 		children.remove(child);
 		tlRemoveChildWidget(child);
@@ -189,6 +200,14 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	}
 
 	public void removeAllViews() {
+		/* AOSP removeAllViewsInLayout: the focused child loses its focus first */
+		View focused = tlFocusedChild;
+		if (focused != null) {
+			clearChildFocus(focused);
+			focused.tlUnFocus(null);
+			if (!tlRootViewRequestFocus() && isAttachedToWindow())
+				getViewTreeObserver().dispatchOnGlobalFocusChange(focused, null);
+		}
 		for (Iterator<View> it = children.iterator(); it.hasNext();) {
 			View child = it.next();
 			child.parent = null;
@@ -224,6 +243,8 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	protected void removeDetachedView(View child, boolean animate) {
 		if (!detachedChildren.remove(child))
 			return;
+		if (child == tlFocusedChild)
+			child.clearFocus(); /* AOSP removeDetachedView */
 		child.parent = null;
 		tlRemoveChildWidget(child);
 		if (onHierarchyChangeListener != null) {
@@ -402,13 +423,9 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		}
 	}
 
-	/** AOSP: the direct child that is or contains the window's focused view (tl_touch_mode). */
+	/** AOSP: the direct child that is or contains the window's focused view (mFocused, tl_focus_model). */
 	public View getFocusedChild() {
-		for (View child : children) {
-			if (child.hasFocus())
-				return child;
-		}
-		return null;
+		return tlFocusedChild;
 	}
 
 	/** AOSP: how this group shares focus with its descendants (tl_touch_mode). */
@@ -879,7 +896,22 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		mNestedScrollAxes = 0;
 	}
 
-	// (layout) requestChildFocus: see ViewGroup+layout.frag
+	/**
+	 * AOSP: a descendant (focused) in this child's subtree took focus; this group drops its own
+	 * focus and its previous focused child's, and passes the request up (tl_focus_model).
+	 */
+	public void requestChildFocus(View child, View focused) {
+		if (getDescendantFocusability() == FOCUS_BLOCK_DESCENDANTS)
+			return;
+		super.tlUnFocus(focused); /* this group itself was focused */
+		if (tlFocusedChild != child) {
+			if (tlFocusedChild != null)
+				tlFocusedChild.tlUnFocus(focused);
+			tlFocusedChild = child;
+		}
+		if (getParent() instanceof ViewGroup)
+			((ViewGroup) getParent()).requestChildFocus(this, focused);
+	}
 
 	// (layout) getClipChildren: see ViewGroup+layout.frag
 
@@ -1154,6 +1186,71 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 			super.clearFocus();
 		else
 			focused.clearFocus();
+	}
+
+	/* ---- teslalinux: the AOSP focus model for groups (tl_focus_model, see View.java.frag) ---- */
+	/** AOSP mFocused: the child that is or contains the focused view */
+	View tlFocusedChild;
+
+	/** AOSP: this group or a descendant is the focused view of its window. */
+	@Override
+	public boolean hasFocus() {
+		return tlFocused || tlFocusedChild != null;
+	}
+
+	/** AOSP: this group when focused, else the focused view in its subtree. */
+	@Override
+	public View findFocus() {
+		if (tlFocused)
+			return this;
+		return tlFocusedChild != null ? tlFocusedChild.findFocus() : null;
+	}
+
+	/** AOSP: the focused descendant gave up focus; so does the path from here up. */
+	public void clearChildFocus(View child) {
+		tlFocusedChild = null;
+		if (getParent() instanceof ViewGroup)
+			((ViewGroup) getParent()).clearChildFocus(this);
+	}
+
+	/** AOSP unFocus: the focused view below (or this group) loses focus. */
+	@Override
+	void tlUnFocus(View focused) {
+		if (tlFocusedChild == null) {
+			super.tlUnFocus(focused);
+		} else {
+			tlFocusedChild.tlUnFocus(focused);
+			tlFocusedChild = null;
+		}
+	}
+
+	/** AOSP: the group itself takes focus; a focused descendant gives it up first. */
+	@Override
+	void tlHandleFocusGainInternal(int direction, android.graphics.Rect previouslyFocusedRect) {
+		if (tlFocusedChild != null) {
+			tlFocusedChild.tlUnFocus(this);
+			tlFocusedChild = null;
+		}
+		super.tlHandleFocusGainInternal(direction, previouslyFocusedRect);
+	}
+
+	/** AOSP: the group, its descendants or both may take focus, in the order descendantFocusability says. */
+	@Override
+	public boolean requestFocus(int direction, android.graphics.Rect previouslyFocusedRect) {
+		switch (getDescendantFocusability()) {
+			case FOCUS_BLOCK_DESCENDANTS:
+				return super.requestFocus(direction, previouslyFocusedRect);
+			case FOCUS_BEFORE_DESCENDANTS: {
+				final boolean took = super.requestFocus(direction, previouslyFocusedRect);
+				return took ? took : onRequestFocusInDescendants(direction, previouslyFocusedRect);
+			}
+			case FOCUS_AFTER_DESCENDANTS: {
+				final boolean took = onRequestFocusInDescendants(direction, previouslyFocusedRect);
+				return took ? took : super.requestFocus(direction, previouslyFocusedRect);
+			}
+			default:
+				throw new IllegalStateException("descendant focusability must be one of FOCUS_BEFORE_DESCENDANTS, FOCUS_AFTER_DESCENDANTS, FOCUS_BLOCK_DESCENDANTS but is " + getDescendantFocusability());
+		}
 	}
 
 	/* ---- teslalinux: AOSP ViewGroup drawable state (selected/activated/pressed passed to children,
