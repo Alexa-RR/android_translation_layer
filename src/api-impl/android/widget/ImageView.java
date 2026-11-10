@@ -87,9 +87,20 @@ public class ImageView extends View {
 			setScaleType(ScaleType.FIT_CENTER);
 	}
 
+	/** AOSP: a new scale type changes how the image is laid out and drawn (requestLayout + invalidate) */
 	public void setScaleType(ScaleType scaleType) {
+		if (scaleType == null)
+			throw new NullPointerException();
+		final boolean changed = this.scaleType != scaleType;
 		this.scaleType = scaleType;
+		if (changed)
+			mTlAnimActive = false;
+		/* always told to the widget: its own default is not necessarily the field's initial value */
 		native_setScaleType(widget, scaleType.nativeInt);
+		if (changed) {
+			requestLayout();
+			invalidate();
+		}
 	}
 
 	public ScaleType getScaleType() {
@@ -100,8 +111,14 @@ public class ImageView extends View {
 		return drawable;
 	}
 
-	/** AOSP updateDrawable(): the new drawable takes the view's state, tint, colour filter and alpha. */
+	/** AOSP updateDrawable(): the new drawable takes the view's state, tint, colour filter and alpha.
+	 * As in AOSP setImageDrawable, a different intrinsic size asks for a new layout and the view is
+	 * invalidated: a parent that records its children's drawing (Compose's AndroidViewHolder, which
+	 * hosts Waze's compass) only re-records on that invalidation, so the new image showed only after
+	 * some unrelated redraw (the compass needle stayed blank). */
 	public void setImageDrawable(Drawable drawable) {
+		final int oldWidth = this.drawable != null ? this.drawable.getIntrinsicWidth() : -1;
+		final int oldHeight = this.drawable != null ? this.drawable.getIntrinsicHeight() : -1;
 		if (this.drawable != null && this.drawable != drawable)
 			this.drawable.setCallback(null);
 		this.drawable = drawable;
@@ -114,7 +131,13 @@ public class ImageView extends View {
 			if (this.drawable != drawable)
 				this.drawable.setCallback(this);
 		}
+		mTlAnimActive = false; /* AOSP configureBounds replaces an animateTransform matrix */
 		native_setDrawable(widget, this.drawable != null ? this.drawable.paintable : 0);
+		final int newWidth = this.drawable != null ? this.drawable.getIntrinsicWidth() : -1;
+		final int newHeight = this.drawable != null ? this.drawable.getIntrinsicHeight() : -1;
+		if (oldWidth != newWidth || oldHeight != newHeight)
+			requestLayout();
+		invalidate();
 	}
 
 	/** AOSP: the matrix a MATRIX scale type draws the image with (teslalinux +text) */
@@ -123,6 +146,14 @@ public class ImageView extends View {
 			matrix = null;
 		if ((matrix == null && !mTlMatrix.isIdentity()) || (matrix != null && !mTlMatrix.equals(matrix))) {
 			mTlMatrix.set(matrix);
+			/* the native image paintable draws a MATRIX scale type through it (native-imageview-scaletype.sh) */
+			float[] values = null;
+			if (matrix != null) {
+				values = new float[9];
+				matrix.getValues(values);
+			}
+			mTlAnimActive = false; /* AOSP configureBounds replaces an animateTransform matrix */
+			native_setImageMatrix(widget, values);
 			invalidate();
 		}
 	}
@@ -257,6 +288,7 @@ public class ImageView extends View {
 	public void setCropToPadding(boolean crop) {
 		if (mCropToPaddingFlag != crop) {
 			mCropToPaddingFlag = crop;
+			native_setCropToPadding(widget, crop);
 			requestLayout();
 			invalidate();
 		}
@@ -443,14 +475,93 @@ public class ImageView extends View {
 		}
 	}
 
+	/** AOSP: the matrix the image is drawn with (configureBounds' mDrawMatrix), identity when none */
 	public Matrix getImageMatrix() {
-		return mTlMatrix.isIdentity() ? new Matrix(Matrix.IDENTITY_MATRIX) : mTlMatrix;
+		final Matrix m = tlDrawMatrix();
+		return m != null ? m : new Matrix(Matrix.IDENTITY_MATRIX);
 	}
 
-	/** AOSP (hidden, androidx.transition): the image matrix during a transition */
-	public void animateTransform(Matrix matrix) {
-		setImageMatrix(matrix);
+	/** set by animateTransform until the next configureBounds (a new drawable, scale type, image matrix or size) */
+	private Matrix mTlAnimMatrix;
+	private boolean mTlAnimActive;
+	private int mTlAnimW, mTlAnimH;
+
+	/**
+	 * AOSP ImageView.configureBounds: the drawable at its intrinsic size through this matrix (null:
+	 * the drawable fills the content box). The native image paintable draws the same placement
+	 * (native-imageview-scaletype.sh).
+	 */
+	private Matrix tlDrawMatrix() {
+		final android.graphics.drawable.Drawable d = getDrawable();
+		if (d == null)
+			return null;
+		final int vwidth = getWidth() - getPaddingLeft() - getPaddingRight();
+		final int vheight = getHeight() - getPaddingTop() - getPaddingBottom();
+		if (mTlAnimActive) {
+			if (mTlAnimW == vwidth && mTlAnimH == vheight)
+				return mTlAnimMatrix;
+			mTlAnimActive = false;
+		}
+		final int dwidth = d.getIntrinsicWidth();
+		final int dheight = d.getIntrinsicHeight();
+		final ScaleType st = getScaleType();
+		if (dwidth <= 0 || dheight <= 0 || st == ScaleType.FIT_XY)
+			return null;
+		if (st == ScaleType.MATRIX)
+			return mTlMatrix.isIdentity() ? null : mTlMatrix;
+		if (vwidth == dwidth && vheight == dheight)
+			return null;
+		final Matrix m = new Matrix();
+		if (st == ScaleType.CENTER) {
+			m.setTranslate(Math.round((vwidth - dwidth) * 0.5f), Math.round((vheight - dheight) * 0.5f));
+		} else if (st == ScaleType.CENTER_CROP) {
+			float scale, dx = 0, dy = 0;
+			if (dwidth * vheight > vwidth * dheight) {
+				scale = (float) vheight / (float) dheight;
+				dx = (vwidth - dwidth * scale) * 0.5f;
+			} else {
+				scale = (float) vwidth / (float) dwidth;
+				dy = (vheight - dheight * scale) * 0.5f;
+			}
+			m.setScale(scale, scale);
+			m.postTranslate(Math.round(dx), Math.round(dy));
+		} else if (st == ScaleType.CENTER_INSIDE) {
+			float scale;
+			if (dwidth <= vwidth && dheight <= vheight)
+				scale = 1.0f;
+			else
+				scale = Math.min((float) vwidth / (float) dwidth, (float) vheight / (float) dheight);
+			m.setScale(scale, scale);
+			m.postTranslate(Math.round((vwidth - dwidth * scale) * 0.5f), Math.round((vheight - dheight * scale) * 0.5f));
+		} else {
+			final Matrix.ScaleToFit fit = st == ScaleType.FIT_START ? Matrix.ScaleToFit.START
+			                              : st == ScaleType.FIT_END ? Matrix.ScaleToFit.END : Matrix.ScaleToFit.CENTER;
+			m.setRectToRect(new android.graphics.RectF(0, 0, dwidth, dheight), new android.graphics.RectF(0, 0, vwidth, vheight), fit);
+		}
+		return m;
 	}
+
+	/** AOSP (hidden, androidx.transition ImageViewUtils): the draw matrix during a transition, until
+	 * the next configureBounds; null fills the content box with the drawable */
+	public void animateTransform(Matrix matrix) {
+		if (getDrawable() == null)
+			return;
+		float[] values = null;
+		if (matrix != null) {
+			values = new float[9];
+			matrix.getValues(values);
+		}
+		mTlAnimMatrix = matrix != null ? new Matrix(matrix) : null;
+		mTlAnimActive = true;
+		mTlAnimW = getWidth() - getPaddingLeft() - getPaddingRight();
+		mTlAnimH = getHeight() - getPaddingTop() - getPaddingBottom();
+		native_animateTransform(widget, values);
+		invalidate();
+	}
+
+	protected native void native_setImageMatrix(long widget, float[] values);
+	protected native void native_setCropToPadding(long widget, boolean crop);
+	protected native void native_animateTransform(long widget, float[] values);
 
 	public boolean getCropToPadding() {
 		return mCropToPaddingFlag;
@@ -554,6 +665,12 @@ public class ImageView extends View {
 		if (!tlMergeImageState)
 			return tlImageState;
 		return mergeDrawableStates(super.onCreateDrawableState(extraSpace + tlImageState.length), tlImageState);
+	}
+
+	/** AOSP: the image drawable is one of this view's own drawables (invalidateDrawable redraws for it) */
+	@Override
+	protected boolean verifyDrawable(Drawable dr) {
+		return drawable == dr || super.verifyDrawable(dr);
 	}
 
 	/** AOSP: a stateful image follows the view's state (pressed, selected, checked, ...) */

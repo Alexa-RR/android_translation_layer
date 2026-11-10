@@ -701,6 +701,10 @@ public final class ViewDump {
 				sb.append(" imgtint=#").append(Integer.toHexString(iv.getImageTintList().getColorForState(iv.getDrawableState(), 0)));
 			if (iv.getColorFilter() != null)
 				sb.append(" cf=").append(iv.getColorFilter().getClass().getSimpleName());
+			if (iv.getScaleType() != android.widget.ImageView.ScaleType.FIT_CENTER)
+				sb.append(" st=").append(iv.getScaleType());
+			if (!iv.getImageMatrix().isIdentity())
+				sb.append(" mx=").append(iv.getImageMatrix().toShortString());
 		}
 		if (v instanceof android.widget.TextView) {
 			android.widget.TextView tv = (android.widget.TextView) v;
@@ -1103,6 +1107,14 @@ public final class ViewDump {
 								Object v = f.get(node);
 								if (v != null && v.toString().length() > 0)
 									sb.append(f.getName()).append("=\"").append(v.toString().replace('\n', ' ')).append("\" ");
+							} else if (ft.getName().contains("WindowInsets") || ft.getName().contains("PaddingValues")) {
+								f.setAccessible(true);
+								Object v = f.get(node);
+								if (v != null)
+									sb.append(f.getName()).append('=').append(v).append(' ');
+							} else if (sn.contains("Padding") && (ft == float.class || ft == boolean.class)) {
+								f.setAccessible(true);
+								sb.append(f.getName()).append('=').append(f.get(node)).append(' ');
 							} else if (sn.startsWith("Draw") || sn.contains("Background") || sn.contains("Graphics")) {
 								if (ft == float.class && f.getName().toLowerCase().contains("alpha")) {
 									f.setAccessible(true);

@@ -1558,11 +1558,20 @@ public class View implements Drawable.Callback {
 
 	protected void onFinishInflate() {}
 
-	/** AOSP: a drawable of this view changed: redraw, and the outline may follow the drawable */
+	/**
+	 * AOSP: a drawable of this view changed: its dirty bounds are invalidated (the parent chain
+	 * learns it, so a parent that records its children, such as Compose's AndroidViewHolder, records
+	 * again) and the outline may follow the drawable. The GTK widget is redrawn in any case, since
+	 * ATL views that draw a drawable natively do not all list it in verifyDrawable.
+	 */
 	public void invalidateDrawable(Drawable drawable) {
 		nativeInvalidate(widget);
-		if (verifyDrawable(drawable))
+		if (verifyDrawable(drawable)) {
+			final android.graphics.Rect dirty = drawable.getDirtyBounds();
+			final int sx = getScrollX(), sy = getScrollY();
+			invalidate(dirty.left + sx, dirty.top + sy, dirty.right + sx, dirty.bottom + sy);
 			tlRebuildOutline();
+		}
 	}
 
 	/**
@@ -1648,6 +1657,14 @@ public class View implements Drawable.Callback {
 		dispatchVisibilityChanged(this, visibility);
 		if (isAttachedToWindow()) // AOSP setFlags: the aggregated visibility follows while in a window
 			dispatchVisibilityAggregated(visibility == VISIBLE);
+		/* AOSP setFlags: a visibility change invalidates the parent, and a view that becomes visible
+		 * invalidates itself (it skipped its invalidations while hidden). A parent that records its
+		 * children (Compose's AndroidViewHolder: Waze's compass needle) otherwise kept drawing the
+		 * recording made while the view was hidden (tl_property_invalidate). */
+		if (parent instanceof View)
+			((View) parent).invalidate();
+		if (visibility == VISIBLE)
+			invalidate();
 	}
 
 	public void setPadding(int left, int top, int right, int bottom) {
@@ -2282,9 +2299,14 @@ public class View implements Drawable.Callback {
 	}
 
 	public void setAlpha(float alpha) {
+		final boolean changed = this.alpha != alpha;
 		this.alpha = alpha;
 		// a running view animation's alpha (and the transition alpha) multiply it, as in AOSP
 		native_setVisibility(widget, visibility, alpha * getTransitionAlpha() * tlAnimAlpha, atl_enabled);
+		/* AOSP invalidateViewProperty: the parent learns of the change, so a parent that records its
+		 * children (Compose's AndroidViewHolder) records the new alpha (tl_property_invalidate) */
+		if (changed)
+			invalidate();
 	}
 
 	public boolean onGenericMotionEvent(MotionEvent event) { return false; }
