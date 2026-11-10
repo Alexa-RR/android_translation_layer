@@ -2455,6 +2455,31 @@ public final class MotionEvent extends InputEvent implements Parcelable {
         tlInitFromAtl(source, action, eventTime, ids, coords, 0, 0);
     }
 
+    /**
+     * teslalinux: a batched touch move from ATL's native code (native-touch-batch.sh), as AOSP's
+     * InputConsumer delivers one: {@code eventTimes} oldest first, {@code coords} x, y, rawX, rawY per
+     * pointer per sample in the same order. The last sample is the current one; the others become
+     * the event's history (getHistoricalX & co.), added with addBatch as InputConsumer does.
+     */
+    public MotionEvent(int source, int action, long[] eventTimes, int[] ids, float[] coords) {
+        final int pointerCount = ids.length;
+        final int stride = 4 * pointerCount;
+        float[] first = new float[stride];
+        System.arraycopy(coords, 0, first, 0, stride);
+        tlInitFromAtl(source, action, eventTimes[0], ids, first, 0, 0);
+        for (int s = 1; s < eventTimes.length; s++) {
+            PointerCoords[] pc = new PointerCoords[pointerCount];
+            for (int i = 0; i < pointerCount; i++) {
+                pc[i] = new PointerCoords();
+                pc[i].x = coords[s * stride + 4 * i + X_OFFSET];
+                pc[i].y = coords[s * stride + 4 * i + Y_OFFSET];
+                pc[i].pressure = 1.0f; // a touch, as tlInitFromAtl reports it
+            }
+            nativeAddBatch(this, eventTimes[s] * NS_PER_MS, pc, 0);
+        }
+        updateCursorPosition();
+    }
+
     /** teslalinux: a single-pointer event (hover) from ATL's native code */
     public MotionEvent(int source, int action, long eventTime, float x, float y, float raw_x, float raw_y) {
         tlInitFromAtl(source, action, eventTime, new int[] {0}, new float[] {x, y, raw_x, raw_y}, 0, 0);
