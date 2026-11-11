@@ -173,13 +173,14 @@ public final class Insets implements Parcelable {
 		     + "left=" + left + ", top=" + top + ", right=" + right + ", bottom=" + bottom + '}';
 	}
 
-	/*@Override
+	/* AOSP: Insets is Parcelable (window insets cross binder calls, e.g. to an embedded renderer) */
+	@Override
 	public int describeContents() {
 		return 0;
 	}
 
 	@Override
-	public void writeToParcel(Parcel out, int flags) {
+	public void writeToParcel(android.os.Parcel out, int flags) {
 		out.writeInt(left);
 		out.writeInt(top);
 		out.writeInt(right);
@@ -188,7 +189,7 @@ public final class Insets implements Parcelable {
 
 	public static final @android.annotation.NonNull Parcelable.Creator<Insets> CREATOR = new Parcelable.Creator<Insets>() {
 		@Override
-		public Insets createFromParcel(Parcel in) {
+		public Insets createFromParcel(android.os.Parcel in) {
 			return new Insets(in.readInt(), in.readInt(), in.readInt(), in.readInt());
 		}
 
@@ -196,5 +197,5 @@ public final class Insets implements Parcelable {
 		public Insets[] newArray(int size) {
 			return new Insets[size];
 		}
-	};*/
+	};
 }

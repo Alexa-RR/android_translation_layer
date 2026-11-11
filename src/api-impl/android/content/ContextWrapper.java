@@ -61,6 +61,12 @@ public class ContextWrapper extends Context {
 		return this.baseContext.getClassLoader();
 	}
 
+	/** AOSP: the application of the base context's package */
+	@Override
+	public Context getApplicationContext() {
+		return this.baseContext != null ? this.baseContext.getApplicationContext() : super.getApplicationContext();
+	}
+
 	@Override
 	public ComponentName startService(Intent intent) {
 		return this.baseContext.startService(intent);

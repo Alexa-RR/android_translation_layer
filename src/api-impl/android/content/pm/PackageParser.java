@@ -531,8 +531,9 @@ public class PackageParser {
 		boolean assetError = true;
 		try {
 			assmgr = new AssetManager();
-			int cookie = 1;
 			assmgr.addAssetPath(mArchiveSourcePath);
+			/* the manifest of the package's own APK (the AssetManager starts with the class path) */
+			int cookie = assmgr.findCookieForPath(mArchiveSourcePath);
 			if (cookie != 0) {
 				res = new Resources(assmgr, metrics, null);
 				assmgr.setConfiguration(0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -3463,6 +3464,13 @@ public class PackageParser {
 			className = null;
 		}
 
+		/** AOSP: a component made by the package manager rather than parsed */
+		public Component(Package owner, ArrayList<II> intents, String className) {
+			this.owner = owner;
+			this.intents = intents;
+			this.className = className;
+		}
+
 		public Component(final ParsePackageItemArgs args, final PackageItemInfo outInfo) {
 			owner = args.owner;
 			intents = new ArrayList<II>(0);
@@ -3741,6 +3749,15 @@ public class PackageParser {
 			super(args, _info);
 			info = _info;
 			info.applicationInfo = args.owner.applicationInfo;
+		}
+
+		/** AOSP: an activity the package manager adds to a package itself (not parsed from its manifest) */
+		public Activity(final Package owner, final String className, final ActivityInfo _info) {
+			super(owner, new ArrayList<ActivityIntentInfo>(0), className);
+			info = _info;
+			info.applicationInfo = owner.applicationInfo;
+			info.name = className;
+			info.packageName = owner.packageName;
 		}
 
 		public void setPackageName(String packageName) {

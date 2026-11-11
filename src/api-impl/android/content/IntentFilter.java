@@ -80,8 +80,15 @@ public class IntentFilter {
 
 	public int match(String action, String type, String scheme, Uri data, Set<String> categories, String logTag) {
 		int ret = 0;
-		if (!matchAction(action)) {
-			ret = -3 /*NO_MATCH_ACTION*/;
+		/* AOSP: an intent with an action matches only a filter listing it; every category of the
+		 * intent must be in the filter */
+		if (action != null && !matchAction(action))
+			return -3 /*NO_MATCH_ACTION*/;
+		if (categories != null) {
+			for (String category : categories) {
+				if (!hasCategory(category))
+					return -4 /*NO_MATCH_CATEGORY*/;
+			}
 		}
 		if (scheme == null) {
 			ret = 0x00100000 /*MATCH_CATEGORY_EMPTY*/ | 0x00008000 /*MATCH_ADJUSTMENT_NORMAL*/;

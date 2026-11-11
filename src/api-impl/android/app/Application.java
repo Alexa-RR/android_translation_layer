@@ -35,6 +35,16 @@ public class Application extends ContextWrapper {
 		return icon_path;
 	}
 
+	/**
+	 * teslalinux: the app was started without an activity (--background), as Android starts a
+	 * process for a service binding: after Application.onCreate, the platform components that bind
+	 * the app's services start (the car-app host binds its CarAppService when ATL_CAR_HOST is set).
+	 */
+	@Export
+	private static void tlStartedWithoutActivity() {
+		android.atl.carhost.ATLCarHost.onProcessStarted();
+	}
+
 	@Export
 	private long get_app_icon_paintable() {
 		return getPackageManager().getApplicationIcon(this.get_atl_loaded_app().pkg.applicationInfo).paintable;

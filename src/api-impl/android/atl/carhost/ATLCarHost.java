@@ -31,10 +31,12 @@ import java.lang.reflect.Method;
  * with this host's ICarHost, onAppStart, onAppResume, then the app's managers ("app",
  * "navigation"). It also publishes the car connection state ({@link ATLCarConnectionProvider}).
  *
- * <p>This stage of the host renders nothing yet: every call the app makes to the host services
- * ("app": invalidate, toasts, the surface callback, alerts, location; "navigation": navigation
- * started/ended, trips) is logged, and on every invalidate() the current template is pulled from
- * the app and logged in readable form (tag ATLCarHost).
+ * <p>The host draws nothing itself: the app's map goes to a full-window surface
+ * ({@link ATLCarSurface}), and its templates, toasts and alerts go as JSON to the car page
+ * ({@link ATLCarAppChannel}, docs in teslalinux docs/UPSTREAM-NOTES.md), which draws them over the
+ * map and sends the driver's touches back. The car itself ({@link ATLCarVehicle}) gives the
+ * driving restrictions and night mode. Host services: "app", "navigation", "constraints". Every
+ * call the app makes to them is logged (tag ATLCarHost).
  */
 public final class ATLCarHost {
 	static final String TAG = "ATLCarHost";
@@ -84,6 +86,15 @@ public final class ATLCarHost {
 
 	/** Activity.performResume: the first resumed activity starts the host when it is enabled */
 	public static void onActivityResumed() {
+		onProcessStarted();
+	}
+
+	/**
+	 * The app's process is up (an activity resumed, or the app was started without one for its
+	 * services, Application.tlStartedWithoutActivity): the host, when enabled, binds the app's car
+	 * app service, once.
+	 */
+	public static void onProcessStarted() {
 		if (!isEnabled())
 			return;
 		ATLCarHost host;
@@ -108,6 +119,61 @@ public final class ATLCarHost {
 				carHost = new CarHost();
 				appHost = new AppHost();
 				navigationHost = new NavigationHost();
+				constraintHost = new ConstraintHost();
+				channel = new ATLCarAppChannel(ATLCarAppChannel.configuredPort(), handler, new ATLCarAppChannel.Listener() {
+					@Override
+					public void onMessage(String json) {
+						onRendererMessage(json);
+					}
+				});
+				channel.start();
+				vehicle = new ATLCarVehicle(handler, new ATLCarVehicle.Listener() {
+					@Override
+					public void onRestrictionsChanged(android.car.drivingstate.CarUxRestrictions r) {
+						sendRestrictions(r);
+					}
+
+					@Override
+					public void onNightChanged(boolean night) {
+						configurationChanged();
+					}
+				});
+				vehicle.start(app.getApplication());
+				sendRestrictions(vehicle.restrictions());
+				carSurface = new ATLCarSurface(app.getApplication(), handler, new ATLCarSurface.Sender() {
+					@Override
+					public IBinder callback() {
+						return surfaceCallback;
+					}
+
+					@Override
+					public android.os.Parcelable container(android.view.Surface s, int width, int height, int dpi) {
+						try {
+							Object c = Class.forName("androidx.car.app.SurfaceContainer", true, appClassLoader)
+							    .getConstructor(android.view.Surface.class, int.class, int.class, int.class)
+							    .newInstance(s, width, height, dpi);
+							return Bundleable.create(c, appClassLoader);
+						} catch (ReflectiveOperationException | RuntimeException e) {
+							Log.e(TAG, "no SurfaceContainer for the app", e);
+							return null;
+						}
+					}
+
+					@Override
+					public IBinder done(String what) {
+						return new Done(what) {
+							@Override
+							void success(Object response) {
+							}
+						};
+					}
+
+					@Override
+					public void surfaceInfo(int width, int height, int dpi) {
+						channel.sendSurface(width, height, dpi);
+					}
+				});
+				carSurface.show();
 			}
 		});
 		long delay = 0;
@@ -265,13 +331,13 @@ public final class ATLCarHost {
 	}
 
 	private void create() {
-		Configuration config = new Configuration(app.getApplication().getResources().getConfiguration());
 		Intent intent = new Intent();
 		intent.setComponent(serviceName);
 		try {
-			carApp.onAppCreate(carHost, intent, config, new Done("onAppCreate") {
+			carApp.onAppCreate(carHost, intent, carConfiguration(), new Done("onAppCreate") {
 				@Override
 				void success(Object response) {
+					created = true;
 					lifecycle();
 				}
 			});
@@ -279,6 +345,49 @@ public final class ATLCarHost {
 			Log.e(TAG, "onAppCreate failed", e);
 		}
 	}
+
+	/* the car's configuration for the app's CarContext: the device's, with the car's night mode
+	 * (CarContext.isDarkMode reads Configuration.UI_MODE_NIGHT_YES) */
+	private Configuration carConfiguration() {
+		Configuration config = new Configuration(app.getApplication().getResources().getConfiguration());
+		int night = vehicle != null && vehicle.isNight() ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO;
+		config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | night;
+		return config;
+	}
+
+	private boolean created;
+
+	/* host thread: the car switched between day and night: the app hears onConfigurationChanged */
+	private void configurationChanged() {
+		log("car night mode: " + (vehicle.isNight() ? "night" : "day"));
+		if (carApp == null || !created)
+			return;
+		try {
+			carApp.onConfigurationChanged(carConfiguration(), new Done("onConfigurationChanged") {
+				@Override
+				void success(Object response) {
+				}
+			});
+		} catch (RemoteException | RuntimeException e) {
+			Log.e(TAG, "onConfigurationChanged failed", e);
+		}
+	}
+
+	/* host thread: the car's UX restrictions to the renderer, which limits input and lists by them */
+	private void sendRestrictions(android.car.drivingstate.CarUxRestrictions r) {
+		if (channel == null)
+			return;
+		int active = r.getActiveRestrictions();
+		boolean limitContent = (active & android.car.drivingstate.CarUxRestrictions.UX_RESTRICTIONS_LIMIT_CONTENT) != 0;
+		boolean limitString = (active & android.car.drivingstate.CarUxRestrictions.UX_RESTRICTIONS_LIMIT_STRING_LENGTH) != 0;
+		log("car UX restrictions: 0x" + Integer.toHexString(active));
+		channel.sendRestrictions(r.isRequiresDistractionOptimization(),
+		                         (active & android.car.drivingstate.CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD) != 0,
+		                         limitContent ? r.getMaxCumulativeContentItems() : 0,
+		                         limitString ? r.getMaxRestrictedStringLength() : 0);
+	}
+
+	private ATLCarVehicle vehicle;
 
 	private void lifecycle() {
 		try {
@@ -309,6 +418,8 @@ public final class ATLCarHost {
 				void success(Object manager) {
 					IBinder binder = binderOf(manager);
 					navigationManager = binder != null ? INavigationManager.Stub.asInterface(binder) : null;
+					if (navigationManager == null)
+						log("the app returned no navigation manager binder: " + (manager == null ? "null" : manager.getClass().getName()));
 				}
 			});
 			carApp.getManager("app", new Done("getManager(app)") {
@@ -337,6 +448,292 @@ public final class ATLCarHost {
 		return null;
 	}
 
+	/* ---- the renderer (the car page, through ATLCarAppChannel) ---- */
+
+	private ATLCarAppChannel channel;
+	private ATLCarSurface carSurface;
+	private final CarModelJson modelJson = new CarModelJson();
+	private int templateSeq;
+	/**
+	 * Drawable icons (vectors, resources) are rendered with at least this many pixels on their
+	 * longer side, enough for the largest place a template shows one (a maneuver, a large row
+	 * image) on a high-density car screen; bitmaps go at their own size.
+	 */
+	private static final int ICON_MIN_PX = 256;
+	private static final int ICON_MAX_PX = 1024;
+
+	/* host thread: the template as JSON, its new icons first */
+	private void publishTemplate(Object wrapper) {
+		if (channel == null)
+			return;
+		modelJson.reset();
+		String json;
+		try {
+			json = modelJson.toJson(wrapper);
+		} catch (RuntimeException e) {
+			Log.e(TAG, "template not representable as JSON", e);
+			return;
+		}
+		sendAppIcon();
+		for (java.util.Map.Entry<Integer, Object> e : new java.util.ArrayList<>(modelJson.icons.entrySet())) {
+			if (channel.hasIcon(e.getKey()))
+				continue;
+			byte[] png = renderIcon(e.getValue());
+			if (png != null)
+				channel.sendIcon(e.getKey(), png);
+		}
+		channel.sendTemplate(++templateSeq, json);
+	}
+
+	/* an IconCompat as PNG: the app's drawable (IconCompat.loadDrawable with the app's context),
+	 * drawn at ICON_MIN_PX or more keeping its aspect ratio; tints are applied by the renderer (CarIcon.tint) */
+	private byte[] renderIcon(Object iconCompat) {
+		/* a bitmap icon (maneuvers, lanes, junctions): its own pixels, not scaled */
+		android.graphics.Bitmap bitmap = CarModelJson.bitmapOf(iconCompat);
+		if (bitmap != null && !bitmap.isRecycled() && Math.max(bitmap.getWidth(), bitmap.getHeight()) <= ICON_MAX_PX) {
+			try {
+				java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+				bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+				return out.toByteArray();
+			} catch (java.io.IOException | RuntimeException e) {
+				Log.w(TAG, "bitmap icon not encodable", e);
+			}
+		}
+		try {
+			Object d = iconCompat.getClass().getMethod("loadDrawable", android.content.Context.class).invoke(iconCompat, app.getApplication());
+			if (!(d instanceof android.graphics.drawable.Drawable))
+				return null;
+			return renderDrawable((android.graphics.drawable.Drawable)d);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			Log.w(TAG, "icon not loadable: " + CarModelDump.describe(iconCompat), e);
+			return null;
+		}
+	}
+
+	/* the app's launcher icon: Action.APP_ICON in a template is drawn with it (icon id 0) */
+	private void sendAppIcon() {
+		if (channel.hasIcon(0) || appIconFailed)
+			return;
+		try {
+			byte[] png = renderDrawable(app.getApplication().getPackageManager().getApplicationIcon(app.pkg.applicationInfo));
+			if (png != null)
+				channel.sendIcon(0, png);
+			else
+				appIconFailed = true;
+		} catch (RuntimeException e) {
+			/* once: the icon does not change while the app runs */
+			appIconFailed = true;
+			Log.w(TAG, "app icon not renderable", e);
+		}
+	}
+
+	private boolean appIconFailed;
+
+	private byte[] renderDrawable(android.graphics.drawable.Drawable drawable) {
+		try {
+			int w = drawable.getIntrinsicWidth(), h = drawable.getIntrinsicHeight();
+			if (w <= 0 || h <= 0) {
+				w = ICON_MIN_PX;
+				h = ICON_MIN_PX;
+			} else {
+				int longer = Math.max(w, h);
+				int target = Math.min(ICON_MAX_PX, Math.max(ICON_MIN_PX, longer));
+				float scale = (float)target / longer;
+				w = Math.max(1, Math.round(w * scale));
+				h = Math.max(1, Math.round(h * scale));
+			}
+			android.graphics.Bitmap bitmap = android.graphics.Bitmap.createBitmap(w, h, android.graphics.Bitmap.Config.ARGB_8888);
+			android.graphics.Canvas canvas = new android.graphics.Canvas(bitmap);
+			drawable.setBounds(0, 0, w, h);
+			drawable.draw(canvas);
+			java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+			bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out);
+			bitmap.recycle();
+			return out.toByteArray();
+		} catch (java.io.IOException | RuntimeException e) {
+			Log.w(TAG, "icon not renderable", e);
+			return null;
+		}
+	}
+
+	/* host thread: an interaction from the renderer, delivered to the app's callback for it */
+	private void onRendererMessage(String text) {
+		try {
+			org.json.JSONObject m = new org.json.JSONObject(text);
+			String type = m.getString("type");
+			if ("visibleArea".equals(type)) {
+				if (carSurface != null)
+					carSurface.setVisibleArea(m.getInt("left"), m.getInt("top"), m.getInt("right"), m.getInt("bottom"));
+				return;
+			}
+			if ("dayNight".equals(type)) {
+				/* the driver's choice on the car page: "day", "night" or "auto" (the sun) */
+				if (vehicle != null)
+					vehicle.setMode(m.optString("mode", "auto"));
+				return;
+			}
+			if ("stopNavigation".equals(type)) {
+				stopNavigation();
+				return;
+			}
+			if ("back".equals(type)) {
+				if (appManager != null)
+					appManager.onBackPressed(new Done("onBackPressed") {
+						@Override
+						void success(Object response) {
+						}
+					});
+				return;
+			}
+			Object delegate = modelJson.delegate(m.optInt("cb", -1));
+			if (delegate == null) {
+				Log.w(TAG, "renderer: no callback " + m.opt("cb") + " in the current template (" + type + ")");
+				return;
+			}
+			switch (type) {
+				case "click":
+					invokeDelegate(delegate, "sendClick");
+					break;
+				case "selected":
+					invokeDelegate(delegate, "sendSelected", m.getInt("index"));
+					break;
+				case "checked":
+					invokeDelegate(delegate, "sendCheckedChange", m.getBoolean("checked"));
+					break;
+				case "search":
+					invokeDelegate(delegate, m.optBoolean("submit") ? "sendSearchSubmitted" : "sendSearchTextChanged", m.getString("text"));
+					break;
+				case "alertCancel":
+					/* the alert timed out (REASON_TIMEOUT 1) or the driver closed it (REASON_USER_ACTION 2) */
+					invokeDelegate(delegate, "sendCancel", m.getInt("reason"));
+					break;
+				case "alertDismiss":
+					/* the alert went away after one of its actions (AlertCallback.onDismiss) */
+					invokeDelegate(delegate, "sendDismiss");
+					break;
+				case "pan":
+					/* the host's pan mode (map action strip PAN action), told to the app's PanModeDelegate */
+					invokeDelegate(delegate, "sendPanModeChanged", m.getBoolean("on"));
+					break;
+				default:
+					Log.w(TAG, "renderer: unknown message type " + type);
+			}
+		} catch (org.json.JSONException | RemoteException | RuntimeException e) {
+			Log.w(TAG, "renderer message not handled: " + text, e);
+		}
+	}
+
+	/**
+	 * Calls the delegate's send method (the library's OnClickDelegate.sendClick(OnDoneCallback),
+	 * OnSelectedDelegate.sendSelected(int, OnDoneCallback), ...) with the arguments and a done
+	 * callback of the app's library: the delegate sends the call to the app's listener and
+	 * reports back through it.
+	 */
+	private void invokeDelegate(Object delegate, String name, Object... args) {
+		ClassLoader loader = delegate.getClass().getClassLoader();
+		final Class<?> doneClass;
+		try {
+			doneClass = Class.forName("androidx.car.app.OnDoneCallback", false, loader);
+		} catch (ClassNotFoundException e) {
+			Log.e(TAG, "the app has no OnDoneCallback", e);
+			return;
+		}
+		Object done = java.lang.reflect.Proxy.newProxyInstance(loader, new Class<?>[] {doneClass}, new java.lang.reflect.InvocationHandler() {
+			@Override
+			public Object invoke(Object proxy, java.lang.reflect.Method method, Object[] a) {
+				if ("onFailure".equals(method.getName()))
+					Log.w(TAG, "the app reported a failure for " + name);
+				if (method.getDeclaringClass() == Object.class) {
+					switch (method.getName()) {
+						case "hashCode":
+							return System.identityHashCode(proxy);
+						case "equals":
+							return proxy == a[0];
+						default:
+							return "OnDoneCallback(" + name + ")";
+					}
+				}
+				return null;
+			}
+		});
+		for (java.lang.reflect.Method m : delegate.getClass().getMethods()) {
+			if (!m.getName().equals(name) || m.getParameterTypes().length != args.length + 1)
+				continue;
+			Object[] full = java.util.Arrays.copyOf(args, args.length + 1);
+			full[args.length] = done;
+			try {
+				m.invoke(delegate, full);
+			} catch (ReflectiveOperationException e) {
+				Log.e(TAG, name + " failed", e);
+			}
+			return;
+		}
+		Log.w(TAG, delegate.getClass().getName() + " has no " + name);
+	}
+
+	/* whether the app reported navigation as active (NavigationManager.navigationStarted/Ended):
+	 * while it is, the renderer offers the host's stop control */
+	private volatile boolean navigating;
+
+	private void setNavigating(final boolean active) {
+		navigating = active;
+		handler.post(new Runnable() {
+			@Override
+			public void run() {
+				if (channel != null)
+					channel.sendNavigation(active);
+			}
+		});
+	}
+
+	/* host thread: the driver stopped navigation with the host's control: the app hears
+	 * NavigationManagerCallback.onStopNavigation (INavigationManager.onStopNavigation) */
+	private void stopNavigation() {
+		if (navigationManager == null || !navigating) {
+			log("stop navigation: " + (navigationManager == null ? "no navigation manager" : "the app is not navigating"));
+			return;
+		}
+		log("stop navigation: INavigationManager.onStopNavigation");
+		try {
+			navigationManager.onStopNavigation(new Done("onStopNavigation") {
+				@Override
+				void success(Object response) {
+					/* the library ends its navigation state when the host stops it
+					 * (NavigationManager.onStopNavigation), so the app's own navigationEnded()
+					 * that follows is not sent to the host: navigation ends here */
+					if (navigating)
+						setNavigating(false);
+				}
+			});
+		} catch (RemoteException | RuntimeException e) {
+			Log.e(TAG, "onStopNavigation failed", e);
+		}
+	}
+
+	/* host thread: an alert (car API 5) shown by the renderer over the template, its icons first;
+	 * its actions and its AlertCallbackDelegate stay reachable until the next alert */
+	private void showAlertOnRenderer(Bundleable alert) {
+		if (channel == null || alert == null)
+			return;
+		Object model;
+		try {
+			model = alert.get(appClassLoader);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			Log.e(TAG, "alert not readable", e);
+			return;
+		}
+		modelJson.releaseKept();
+		String json = modelJson.toJsonKept(model);
+		for (java.util.Map.Entry<Integer, Object> e : new java.util.ArrayList<>(modelJson.icons.entrySet())) {
+			if (channel.hasIcon(e.getKey()))
+				continue;
+			byte[] png = renderIcon(e.getValue());
+			if (png != null)
+				channel.sendIcon(e.getKey(), png);
+		}
+		channel.sendEvent("{\"type\":\"alert\",\"alert\":" + json + "}");
+	}
+
 	/* one getTemplate at a time; an invalidate meanwhile asks again once it is answered */
 	private void fetchTemplate() {
 		if (appManager == null)
@@ -351,6 +748,7 @@ public final class ATLCarHost {
 				@Override
 				void success(Object wrapper) {
 					log("template: " + CarModelDump.describe(wrapper));
+					publishTemplate(wrapper);
 					templateDone();
 				}
 
@@ -444,8 +842,10 @@ public final class ATLCarHost {
 				return appHost;
 			if ("navigation".equals(type))
 				return navigationHost;
-			/* "constraints", "car" (hardware), "suggestion", "media_playback": services this host does
-			 * not offer; the library treats a null host as an unavailable service */
+			if ("constraints".equals(type))
+				return constraintHost;
+			/* "car" (hardware), "suggestion", "media_playback": services this host does not offer;
+			 * the library treats a null host as an unavailable service */
 			log("ICarHost.getHost(" + type + "): not offered by this host");
 			return null;
 		}
@@ -476,8 +876,18 @@ public final class ATLCarHost {
 		}
 
 		@Override
-		public void showToast(CharSequence text, int duration) {
+		public void showToast(final CharSequence text, final int duration) {
 			log("IAppHost.showToast(\"" + text + "\", " + (duration == 1 ? "LENGTH_LONG" : "LENGTH_SHORT") + ")");
+			handler.post(new Runnable() {
+				@Override
+				public void run() {
+					if (channel == null || text == null)
+						return;
+					StringBuilder sb = new StringBuilder("{\"type\":\"toast\",\"long\":").append(duration == 1).append(",\"text\":");
+					CarModelJson.quote(sb, text.toString());
+					channel.sendEvent(sb.append('}').toString());
+				}
+			});
 		}
 
 		@Override
@@ -487,6 +897,8 @@ public final class ATLCarHost {
 				@Override
 				public void run() {
 					surfaceCallback = callback;
+					if (carSurface != null && callback != null)
+						carSurface.onCallbackChanged();
 				}
 			});
 		}
@@ -497,13 +909,26 @@ public final class ATLCarHost {
 		}
 
 		@Override
-		public void showAlert(Bundleable alert) {
+		public void showAlert(final Bundleable alert) {
 			log("IAppHost.showAlert(" + describe(alert) + ")");
+			handler.post(new Runnable() {
+				@Override
+				public void run() {
+					showAlertOnRenderer(alert);
+				}
+			});
 		}
 
 		@Override
-		public void dismissAlert(int alertId) {
+		public void dismissAlert(final int alertId) {
 			log("IAppHost.dismissAlert(" + alertId + ")");
+			handler.post(new Runnable() {
+				@Override
+				public void run() {
+					if (channel != null)
+						channel.sendEvent("{\"type\":\"alertDismiss\",\"id\":" + alertId + "}");
+				}
+			});
 		}
 
 		@Override
@@ -515,16 +940,51 @@ public final class ATLCarHost {
 		}
 	}
 
+	/**
+	 * IConstraintHost ("constraints"): the AOSP Templates Host's content limits (its
+	 * res/values integers content_limit_*): how many items the app's lists, grids, place lists,
+	 * route lists and panes may hold. While the car moves the renderer shows no more than these.
+	 */
+	private final class ConstraintHost extends IConstraintHost.Stub {
+		@Override
+		public int getContentLimit(int contentLimitType) {
+			switch (contentLimitType) {
+				case 1: /* CONTENT_LIMIT_TYPE_GRID */
+					return 6;
+				case 2: /* CONTENT_LIMIT_TYPE_PLACE_LIST */
+					return 6;
+				case 3: /* CONTENT_LIMIT_TYPE_ROUTE_LIST */
+					return 3;
+				case 4: /* CONTENT_LIMIT_TYPE_PANE */
+					return 4;
+				case 0: /* CONTENT_LIMIT_TYPE_LIST */
+				default:
+					return 6;
+			}
+		}
+
+		@Override
+		public boolean isAppDrivenRefreshEnabled() {
+			/* this host fetches the template on every invalidate the app sends, without needing a
+			 * driver interaction first */
+			return true;
+		}
+	}
+
+	private ConstraintHost constraintHost;
+
 	/** INavigationHost ("navigation") */
 	private final class NavigationHost extends INavigationHost.Stub {
 		@Override
 		public void navigationStarted() {
 			log("INavigationHost.navigationStarted()");
+			setNavigating(true);
 		}
 
 		@Override
 		public void navigationEnded() {
 			log("INavigationHost.navigationEnded()");
+			setNavigating(false);
 		}
 
 		@Override

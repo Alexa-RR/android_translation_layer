@@ -89,6 +89,8 @@ public final class ATLActiveServices {
 		final ServiceConnection conn;
 		final int flags;
 		final Intent intent;
+		/* the party (uid, see Binder) of the client: its ServiceConnection runs for it */
+		final int clientUid = android.os.Binder.getThreadActingUid();
 		ServiceRecord service;      /* main thread */
 		IntentBindRecord binding;   /* main thread */
 		volatile boolean forgotten; /* unbindService was called: no more callbacks */
@@ -151,7 +153,12 @@ public final class ATLActiveServices {
 					return;
 				/* the START_* result only matters when the system kills the process, which never
 				 * happens here: the process is the app */
-				live.service.onStartCommand(intent, 0, startId);
+				int prev = enterService(live);
+				try {
+					live.service.onStartCommand(intent, 0, startId);
+				} finally {
+					android.os.Binder.tlLeaveParty(prev);
+				}
 			}
 		});
 		return name;
@@ -300,6 +307,7 @@ public final class ATLActiveServices {
 		if (r.service != null)
 			return true;
 		Service service;
+		int prev = enterService(r);
 		try {
 			service = r.app.instantiateService(r.name.getClassName());
 		} catch (ReflectiveOperationException e) {
@@ -309,13 +317,18 @@ public final class ATLActiveServices {
 					sServices.remove(r.name);
 			}
 			r.destroyed = true;
+			android.os.Binder.tlLeaveParty(prev);
 			return false;
 		}
 		r.service = service;
 		synchronized (sLock) {
 			sByService.put(service, r);
 		}
-		service.onCreate();
+		try {
+			service.onCreate();
+		} finally {
+			android.os.Binder.tlLeaveParty(prev);
+		}
 		/* ActiveServices.requestServiceBindingsLocked: the bindings that waited for the service */
 		for (IntentBindRecord b : new ArrayList<>(r.bindings.values())) {
 			if (!b.connections.isEmpty() && !b.requested && r.service != null)
@@ -329,11 +342,17 @@ public final class ATLActiveServices {
 			b.requested = true;
 		b.hasBound = true;
 		b.doRebind = false;
-		if (rebind) {
-			r.service.onRebind(b.intent);
-			return;
+		IBinder binder;
+		int prev = enterService(r);
+		try {
+			if (rebind) {
+				r.service.onRebind(b.intent);
+				return;
+			}
+			binder = r.service.onBind(b.intent);
+		} finally {
+			android.os.Binder.tlLeaveParty(prev);
 		}
-		IBinder binder = r.service.onBind(b.intent);
 		/* ActiveServices.publishServiceLocked */
 		b.binder = binder;
 		b.received = true;
@@ -350,12 +369,17 @@ public final class ATLActiveServices {
 		boolean hadOld = c.delivered && c.deliveredBinder != null;
 		c.delivered = true;
 		c.deliveredBinder = binder;
-		if (hadOld)
-			c.conn.onServiceDisconnected(name);
-		if (binder != null)
-			c.conn.onServiceConnected(name, binder);
-		else
-			c.conn.onNullBinding(name);
+		int prev = android.os.Binder.tlEnterParty(c.clientUid);
+		try {
+			if (hadOld)
+				c.conn.onServiceDisconnected(name);
+			if (binder != null)
+				c.conn.onServiceConnected(name, binder);
+			else
+				c.conn.onNullBinding(name);
+		} finally {
+			android.os.Binder.tlLeaveParty(prev);
+		}
 	}
 
 	/** ActiveServices.removeConnectionLocked + unbindFinishedLocked */
@@ -366,8 +390,13 @@ public final class ATLActiveServices {
 			if (b.connections.isEmpty() && b.hasBound && r.service != null && !r.destroyed) {
 				b.hasBound = false;
 				b.doRebind = false;
-				if (r.service.onUnbind(b.intent))
-					b.doRebind = true;
+				int prev = enterService(r);
+				try {
+					if (r.service.onUnbind(b.intent))
+						b.doRebind = true;
+				} finally {
+					android.os.Binder.tlLeaveParty(prev);
+				}
 			}
 		}
 		if ((c.flags & Context.BIND_AUTO_CREATE) != 0 && !r.destroyed)
@@ -401,12 +430,19 @@ public final class ATLActiveServices {
 					continue;
 				boolean wasConnected = c.delivered && c.deliveredBinder != null;
 				c.serviceDead = true;
-				if (wasConnected)
-					c.conn.onServiceDisconnected(r.name);
-				c.conn.onBindingDied(r.name);
+				int prev = android.os.Binder.tlEnterParty(c.clientUid);
+				try {
+					if (wasConnected)
+						c.conn.onServiceDisconnected(r.name);
+					c.conn.onBindingDied(r.name);
+				} finally {
+					android.os.Binder.tlLeaveParty(prev);
+				}
 			}
 		}
 		Service service = r.service;
+		int prev = enterService(r);
+		try {
 		if (service != null) {
 			for (IntentBindRecord b : r.bindings.values()) {
 				if (b.hasBound) {
@@ -427,5 +463,13 @@ public final class ATLActiveServices {
 		}
 		if (service != null)
 			service.onDestroy();
+		} finally {
+			android.os.Binder.tlLeaveParty(prev);
+		}
+	}
+
+	/* a service's callbacks run for its package, as in that package's process (see Binder) */
+	private static int enterService(ServiceRecord r) {
+		return android.os.Binder.tlEnterParty(r.app.pkg.applicationInfo.uid);
 	}
 }

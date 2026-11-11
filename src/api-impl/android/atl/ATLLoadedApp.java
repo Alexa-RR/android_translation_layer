@@ -39,6 +39,8 @@ public final class ATLLoadedApp {
 	private final Object init_lock;
 	private Application application;
 	private Resources.Theme default_theme;
+	/** the car app library whose CarAppActivity was added to this app (ATLCarAppLibrary), else null */
+	ATLLoadedApp tlCarAppLibrary;
 
 	ATLLoadedApp(Resources resources, ClassLoader classLoader,
 	             PackageParser.Package pkg) {
@@ -97,9 +99,12 @@ public final class ATLLoadedApp {
 		}
 		final int pathsIndex = classLoaderPath.indexOf(':');
 		try {
-			return primary_application = loadFromPath(
+			primary_application = loadFromPath(
 				   pathsIndex == -1 ? classLoaderPath : classLoaderPath.substring(0, pathsIndex),
 				   nativePath, classLoaderPath);
+			/* a car app on an automotive device gets the car app library's activity */
+			ATLCarAppLibrary.mergeInto(primary_application);
+			return primary_application;
 		} catch (IOException e) {
 			// Failing to get the primary application should always be an error
 			throw new Error("Failed to parse primary application", e);
@@ -232,13 +237,17 @@ public final class ATLLoadedApp {
 
 		theme_res = Resources.selectDefaultTheme(theme_res, this.effective_sdk_compat);
 
-		Class<? extends Activity> cls = this.loadClass(className).asSubclass(Activity.class);
+		/* the car app library's CarAppActivity added to a car app on an automotive device
+		 * (ATLCarAppLibrary): the library's code and resources */
+		ATLLoadedApp library = ATLCarAppLibrary.libraryFor(this, className);
+
+		Class<? extends Activity> cls = (library != null ? library : this).loadClass(className).asSubclass(Activity.class);
 		Constructor<? extends Activity> constructor = cls.getConstructor();
 		Activity activity = constructor.newInstance();
 		intent.setComponent(new ComponentName(pkg.packageName, className));
 		activity.intent = intent;
 		Resources r = this.createDefaultResources();
-		activity.atl_attach_base_context(new ContextImpl(r, this, theme_res));
+		activity.atl_attach_base_context(library != null ? ContextImpl.tlCreateLibraryComponentContext(this, library, theme_res) : new ContextImpl(r, this, theme_res));
 		if (label_res != 0) {
 			activity.setTitle(r.getText(label_res));
 		} else if (pkg.applicationInfo.labelRes != 0) {

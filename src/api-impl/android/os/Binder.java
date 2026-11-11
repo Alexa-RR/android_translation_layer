@@ -34,11 +34,13 @@ import java.io.PrintWriter;
  * object. The per-thread calling identity, strict-mode policy and work source that libbinder's
  * IPCThreadState keeps are kept here in Java with the same token encodings.
  *
- * <p>Calling identity: the process holds two parties, the app (this process's uid) and ATL's
- * framework services acting for the platform (the system server on Android, {@link
- * Process#SYSTEM_UID}). Every Binder belongs to the party whose code created it, and a thread
- * acts for the app unless a framework service runs it as the platform ({@link
- * #setThreadActingUid}). A transaction from one party to a binder of the other is an incoming IPC
+ * <p>Calling identity: the process holds several parties, each a process of its own on Android:
+ * the app (this process's uid), ATL's framework services acting for the platform (the system
+ * server, {@link Process#SYSTEM_UID}), and every other package loaded here (a system app such as a
+ * car template renderer, with the uid PackageManager assigned it). Every Binder belongs to the
+ * party whose code created it. A thread acts for the app unless platform code runs it as the
+ * platform ({@link #setThreadActingUid}) or it runs a component or a message of another package
+ * ({@link #tlEnterParty}); threads inherit the party of the thread that started them. A transaction from one party to a binder of the other is an incoming IPC
  * for the callee: for its duration {@link #getCallingUid} is the sender's uid, {@link
  * #getCallingPid} this process, and the thread acts for the binder's owner. A transaction within
  * one party is a local call, which on Android leaves the calling identity alone. Outside any
@@ -85,12 +87,31 @@ public class Binder implements IBinder {
         int incoming;
     }
 
-    private static final ThreadLocal<ThreadState> sThreadState = new ThreadLocal<ThreadState>() {
+    /* a thread runs code for the party whose code started it (on Android: a thread of that party's
+     * own process), so the acting uid is inherited by new threads; the calling identity outside a
+     * transaction is the thread's party */
+    private static final ThreadLocal<ThreadState> sThreadState = new InheritableThreadLocal<ThreadState>() {
         @Override
         protected ThreadState initialValue() {
             return new ThreadState();
         }
+
+        @Override
+        protected ThreadState childValue(ThreadState parent) {
+            ThreadState s = new ThreadState();
+            s.actingUid = parent.actingUid;
+            s.callingUid = parent.actingUid;
+            return s;
+        }
     };
+
+    /**
+     * teslalinux: the uids that can act in this process: the app's (this process's uid), the
+     * platform's and those of the other packages loaded here (android.atl.ATLLoadedAppManager).
+     */
+    private static boolean isPartyUid(int uid) {
+        return uid == Process.myUid() || uid == Process.SYSTEM_UID || android.atl.ATLLoadedAppManager.isLoadedPackageUid(uid);
+    }
 
     /** IPCThreadState::kWorkSourcePropagatedBitIndex */
     private static final int WORK_SOURCE_PROPAGATED_BIT_INDEX = 32;
@@ -141,8 +162,8 @@ public class Binder implements IBinder {
      * @hide
      */
     public static final int setThreadActingUid(int uid) {
-        if (uid != Process.myUid() && uid != Process.SYSTEM_UID)
-            throw new IllegalArgumentException("a thread acts for the app (" + Process.myUid() + ") or the platform (" + Process.SYSTEM_UID + "), not " + uid);
+        if (!isPartyUid(uid))
+            throw new IllegalArgumentException("a thread acts for the app (" + Process.myUid() + "), the platform (" + Process.SYSTEM_UID + ") or a package loaded in this process, not " + uid);
         ThreadState s = sThreadState.get();
         int previous = s.actingUid;
         if (s.incoming == 0 && !s.hasExplicitIdentity && s.callingUid == previous) {
@@ -160,6 +181,34 @@ public class Binder implements IBinder {
      */
     public static final int getThreadActingUid() {
         return sThreadState.get().actingUid;
+    }
+
+    /**
+     * teslalinux: runs the following code of this thread for the party {@code uid} (a message it
+     * posted, a component of that package): like {@link #setThreadActingUid}, and outside an
+     * incoming transaction the calling identity is that party, as on its own process's thread.
+     * Returns the previous party for {@link #tlLeaveParty}.
+     *
+     * @hide
+     */
+    public static final int tlEnterParty(int uid) {
+        ThreadState s = sThreadState.get();
+        int previous = s.actingUid;
+        if (previous == uid)
+            return previous;
+        return setThreadActingUid(uid);
+    }
+
+    /** @hide teslalinux: back to the party {@link #tlEnterParty} returned */
+    public static final void tlLeaveParty(int previous) {
+        ThreadState s = sThreadState.get();
+        if (s.actingUid == previous)
+            return;
+        if (s.incoming == 0 && !s.hasExplicitIdentity && s.callingUid == s.actingUid) {
+            s.callingUid = previous;
+            s.callingPid = Process.myPid();
+        }
+        s.actingUid = previous;
     }
 
     private static boolean hasExplicitIdentity() {
@@ -625,6 +674,16 @@ public class Binder implements IBinder {
             s.incoming++;
             try {
                 r = onTransact(code, data, reply, flags);
+            } catch (RemoteException | RuntimeException e) {
+                /* AOSP Binder.execTransactInternal: what the stub throws stays on the callee's
+                 * side; a one-way call logs it, a two-way call returns it in the reply */
+                if ((flags & FLAG_ONEWAY) != 0) {
+                    Log.w(TAG, "Caught a RuntimeException from the binder stub implementation.", e);
+                } else if (reply != null) {
+                    reply.setDataPosition(0);
+                    reply.writeException(e);
+                }
+                r = true;
             } finally {
                 s.incoming--;
                 s.actingUid = savedActing;

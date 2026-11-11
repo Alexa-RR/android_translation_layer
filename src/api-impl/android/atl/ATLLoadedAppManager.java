@@ -83,7 +83,7 @@ public final class ATLLoadedAppManager {
 			if (pkg != null) {
 				return pkg;
 			}
-			File installed_apk_location = new File(ATLPaths.installed_apks_dir, packageName + ".apk");
+			File installed_apk_location = apkOf(packageName);
 			if (!installed_apk_location.isFile()) {
 				if (ATLLoadedApp.play_services.contains(packageName)) {
 					return loadGStub(packageName).pkg;
@@ -98,6 +98,9 @@ public final class ATLLoadedAppManager {
 				if (ATLLoadedApp.play_services.contains(packageName)) {
 					ATLSigHelper.addGMSSignatures(pkg);
 				}
+				pkg.applicationInfo.sourceDir = installed_apk_location.getPath();
+				pkg.applicationInfo.publicSourceDir = installed_apk_location.getPath();
+				ATLPackageSettings.applyInstallState(pkg);
 				loaded_packages.put(packageName, pkg);
 			} else {
 				Slog.e(TAG, "Failed to load package " + packageName);
@@ -118,7 +121,7 @@ public final class ATLLoadedAppManager {
 				return app;
 			}
 			Slog.i(TAG, "Attempting to load " + packageName + " into " + ATLLoadedApp.getPrimaryApplication().pkg.packageName);
-			File installed_apk_location = new File(ATLPaths.installed_apks_dir, packageName + ".apk");
+			File installed_apk_location = apkOf(packageName);
 			File installed_lib_location = new File(ATLPaths.app_data_dir_base, packageName + "_/lib");
 			if (!installed_apk_location.isFile()) {
 				if (ATLLoadedApp.play_services.contains(packageName)) {
@@ -132,6 +135,8 @@ public final class ATLLoadedAppManager {
 				app = ATLLoadedApp.loadFromPath(apk_path, lib_path, apk_path);
 				app.pkg.applicationInfo.nativeLibraryDir = lib_path;
 				app.pkg.applicationInfo.sourceDir = apk_path;
+				app.pkg.applicationInfo.publicSourceDir = apk_path;
+				ATLPackageSettings.applyInstallState(app.pkg);
 				Slog.i(TAG, "loadApplication(\"" + packageName + "\")");
 				loaded_packages.put(packageName, app.pkg);
 				loaded_apps.put(packageName, app);
@@ -143,8 +148,39 @@ public final class ATLLoadedAppManager {
 		return app;
 	}
 
+	/* AOSP AppsFilter: system apps are force-queryable here (config_forceSystemPackagesQueryable), the
+	 * platform components apps talk to (a car template renderer) must be found by them */
 	private static boolean isPackageVisible(String sourcePackageName, String targetPackageName) {
-		return always_visible_packages.contains(targetPackageName) || always_allow_query_all_packages.contains(sourcePackageName);
+		return always_visible_packages.contains(targetPackageName) || always_allow_query_all_packages.contains(sourcePackageName)
+		    || ATLPackageSettings.getSystemApk(targetPackageName) != null;
+	}
+
+	/** where a package's APK is: a system app's under the system directory, else the installed one */
+	private static File apkOf(String packageName) {
+		File system = ATLPackageSettings.getSystemApk(packageName);
+		return system != null ? system : new File(ATLPaths.installed_apks_dir, packageName + ".apk");
+	}
+
+	/** Whether uid is the uid of a package loaded in this process other than the app and the framework. */
+	public static boolean isLoadedPackageUid(int uid) {
+		synchronized (load_lock) {
+			for (PackageParser.Package pkg : loaded_packages.values()) {
+				if (pkg.applicationInfo.uid == uid)
+					return true;
+			}
+		}
+		return false;
+	}
+
+	/** The packages known with this uid, other than the running app and the framework. */
+	public static java.util.List<PackageParser.Package> packagesForUid(int uid) {
+		java.util.ArrayList<PackageParser.Package> list = new java.util.ArrayList<>();
+		for (String name : ATLPackageSettings.packagesForUid(uid)) {
+			PackageParser.Package pkg = getPackageFromPackageName(name);
+			if (pkg != null && pkg.applicationInfo.uid == uid)
+				list.add(pkg);
+		}
+		return list;
 	}
 
 	private static ATLLoadedApp loadGStub(String packageName) {

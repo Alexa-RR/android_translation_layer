@@ -1407,8 +1407,9 @@ public class PackageManager {
 		}
 		PackageParser.Package pkg = ATLLoadedAppManager.getPackageFromPackageName(packageName);
 		if (pkg != null) {
+			/* AOSP: requestedPermissionsFlags shows the package's granted permissions */
 			return PackageParser.generatePackageInfo(pkg, new int[0],
-			                                         flags, 0, 0, new HashSet<>(), new PackageUserState());
+			                                         flags, 0, 0, android.atl.ATLPackageSettings.grantedPermissions(pkg), new PackageUserState());
 		}
 		throw new NameNotFoundException(packageName);
 	}
@@ -1509,7 +1510,7 @@ public class PackageManager {
 		return pkg.applicationInfo.uid;
 	}
 
-	/** the parsed package of the app ATL runs or of the framework ("android"), else null */
+	/** the parsed package of the app ATL runs, of the framework ("android") or of another package this app can see, else null */
 	private static PackageParser.Package tlKnownPackage(String packageName) {
 		if (packageName == null)
 			return null;
@@ -1518,7 +1519,7 @@ public class PackageManager {
 			return pkg;
 		if ("android".equals(packageName))
 			return ATLLoadedApp.getSystemApplication().pkg;
-		return null;
+		return ATLLoadedAppManager.getPackageFromPackageName(packageName);
 	}
 
 	/**
@@ -1891,7 +1892,20 @@ public class PackageManager {
 	 * @see #PERMISSION_DENIED
 	 */
 	public int checkPermission(String permName, String pkgName) {
-		if (permName != null && permName.endsWith(".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"))
+		if (permName == null || pkgName == null)
+			return PERMISSION_DENIED;
+		if (!pkgName.equals(ATLLoadedApp.getPrimaryApplication().pkg.packageName) && !android.atl.ATLPackageSettings.isPlayServicesStandIn(pkgName)) {
+			/* AOSP: the framework (system uid) holds every permission; another package holds what
+			 * the package manager granted it */
+			if ("android".equals(pkgName))
+				return PERMISSION_GRANTED;
+			PackageParser.Package other = ATLLoadedAppManager.getPackageFromPackageName(pkgName);
+			if (other == null)
+				return PERMISSION_DENIED;
+			return android.atl.ATLPackageSettings.checkPermission(other, permName);
+		}
+		/* the app ATL runs (below: its permission model, the car owner consented to the app) */
+		if (permName.endsWith(".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"))
 			return PERMISSION_GRANTED;
 
 		switch (permName) {
@@ -2131,7 +2145,31 @@ public class PackageManager {
 			pkgs.add(pkg.packageName);
 		if (uid == android.os.Process.SYSTEM_UID && !pkgs.contains("android"))
 			pkgs.add("android");
+		/* the other packages: each has the uid the package manager assigned it */
+		for (PackageParser.Package other : ATLLoadedAppManager.packagesForUid(uid)) {
+			if (!pkgs.contains(other.packageName))
+				pkgs.add(other.packageName);
+		}
 		return pkgs.isEmpty() ? null : pkgs.toArray(new String[0]);
+	}
+
+	/**
+	 * AOSP PackageManager.checkUidPermission (ActivityManager.checkComponentPermission): root and the
+	 * system uid hold every permission; another uid holds a permission when one of its packages does.
+	 *
+	 * @hide
+	 */
+	public int checkUidPermission(String permName, int uid) {
+		if (uid == 0 || uid == android.os.Process.SYSTEM_UID)
+			return PERMISSION_GRANTED;
+		String[] pkgs = getPackagesForUid(uid);
+		if (pkgs == null)
+			return PERMISSION_DENIED;
+		for (String p : pkgs) {
+			if (checkPermission(permName, p) == PERMISSION_GRANTED)
+				return PERMISSION_GRANTED;
+		}
+		return PERMISSION_DENIED;
 	}
 
 	/**
@@ -2615,16 +2653,25 @@ public class PackageManager {
 	                                             int flags) {
 		List<ResolveInfo> list = new ArrayList<ResolveInfo>(1);
 		String packageName;
-		PackageParser.Package pkg = null;
-		if ((packageName = intent.getPackage()) != null) {
-			pkg = ATLLoadedAppManager.getPackageFromPackageName(packageName);
-		}
-		if (pkg == null) {
-			pkg = ATLLoadedApp.getPrimaryApplication().pkg;
+		ComponentName explicit = intent.getComponent();
+		ArrayList<PackageParser.Package> pkgs = new ArrayList<>();
+		if ((packageName = intent.getPackage()) != null || (explicit != null && (packageName = explicit.getPackageName()) != null)) {
+			PackageParser.Package pkg = tlKnownPackage(packageName);
+			if (pkg != null)
+				pkgs.add(pkg);
+		} else {
+			/* AOSP: an implicit intent is resolved against every package the caller can see: the
+			 * app and the system apps */
+			pkgs.add(ATLLoadedApp.getPrimaryApplication().pkg);
+			for (String system : android.atl.ATLPackageSettings.getSystemPackages()) {
+				PackageParser.Package pkg = ATLLoadedAppManager.getPackageFromPackageName(system);
+				if (pkg != null && !pkgs.contains(pkg))
+					pkgs.add(pkg);
+			}
 		}
 		// AOSP: an explicit intent names its one service; otherwise each service with a matching
 		// filter, once, best priority first
-		ComponentName explicit = intent.getComponent();
+		for (PackageParser.Package pkg : pkgs)
 		for (Service s : pkg.services) {
 			if (explicit != null) {
 				if (s.getComponentName().equals(explicit)) {

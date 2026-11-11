@@ -111,6 +111,18 @@ public final class ContextImpl extends Context {
 		return atl_loaded_app.pkg.applicationInfo;
 	}
 
+	/**
+	 * AOSP: the application of this context's package (LoadedApk.getApplication): another package
+	 * loaded in this process (a system app) has its own Application. Framework contexts keep the
+	 * running app's application, as before.
+	 */
+	@Override
+	public Context getApplicationContext() {
+		if (atl_loaded_app == ATLLoadedApp.getSystemApplication() || atl_loaded_app == ATLLoadedApp.getPrimaryApplication())
+			return super.getApplicationContext();
+		return atl_loaded_app.getApplication();
+	}
+
 	@Override
 	public void setTheme(int resId) {
 		mThemeResource = resId;
@@ -305,6 +317,8 @@ public final class ContextImpl extends Context {
 		if ((this.atl_flags & ATL_FLAG_NO_CODE) != 0) {
 			return null;
 		}
+		if (tlCodeFrom != null)
+			return tlCodeFrom.class_loader;
 		return this.atl_loaded_app.class_loader;
 	}
 
@@ -526,8 +540,35 @@ public final class ContextImpl extends Context {
 			metrics = new DisplayMetrics();
 			tlDisplay.getMetrics(metrics);
 		}
-		ContextImpl context = this.atl_loaded_app.createContext(metrics, config, getTheme());
+		ContextImpl context = tlDerive(metrics, config);
 		context.tlDisplay = tlDisplay;
+		return context;
+	}
+
+	/* a context like this one for other metrics/configuration: a library component's context keeps
+	 * the library's code and resources */
+	private ContextImpl tlDerive(DisplayMetrics metrics, Configuration config) {
+		if (tlCodeFrom == null)
+			return this.atl_loaded_app.createContext(metrics, config, getTheme());
+		ContextImpl context = new ContextImpl(tlCodeFrom.createResources(metrics, config), this.atl_loaded_app, getTheme());
+		context.tlCodeFrom = tlCodeFrom;
+		return context;
+	}
+
+	/* the library package whose code and resources a component of this app runs from (see
+	 * tlCreateLibraryComponentContext), else null */
+	private ATLLoadedApp tlCodeFrom;
+
+	/**
+	 * teslalinux: the context of an app component whose code is a library's (AOSP: a library merged
+	 * into the app, its classes in the app's class loader and its resources in the app's): the
+	 * component is the app's (package, uid, application, data), while its class loader and
+	 * resources are those of the library package, so that the library's R ids, layouts and views
+	 * resolve as they were built.
+	 */
+	public static ContextImpl tlCreateLibraryComponentContext(ATLLoadedApp app, ATLLoadedApp library, int themeResource) {
+		ContextImpl context = new ContextImpl(library.createDefaultResources(), app, themeResource);
+		context.tlCodeFrom = library;
 		return context;
 	}
 
@@ -551,7 +592,7 @@ public final class ContextImpl extends Context {
 		config.orientation = metrics.widthPixels > metrics.heightPixels ? Configuration.ORIENTATION_LANDSCAPE
 		                     : metrics.widthPixels < metrics.heightPixels ? Configuration.ORIENTATION_PORTRAIT
 		                     : Configuration.ORIENTATION_SQUARE;
-		ContextImpl context = this.atl_loaded_app.createContext(metrics, config, getTheme());
+		ContextImpl context = tlDerive(metrics, config);
 		context.tlDisplay = display;
 		return context;
 	}

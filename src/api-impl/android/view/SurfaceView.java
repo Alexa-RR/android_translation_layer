@@ -5,6 +5,7 @@ import android.atl.annotation.Export;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
+import android.os.IBinder;
 import android.util.AttributeSet;
 import java.util.ArrayList;
 
@@ -257,6 +258,57 @@ public class SurfaceView extends View {
 
 	public void setZOrderMediaOverlay(boolean mediaOverlay) {
 		/* TODO */
+	}
+
+	/* ---- embedding (AOSP SurfaceView.setChildSurfacePackage) ----
+	 * The SurfaceView's layer is where embedded windows are shown: a layer whose chain of parents
+	 * reaches it is drawn in this view's place, above its content (see SurfaceControl). */
+	private SurfaceControl tlSurfaceControl;
+	private SurfaceControlViewHost.SurfacePackage mSurfacePackage;
+	private final SurfaceControl.Transaction mTmpTransaction = new SurfaceControl.Transaction();
+
+	private SurfaceControl tlLayer() {
+		if (tlSurfaceControl == null) {
+			tlSurfaceControl = new SurfaceControl.Builder().setName("SurfaceView[" + getClass().getName() + "]").setContainerLayer().setCallsite("SurfaceView").build();
+			tlSurfaceControl.getLayer().surfaceView = this;
+		}
+		return tlSurfaceControl;
+	}
+
+	/**
+	 * AOSP: the SurfaceControl of this view's surface, null while there is no surface. Children
+	 * reparented to it are shown with the SurfaceView.
+	 */
+	public SurfaceControl getSurfaceControl() {
+		return tlSurfaceCreated ? tlLayer() : null;
+	}
+
+	/**
+	 * AOSP: a token of this view's window, given to a SurfaceControlViewHost in another component
+	 * to embed into this view (input transfer and focus are linked to it); null without a window.
+	 */
+	public IBinder getHostToken() {
+		return getWindowToken();
+	}
+
+	/**
+	 * Display the view-hierarchy embedded within a {@link SurfaceControlViewHost.SurfacePackage}
+	 * within this SurfaceView. This can be called independently of the SurfaceView lifetime
+	 * callbacks. SurfaceView will internally manage reparenting the package to our Surface as it is
+	 * created or destroyed. The SurfaceView takes ownership of the package: a package set before is
+	 * released.
+	 */
+	public void setChildSurfacePackage(SurfaceControlViewHost.SurfacePackage p) {
+		final SurfaceControl lastSc = mSurfacePackage != null ? mSurfacePackage.getSurfaceControl() : null;
+		if (lastSc != null && lastSc.isValid()) {
+			mTmpTransaction.reparent(lastSc, null);
+			mSurfacePackage.release();
+		}
+		mSurfacePackage = p;
+		final SurfaceControl sc = p != null ? p.getSurfaceControl() : null;
+		if (sc != null && sc.isValid())
+			mTmpTransaction.reparent(sc, tlLayer()).show(sc);
+		mTmpTransaction.apply();
 	}
 
 	/** AOSP: the surface is destroyed when the view loses its window (native unrealize). */

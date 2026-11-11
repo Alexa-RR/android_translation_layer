@@ -10,6 +10,12 @@ public final class ATLPaths {
 	public static final File ghax_jar;
 	/** the framework package's APK, or null when the runtime was started without it */
 	public static final File framework_res_apk;
+	/**
+	 * The system partition of this runtime (AOSP's /system): priv-app/NAME/NAME.apk and
+	 * app/NAME/NAME.apk are the system apps, etc/permissions/*.xml the privileged-permission
+	 * allowlists. Next to api-impl.jar, or $ATL_SYSTEM_DIR.
+	 */
+	public static final File system_dir;
 
 	static {
 		// The main executable set api-impl.jar as the first element of "java.class.path"
@@ -28,6 +34,8 @@ public final class ATLPaths {
 			}
 		}
 		framework_res_apk = frameworkRes;
+		String systemDir = System.getenv("ATL_SYSTEM_DIR");
+		system_dir = systemDir != null && !systemDir.isEmpty() ? new File(systemDir).getAbsoluteFile() : new File(extraJarsDirectory, "system");
 		// Mirror how main.c calculates app_data_dir_base
 		String ANDROID_APP_DATA_DIR = System.getenv("ANDROID_APP_DATA_DIR");
 		if (ANDROID_APP_DATA_DIR != null && !ANDROID_APP_DATA_DIR.isEmpty()) {

@@ -352,6 +352,7 @@ struct jni_callback_data {
 	char **extra_jvm_options;
 	char **extra_string_keys;
 	char *sdk_int;
+	gboolean background;
 };
 
 static char *uri_option = NULL;
@@ -499,7 +500,7 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 	char *framework_res_apk = NULL;
 	const char *package_name;
 	int ret;
-	jobject activity_object;
+	jobject activity_object = NULL;
 	jobject application_object;
 
 	char **apk_classpaths = g_new0(gchar *, nfiles + 1); // +1 for NULL terminator for g_strjoinv
@@ -722,8 +723,20 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 			(*env)->ExceptionDescribe(env);
 	}
 
+	/* --background: no activity, as a process Android starts for a service binding; the platform
+	 * components that bind the app's services start now (the window stays for windows they add) */
+	if (d->background && !d->apk_instrumentation_class && !d->install_internal) {
+		if (d->apk_main_activity_class || uri_option) {
+			fprintf(stderr, "error: --background supplied together with --launch-activity or --uri, exiting\n");
+			exit(1);
+		}
+		J__Application__tlStartedWithoutActivity(env);
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionDescribe(env);
+	}
+
 	// construct main Activity
-	if (!d->apk_instrumentation_class && !d->install_internal) {
+	if (!d->apk_instrumentation_class && !d->install_internal && !d->background) {
 		activity_object = J__Activity__createMainActivity(env, _JSTRING(d->apk_main_activity_class),
 		                                                  _INTPTR(window), (uri_option && *uri_option) ? _JSTRING(uri_option) : NULL);
 		if ((*env)->ExceptionCheck(env))
@@ -900,7 +913,7 @@ static void open(GtkApplication *app, GFile **files, gint nfiles, const gchar *h
 		g_signal_connect_after(window, "realize", G_CALLBACK(icon_override), icon_list);
 	}
 
-	if (!d->apk_instrumentation_class) {
+	if (!d->apk_instrumentation_class && !d->background) {
 		activity_start(env, activity_object);
 
 		g_timeout_add(10, G_SOURCE_FUNC(hacky_on_window_focus_changed_callback), env);
@@ -960,6 +973,7 @@ void init_cmd_parameters(GApplication *app, struct jni_callback_data *d)
 		{ "extra-jvm-option", 'X', 0, G_OPTION_ARG_STRING_ARRAY, &d->extra_jvm_options,         "pass an additional option directly to art (e.g -X \"-verbose:jni\")",                          "\"OPTION\""    },
 		{ "extra-string-key", 'e', 0, G_OPTION_ARG_STRING_ARRAY, &d->extra_string_keys,         "pass a string extra (-e key=value)",                                                           "\"KEY=VALUE\"" },
 		{ "sdk-int",           0 , 0, G_OPTION_ARG_STRING,       &d->sdk_int,                   "shorthand for -X \"-DBuild.VERSION.SDK_INT=<version>\"",                                                           "SDK_INT" },
+		{ "background",        0 , 0, G_OPTION_ARG_NONE,         &d->background,                "start the app without an activity, as Android starts a process for a service binding (Application.onCreate only); platform components then bind its services (ATL_CAR_HOST)", NULL },
 		/* long_name | short_name | flags                     | arg                  | arg_data     | description                                                                              | arg_desc */
 		{ "uri",              'u', G_OPTION_FLAG_OPTIONAL_ARG, G_OPTION_ARG_CALLBACK, option_uri_cb, "open the given URI inside the application",                                               "URI"           },
 		{NULL}

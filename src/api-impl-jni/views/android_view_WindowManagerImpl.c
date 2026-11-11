@@ -44,6 +44,10 @@ struct _TlWindowLayer {
 	float dim_amount;
 	GdkRectangle frame; /* the window frame in layer (= main window) coordinates */
 	gboolean outside_down;
+	/* an embedded window (SurfaceControlViewHost): shown in a SurfaceView's widget at offset_x/y */
+	gboolean embedded;
+	int offset_x, offset_y;
+	gint64 stack_key;
 };
 
 G_DEFINE_TYPE(TlWindowLayer, tl_window_layer, GTK_TYPE_WIDGET)
@@ -78,7 +82,7 @@ static void tl_window_layer_size_allocate(GtkWidget *widget, int width, int heig
 	jint rect[4];
 	(*env)->GetIntArrayRegion(env, out, 0, 4, rect);
 	(*env)->DeleteLocalRef(env, out);
-	self->frame = (GdkRectangle){ rect[0], rect[1], rect[2], rect[3] };
+	self->frame = (GdkRectangle){ rect[0] + self->offset_x, rect[1] + self->offset_y, rect[2], rect[3] };
 	/* the root view was measured for exactly the frame (ViewRootImpl); let GTK's measure of it ask for the same */
 	GtkLayoutManager *lm = self->view_widget ? gtk_widget_get_layout_manager(self->view_widget) : NULL;
 	if (lm && ATL_IS_ANDROID_LAYOUT(lm)) {
@@ -200,7 +204,7 @@ static void tl_window_layer_apply_flags(TlWindowLayer *self, int flags, float di
 	gtk_widget_queue_draw(GTK_WIDGET(self));
 }
 
-JNIEXPORT jlong JNICALL Java_android_view_WindowManagerImpl_native_1addWindow(JNIEnv *env, jclass clazz, jobject view, jlong widget_ptr, jint flags, jfloat dim_amount)
+static TlWindowLayer *tl_window_layer_create(JNIEnv *env, jobject view, jlong widget_ptr, jint flags, jfloat dim_amount)
 {
 	GtkWidget *view_widget = GTK_WIDGET(_PTR(widget_ptr));
 	GtkWidget *wrapper = gtk_widget_get_parent(view_widget);
@@ -213,6 +217,12 @@ JNIEXPORT jlong JNICALL Java_android_view_WindowManagerImpl_native_1addWindow(JN
 		gtk_widget_unparent(wrapper);
 	gtk_widget_set_parent(wrapper, GTK_WIDGET(self));
 	tl_window_layer_apply_flags(self, flags, dim_amount);
+	return self;
+}
+
+JNIEXPORT jlong JNICALL Java_android_view_WindowManagerImpl_native_1addWindow(JNIEnv *env, jclass clazz, jobject view, jlong widget_ptr, jint flags, jfloat dim_amount)
+{
+	TlWindowLayer *self = tl_window_layer_create(env, view, widget_ptr, flags, dim_amount);
 	gtk_overlay_add_overlay(GTK_OVERLAY(tl_main_overlay), GTK_WIDGET(self));
 	gtk_overlay_set_measure_overlay(GTK_OVERLAY(tl_main_overlay), GTK_WIDGET(self), FALSE);
 	gtk_overlay_set_clip_overlay(GTK_OVERLAY(tl_main_overlay), GTK_WIDGET(self), TRUE);
@@ -239,8 +249,63 @@ JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1removeWindow(
 	if (!layer_ptr)
 		return;
 	TlWindowLayer *self = TL_WINDOW_LAYER(_PTR(layer_ptr));
-	if (gtk_widget_get_parent(GTK_WIDGET(self)) == tl_main_overlay)
+	GtkWidget *parent = gtk_widget_get_parent(GTK_WIDGET(self));
+	if (parent == tl_main_overlay)
 		gtk_overlay_remove_overlay(GTK_OVERLAY(tl_main_overlay), GTK_WIDGET(self));
+	else if (parent) /* an embedded window shown in a SurfaceView */
+		gtk_widget_unparent(GTK_WIDGET(self));
 	g_object_run_dispose(G_OBJECT(self));
 	g_object_unref(self);
+}
+
+/*
+ * Embedded windows (SurfaceControlViewHost). The layer is not added to the main window's overlay:
+ * it is shown inside the SurfaceViewWidget of the SurfaceView its SurfaceControl is placed in
+ * (SurfaceControl.place in Java), which allocates it at its own size (the SurfaceView's) and draws
+ * it above the SurfaceView's content. Several windows in one SurfaceView are stacked by their
+ * stack key (layer z, then order of attachment), lowest first.
+ */
+JNIEXPORT jlong JNICALL Java_android_view_WindowManagerImpl_native_1createEmbeddedWindow(JNIEnv *env, jclass clazz, jobject view, jlong widget_ptr, jint flags)
+{
+	TlWindowLayer *self = tl_window_layer_create(env, view, widget_ptr, flags, 0.f);
+	self->embedded = TRUE;
+	return _INTPTR(self);
+}
+
+JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1placeEmbeddedWindow(JNIEnv *env, jclass clazz, jlong layer_ptr, jlong surface_view_widget, jint x, jint y, jfloat alpha, jlong stack_key)
+{
+	if (!layer_ptr)
+		return;
+	TlWindowLayer *self = TL_WINDOW_LAYER(_PTR(layer_ptr));
+	GtkWidget *widget = GTK_WIDGET(self);
+	GtkWidget *parent = gtk_widget_get_parent(widget);
+	if (!surface_view_widget) {
+		if (parent)
+			gtk_widget_unparent(widget);
+		return;
+	}
+	/* SurfaceView's widget is a GtkGraphicsOffload around the SurfaceViewWidget that shows its content */
+	GtkWidget *target = GTK_WIDGET(_PTR(surface_view_widget));
+	if (GTK_IS_GRAPHICS_OFFLOAD(target))
+		target = gtk_graphics_offload_get_child(GTK_GRAPHICS_OFFLOAD(target));
+	if (!target)
+		return;
+	if (parent != target || self->stack_key != stack_key) {
+		if (parent)
+			gtk_widget_unparent(widget);
+		self->stack_key = stack_key;
+		GtkWidget *next = NULL;
+		for (GtkWidget *c = gtk_widget_get_first_child(target); c; c = gtk_widget_get_next_sibling(c)) {
+			if (g_type_check_instance_is_a((GTypeInstance *)c, tl_window_layer_get_type()) && TL_WINDOW_LAYER(c)->stack_key > stack_key) {
+				next = c;
+				break;
+			}
+		}
+		gtk_widget_insert_before(widget, target, next);
+	}
+	self->offset_x = x;
+	self->offset_y = y;
+	gtk_widget_set_opacity(widget, alpha);
+	gtk_widget_queue_allocate(widget);
+	gtk_widget_queue_draw(widget);
 }

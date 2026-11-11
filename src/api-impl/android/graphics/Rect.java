@@ -24,7 +24,52 @@ import java.util.regex.Pattern;
  * the rectangle's width and height. Note: most methods do not check to see that
  * the coordinates are sorted correctly (i.e. left <= right and top <= bottom).
  */
-public final class Rect {
+public final class Rect implements android.os.Parcelable {
+	/** Parcelable interface methods */
+	@Override
+	public int describeContents() {
+		return 0;
+	}
+
+	/**
+	 * Write this rectangle to the specified parcel. To restore a rectangle from a parcel, use
+	 * readFromParcel()
+	 */
+	@Override
+	public void writeToParcel(android.os.Parcel out, int flags) {
+		out.writeInt(left);
+		out.writeInt(top);
+		out.writeInt(right);
+		out.writeInt(bottom);
+	}
+
+	public static final android.os.Parcelable.Creator<Rect> CREATOR = new android.os.Parcelable.Creator<Rect>() {
+		/** Return a new rectangle from the data in the specified parcel. */
+		@Override
+		public Rect createFromParcel(android.os.Parcel in) {
+			Rect r = new Rect();
+			r.readFromParcel(in);
+			return r;
+		}
+
+		/** Return an array of rectangles of the specified size. */
+		@Override
+		public Rect[] newArray(int size) {
+			return new Rect[size];
+		}
+	};
+
+	/**
+	 * Set the rectangle's coordinates from the data stored in the specified parcel. To write a
+	 * rectangle to a parcel, call writeToParcel().
+	 */
+	public void readFromParcel(android.os.Parcel in) {
+		left = in.readInt();
+		top = in.readInt();
+		right = in.readInt();
+		bottom = in.readInt();
+	}
+
 	public int left;
 	public int top;
 	public int right;

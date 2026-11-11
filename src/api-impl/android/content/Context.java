@@ -195,8 +195,34 @@ public abstract class Context {
 			Slog.v(TAG, "new Context! this one is: " + this);
 	}
 
+	/**
+	 * AOSP: whether the process pid running as uid holds the permission (ActivityManager
+	 * checkPermission: per uid; root and the system uid hold every permission).
+	 */
 	public int checkPermission(String permission, int pid, int uid) {
-		return getPackageManager().checkPermission(permission, getPackageName());
+		if (permission == null)
+			throw new IllegalArgumentException("permission is null");
+		if (uid == android.os.Process.myUid())
+			return getPackageManager().checkPermission(permission, android.atl.ATLLoadedApp.getPrimaryApplication().pkg.packageName);
+		return getPackageManager().checkUidPermission(permission, uid);
+	}
+
+	/**
+	 * AOSP: whether the process of the incoming IPC being handled holds the permission; denied
+	 * outside an incoming IPC (use checkCallingOrSelfPermission for that).
+	 */
+	public int checkCallingPermission(String permission) {
+		if (permission == null)
+			throw new IllegalArgumentException("permission is null");
+		if (!android.os.Binder.isDirectlyHandlingTransaction())
+			return android.content.pm.PackageManager.PERMISSION_DENIED;
+		return checkPermission(permission, android.os.Binder.getCallingPid(), android.os.Binder.getCallingUid());
+	}
+
+	/** AOSP: SecurityException unless the caller of the incoming IPC holds the permission. */
+	public void enforceCallingPermission(String permission, String message) {
+		if (checkCallingPermission(permission) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+			throw new SecurityException((message != null ? message + ": " : "") + "uid " + android.os.Binder.getCallingUid() + " does not have " + permission + ".");
 	}
 
 	public abstract Resources.Theme getTheme();
@@ -434,12 +460,18 @@ public abstract class Context {
 		return new FileOutputStream(android.os.Environment.getExternalStorageDirectory().getPath() + "/files/" + name);
 	}
 
+	/** AOSP: the caller of the incoming IPC being handled, or this context's own package outside one. */
 	public int checkCallingOrSelfPermission(String permission) {
-		return getPackageManager().checkPermission(permission, getPackageName());
+		if (android.os.Binder.isDirectlyHandlingTransaction())
+			return checkPermission(permission, android.os.Binder.getCallingPid(), android.os.Binder.getCallingUid());
+		return checkSelfPermission(permission);
 	}
 
+	/** AOSP: this context's package (checkPermission for this process and the package's uid). */
 	public int checkSelfPermission(String permission) {
-		return checkCallingOrSelfPermission(permission);
+		if (permission == null)
+			throw new IllegalArgumentException("permission is null");
+		return getPackageManager().checkPermission(permission, getPackageName());
 	}
 
 	/**
@@ -758,6 +790,12 @@ public abstract class Context {
 	public int checkCallingOrSelfUriPermission(android.net.Uri uri, int modeFlags) { return android.content.pm.PackageManager.PERMISSION_GRANTED; }
 	public boolean bindServiceAsUser(Intent service, ServiceConnection conn, int flags, android.os.UserHandle user) { return bindService(service, conn, flags); }
 	public android.view.Display getDisplay() { return ((android.view.WindowManager) getSystemService("window")).getDefaultDisplay(); }
+
+	/** AOSP (hidden): the id of the display this context is associated with */
+	public int getDisplayId() {
+		android.view.Display display = getDisplay();
+		return display != null ? display.getDisplayId() : android.view.Display.DEFAULT_DISPLAY;
+	}
 	/*
 	 * AOSP: listeners for this context moving to another (virtual) device. ATL has no virtual
 	 * devices, so the device id never changes and registered listeners are never called; the

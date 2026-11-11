@@ -1860,8 +1860,24 @@ public class View implements Drawable.Callback {
 
 	public void setOnGenericMotionListener(View.OnGenericMotionListener l) {}
 
+	/** the token of the window this view is the root of (created on first use) */
+	private IBinder tlWindowToken;
+
+	/**
+	 * AOSP: the token identifying the window this view is attached to (AttachInfo.mWindowToken),
+	 * the same object for every view of that window, null when the view is not attached. A window
+	 * here is a root view (activity content, dialog, added or embedded window), so the token
+	 * belongs to the root.
+	 */
 	public IBinder getWindowToken() {
-		return new Binder();
+		if (!isAttachedToWindow())
+			return null;
+		View root = getRootView();
+		synchronized (root) {
+			if (root.tlWindowToken == null)
+				root.tlWindowToken = new Binder();
+			return root.tlWindowToken;
+		}
 	}
 
 	public void getLocationInWindow(int[] location) {
@@ -3468,13 +3484,65 @@ public class View implements Drawable.Callback {
 
 	protected void onConfigurationChanged(Configuration newConfig) {}
 
-	public boolean isDrawingCacheEnabled() { return false; }
+	/* ---- the drawing cache (AOSP View): a bitmap of what the view draws ---- */
+	private boolean tlDrawingCacheEnabled;
+	private Bitmap tlDrawingCache;
 
-	public void setDrawingCacheEnabled(boolean enabled) {}
+	/** AOSP: whether getDrawingCache builds the cache itself. */
+	public boolean isDrawingCacheEnabled() {
+		return tlDrawingCacheEnabled;
+	}
 
-	public void buildDrawingCache(boolean autoScale) {}
+	/** AOSP: enables or disables the drawing cache; disabling it does not destroy a built one. */
+	public void setDrawingCacheEnabled(boolean enabled) {
+		tlDrawingCacheEnabled = enabled;
+	}
 
-	public Bitmap getDrawingCache() { return null; }
+	/** AOSP: buildDrawingCache(false). */
+	public void buildDrawingCache() {
+		buildDrawingCache(false);
+	}
+
+	/**
+	 * AOSP: draws the view into its cache bitmap (its width and height, scrolled as it is
+	 * drawn). A view of zero size has no cache. The cache is drawn again on every call, as AOSP
+	 * does after the view was invalidated.
+	 */
+	public void buildDrawingCache(boolean autoScale) {
+		int width = getWidth();
+		int height = getHeight();
+		if (width <= 0 || height <= 0) {
+			destroyDrawingCache();
+			return;
+		}
+		Bitmap cache = tlDrawingCache;
+		if (cache == null || cache.isRecycled() || cache.getWidth() != width || cache.getHeight() != height) {
+			if (cache != null && !cache.isRecycled())
+				cache.recycle();
+			cache = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
+			tlDrawingCache = cache;
+		} else {
+			cache.eraseColor(0);
+		}
+		Canvas canvas = new Canvas(cache);
+		canvas.translate(-getScrollX(), -getScrollY());
+		draw(canvas);
+	}
+
+	/** AOSP: getDrawingCache(false). */
+	public Bitmap getDrawingCache() {
+		return getDrawingCache(false);
+	}
+
+	/**
+	 * AOSP: the drawing cache, built now when the cache is enabled; without it, the cache an
+	 * explicit buildDrawingCache made, or null.
+	 */
+	public Bitmap getDrawingCache(boolean autoScale) {
+		if (tlDrawingCacheEnabled)
+			buildDrawingCache(autoScale);
+		return tlDrawingCache;
+	}
 
 	public void announceForAccessibility(CharSequence text) {}
 
@@ -3612,7 +3680,13 @@ public class View implements Drawable.Callback {
 		}
 	}
 
-	public void destroyDrawingCache() {}
+	/** AOSP: frees the drawing cache bitmap. */
+	public void destroyDrawingCache() {
+		if (tlDrawingCache != null) {
+			tlDrawingCache.recycle();
+			tlDrawingCache = null;
+		}
+	}
 
 	public void setHovered(boolean isHovered) {}
 

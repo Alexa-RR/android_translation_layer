@@ -686,4 +686,58 @@ public final class Bitmap implements Parcelable {
 	public static int scaleFromDensity(int size, int sdensity, int tdensity) {
 		return tlScale(size, sdensity, tdensity);
 	}
+
+	/* ---- Parcelable ----
+	 * AOSP writes the bitmap's mutability, config, size, density and pixels (in a shared memory
+	 * blob); here the pixels go into the parcel as ARGB colours, which both sides of a binder call
+	 * in this runtime read back the same way. */
+
+	@Override
+	public int describeContents() {
+		return 0;
+	}
+
+	@Override
+	public void writeToParcel(android.os.Parcel p, int flags) {
+		if (isRecycled())
+			throw new IllegalStateException("Can't parcel a recycled bitmap");
+		int w = getWidth(), h = getHeight();
+		p.writeInt(isMutable() ? 1 : 0);
+		p.writeString(getConfig() != null ? getConfig().name() : Config.ARGB_8888.name());
+		p.writeInt(w);
+		p.writeInt(h);
+		p.writeInt(getDensity());
+		p.writeInt(hasAlpha() ? 1 : 0);
+		int[] pixels = new int[w * h];
+		getPixels(pixels, 0, w, 0, 0, w, h);
+		p.writeIntArray(pixels);
+	}
+
+	public static final Parcelable.Creator<Bitmap> CREATOR = new Parcelable.Creator<Bitmap>() {
+		/** Rebuilds a Bitmap from a parcel written by writeToParcel. */
+		@Override
+		public Bitmap createFromParcel(android.os.Parcel p) {
+			boolean mutable = p.readInt() != 0;
+			Config config;
+			try {
+				config = Config.valueOf(p.readString());
+			} catch (IllegalArgumentException | NullPointerException e) {
+				config = Config.ARGB_8888;
+			}
+			int w = p.readInt();
+			int h = p.readInt();
+			int density = p.readInt();
+			boolean alpha = p.readInt() != 0;
+			int[] pixels = p.createIntArray();
+			Bitmap b = createBitmap(pixels, w, h, config);
+			b.setDensity(density);
+			b.setHasAlpha(alpha);
+			return mutable ? b : b.copy(config, false);
+		}
+
+		@Override
+		public Bitmap[] newArray(int size) {
+			return new Bitmap[size];
+		}
+	};
 }

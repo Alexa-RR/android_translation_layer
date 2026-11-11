@@ -417,6 +417,7 @@ public final class Message implements Parcelable {
 		target = null;
 		callback = null;
 		data = null;
+		tlActingUid = UID_NONE;
 	}
 
 	/*package*/ boolean isInUse() {
@@ -488,6 +489,14 @@ public final class Message implements Parcelable {
 	public int sendingUid = UID_NONE;
 	/** AOSP (hidden): the uid the work is attributed to, or UID_NONE. */
 	public int workSourceUid = UID_NONE;
+	/**
+	 * teslalinux: the party (uid, see Binder) whose code posted the message. On Android every
+	 * package's code runs on its own process's looper; here several packages share this process, so
+	 * a message is handled for the party that posted it, as its own looper would have.
+	 *
+	 * @hide
+	 */
+	public int tlActingUid = UID_NONE;
 	/** AOSP (hidden): an unset uid */
 	public static final int UID_NONE = -1;
 

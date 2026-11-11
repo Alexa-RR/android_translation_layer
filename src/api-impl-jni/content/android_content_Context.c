@@ -104,8 +104,19 @@ static void tl_apply_window_config(JNIEnv *env, jobject config, int width, int h
 	_SET_INT_FIELD(config, "navigation", 1);         /* NAVIGATION_NONAV */
 	_SET_INT_FIELD(config, "navigationHidden", 2);   /* NAVIGATIONHIDDEN_YES */
 	int ui_mode = _GET_INT_FIELD(config, "uiMode");
-	if ((ui_mode & 0x0f) == 0)
-		_SET_INT_FIELD(config, "uiMode", ui_mode | 1); /* UI_MODE_TYPE_NORMAL, night bits kept */
+	if ((ui_mode & 0x0f) == 0) {
+		/* AOSP UiModeManagerService: the device type decides the UI mode type (FEATURE_AUTOMOTIVE:
+		 * UI_MODE_TYPE_CAR, FEATURE_LEANBACK: TELEVISION, FEATURE_WATCH: WATCH), else NORMAL; the
+		 * features follow the same environment as PackageManager.hasSystemFeature. Night bits kept. */
+		int type = 1; /* UI_MODE_TYPE_NORMAL */
+		if (g_getenv("ATL_IS_AUTOMOTIVE"))
+			type = 3; /* UI_MODE_TYPE_CAR */
+		else if (g_getenv("ATL_IS_TELEVISION"))
+			type = 4; /* UI_MODE_TYPE_TELEVISION */
+		else if (g_getenv("ATL_IS_WATCH"))
+			type = 6; /* UI_MODE_TYPE_WATCH */
+		_SET_INT_FIELD(config, "uiMode", ui_mode | type);
+	}
 	/* the Display reports the same size (DisplayMetrics.setToDefaults reads these) */
 	jclass display_class = (*env)->FindClass(env, "android/view/Display");
 	(*env)->SetStaticIntField(env, display_class, (*env)->GetStaticFieldID(env, display_class, "window_width", "I"), width);

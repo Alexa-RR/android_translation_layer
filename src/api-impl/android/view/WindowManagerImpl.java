@@ -34,7 +34,7 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	 * answers at the top of the chain (nested scrolling stops at the root, invalidation needs no
 	 * further scheduling because every widget below already queued its own redraw).
 	 */
-	private static class WindowViewParent implements ViewParent {
+	static class WindowViewParent implements ViewParent {
 
 		/** the window's root view */
 		private final View root;
@@ -231,6 +231,21 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	private static void tlLayoutWindow(View view, int displayWidth, int displayHeight, int[] out) {
 		AddedWindow w = findWindow(view);
 		WindowManager.LayoutParams p = w != null ? w.params : (WindowManager.LayoutParams) view.getLayoutParams();
+		if (w == null && sEmbedded.containsKey(view)) {
+			/* an embedded window (SurfaceControlViewHost): WindowlessWindowManager.relayout gives it the
+			 * frame 0,0 at the requested size; the container is the SurfaceView it is shown in */
+			int width = p.width >= 0 ? p.width : displayWidth;
+			int height = p.height >= 0 ? p.height : displayHeight;
+			view.measure(getRootMeasureSpec(width, p.width), getRootMeasureSpec(height, p.height));
+			if (width != view.getMeasuredWidth() || height != view.getMeasuredHeight())
+				view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+				             View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY));
+			out[0] = 0;
+			out[1] = 0;
+			out[2] = width;
+			out[3] = height;
+			return;
+		}
 		view.measure(getRootMeasureSpec(displayWidth, p.width), getRootMeasureSpec(displayHeight, p.height));
 		int width = p.width >= 0 ? p.width : (p.width == ViewGroup.LayoutParams.MATCH_PARENT ? displayWidth : view.getMeasuredWidth());
 		int height = p.height >= 0 ? p.height : (p.height == ViewGroup.LayoutParams.MATCH_PARENT ? displayHeight : view.getMeasuredHeight());
@@ -342,6 +357,56 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		}
 	}
 
+	/* ---- embedded windows (SurfaceControlViewHost) ----
+	 * A window whose surface is embedded in another window's SurfaceView instead of being placed
+	 * by the window manager: it is not one of the windows stacked over the activity (no outside
+	 * touches, no key focus of its own; AOSP grants an embedded window focus only through its
+	 * host), and it is shown in the SurfaceView its layer is placed in (SurfaceControl.place). */
+	private static final java.util.IdentityHashMap<View, Long> sEmbedded = new java.util.IdentityHashMap<>();
+
+	/** ViewRootImpl.setView for an embedded window: the view is the root of a new window, attached at once */
+	static long tlAddEmbeddedWindow(View view) {
+		WindowManager.LayoutParams p = (WindowManager.LayoutParams) view.getLayoutParams();
+		view.parent = new WindowViewParent(view);
+		long layer = native_createEmbeddedWindow(view, view.widget, p.flags);
+		sEmbedded.put(view, layer);
+		view.onAttachedToWindow();
+		return layer;
+	}
+
+	/** shows the window in a SurfaceView's widget (0: nowhere) at x/y with alpha, stacked by stackKey */
+	static void tlPlaceEmbeddedWindow(long layer, long surfaceViewWidget, int x, int y, float alpha, long stackKey) {
+		native_placeEmbeddedWindow(layer, surfaceViewWidget, x, y, alpha, stackKey);
+	}
+
+	/** ViewRootImpl.setLayoutParams + requestLayout: the next layout uses the root's new attributes */
+	static void tlRelayoutEmbeddedWindow(long layer) {
+		for (java.util.Map.Entry<View, Long> e : sEmbedded.entrySet()) {
+			if (e.getValue() == layer)
+				native_updateWindow(layer, ((WindowManager.LayoutParams) e.getKey().getLayoutParams()).flags, 0f);
+		}
+	}
+
+	/** ViewRootImpl.die: the hierarchy is detached and the window goes away */
+	static void tlRemoveEmbeddedWindow(long layer) {
+		View view = null;
+		for (java.util.Map.Entry<View, Long> e : sEmbedded.entrySet()) {
+			if (e.getValue() == layer) {
+				view = e.getKey();
+				break;
+			}
+		}
+		if (view != null) {
+			sEmbedded.remove(view);
+			view.onDetachedFromWindow();
+		}
+		native_removeWindow(layer);
+		if (view != null)
+			view.parent = null;
+	}
+
+	private static native long native_createEmbeddedWindow(View view, long widget, int flags);
+	private static native void native_placeEmbeddedWindow(long layer, long surfaceViewWidget, int x, int y, float alpha, long stackKey);
 	private static native long native_addWindow(View view, long widget, int flags, float dimAmount);
 	private static native void native_updateWindow(long layer, int flags, float dimAmount);
 	private static native void native_removeWindow(long layer);

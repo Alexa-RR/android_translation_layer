@@ -607,6 +607,7 @@ public class Handler {
 
 	private boolean enqueueMessage(MessageQueue queue, Message msg, long uptimeMillis) {
 		msg.target = this;
+		msg.tlActingUid = Binder.getThreadActingUid();
 		if (mAsynchronous) {
 			msg.setAsynchronous(true);
 		}

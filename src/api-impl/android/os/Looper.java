@@ -140,7 +140,16 @@ public final class Looper {
 				logging.println(">>>>> Dispatching to " + msg.target + " " + msg.callback + ": " + msg.what);
 			}
 
-			msg.target.dispatchMessage(msg);
+			/* teslalinux: the main looper is shared by every package in this process (on Android each
+			 * has its own), so a message there is handled for the party that posted it
+			 * (Message.tlActingUid); another looper's thread belongs to the party that runs it */
+			int tlPrevious = me == sMainLooper && msg.tlActingUid != Message.UID_NONE ? Binder.tlEnterParty(msg.tlActingUid) : Message.UID_NONE;
+			try {
+				msg.target.dispatchMessage(msg);
+			} finally {
+				if (tlPrevious != Message.UID_NONE)
+					Binder.tlLeaveParty(tlPrevious);
+			}
 
 			if (logging != null) {
 				logging.println("<<<<< Finished to " + msg.target + " " + msg.callback);

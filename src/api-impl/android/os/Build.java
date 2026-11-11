@@ -1045,6 +1045,11 @@ public class Build {
 	 */
 	public static final boolean IS_DEBUGGABLE = true;
 
+	/** AOSP (hidden): whether this is an eng build (ro.build.type) */
+	public static final boolean IS_ENG = "eng".equals(TYPE);
+	/** AOSP (hidden): whether this is a userdebug build (ro.build.type) */
+	public static final boolean IS_USERDEBUG = "userdebug".equals(TYPE);
+
 	/**
 	 * Returns the version string for the radio firmware.  May return
 	 * null (if, for instance, the radio is not currently on).

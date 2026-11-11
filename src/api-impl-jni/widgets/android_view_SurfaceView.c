@@ -46,6 +46,9 @@ static void surface_view_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapsho
 		GskRenderNode *mask = gsk_color_node_new(&(GdkRGBA){1, 1, 1, 1}, &bounds);
 		GskRenderNode *holepunch = gsk_composite_node_new(hole, mask, GSK_PORTER_DUFF_CLEAR);
 		gtk_snapshot_append_node(snapshot, holepunch);
+		/* embedded windows (setChildSurfacePackage) still draw above the punched hole */
+		for (GtkWidget *child = gtk_widget_get_first_child(widget); child; child = gtk_widget_get_next_sibling(child))
+			gtk_widget_snapshot_child(widget, child, snapshot);
 		return;
 	}
 #endif
@@ -67,6 +70,9 @@ static void surface_view_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapsho
 		if (surface_view_widget->needs_flip)
 			gtk_snapshot_restore(snapshot);
 	}
+	/* embedded windows (SurfaceView.setChildSurfacePackage) are child layers above the content */
+	for (GtkWidget *child = gtk_widget_get_first_child(widget); child; child = gtk_widget_get_next_sibling(child))
+		gtk_widget_snapshot_child(widget, child, snapshot);
 	if (surface_view_widget->frame_callback) {
 		surface_view_widget->frame_callback(surface_view_widget);
 		surface_view_widget->frame_callback = NULL;
@@ -76,6 +82,10 @@ static void surface_view_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapsho
 static void surface_view_widget_dispose(GObject *object)
 {
 	SurfaceViewWidget *surface_view_widget = SURFACE_VIEW_WIDGET(object);
+	/* embedded windows are owned by their SurfaceControlViewHost; they only leave this SurfaceView */
+	GtkWidget *child;
+	while ((child = gtk_widget_get_first_child(GTK_WIDGET(object))))
+		gtk_widget_unparent(child);
 	if (surface_view_widget->texture) {
 		g_object_unref(surface_view_widget->texture);
 		surface_view_widget->texture = NULL;
