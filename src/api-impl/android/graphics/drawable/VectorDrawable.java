@@ -19,6 +19,7 @@ import android.annotation.Nullable;
 import android.atl.annotation.Export;
 import android.content.res.ColorStateList;
 import android.content.res.ComplexColor;
+import android.content.res.GradientColor;
 import android.content.res.Resources;
 import android.content.res.Resources.Theme;
 import android.content.res.TypedArray;
@@ -35,6 +36,7 @@ import android.graphics.PixelFormat;
 import android.graphics.PorterDuff.Mode;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.Rect;
+import android.graphics.Shader;
 import android.util.ArrayMap;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
@@ -817,6 +819,10 @@ public class VectorDrawable extends Drawable {
 	private static final String SHAPE_GROUP = "group";
 	private static final String SHAPE_PATH = "path";
 	private static final String SHAPE_VECTOR = "vector";
+
+	/* android:fillType of a path (AOSP VectorDrawable.FILL_TYPE_WINDING / FILL_TYPE_EVEN_ODD) */
+	private static final int FILL_TYPE_WINDING = 0;
+	private static final int FILL_TYPE_EVEN_ODD = 1;
 
 	private static final int LINECAP_BUTT = 0;
 	private static final int LINECAP_ROUND = 1;
@@ -1734,8 +1740,11 @@ public class VectorDrawable extends Drawable {
 					path.rLineTo(0, 0); // fix bug in measure
 				}
 				mRenderPath.addPath(path, mFinalPathMatrix);
+				/* AOSP: android:fillType, nonZero (0) or evenOdd (1) */
+				mRenderPath.setFillType(fullPath.mFillRule == FILL_TYPE_WINDING ? Path.FillType.WINDING : Path.FillType.EVEN_ODD);
 
-				if (fullPath.mFillColor != Color.TRANSPARENT) {
+				final Shader fillShader = fullPath.shader(fullPath.mFillColors, mFinalPathMatrix);
+				if (fillShader != null || fullPath.mFillColor != Color.TRANSPARENT) {
 					if (mFillPaint == null) {
 						mFillPaint = new Paint();
 						mFillPaint.setStyle(Paint.Style.FILL);
@@ -1743,12 +1752,16 @@ public class VectorDrawable extends Drawable {
 					}
 
 					final Paint fillPaint = mFillPaint;
-					fillPaint.setColor(applyAlpha(fullPath.mFillColor, fullPath.mFillAlpha));
+					/* AOSP (hwui VectorDrawable FullPath::draw): a gradient fill is the gradient's
+					 * shader in the path's coordinates, with the fill alpha on black as the paint colour */
+					fillPaint.setShader(fillShader);
+					fillPaint.setColor(applyAlpha(fillShader != null ? Color.BLACK : fullPath.mFillColor, fullPath.mFillAlpha));
 					fillPaint.setColorFilter(filter);
 					canvas.drawPath(mRenderPath, fillPaint);
 				}
 
-				if (fullPath.mStrokeColor != Color.TRANSPARENT) {
+				final Shader strokeShader = fullPath.shader(fullPath.mStrokeColors, mFinalPathMatrix);
+				if (strokeShader != null || fullPath.mStrokeColor != Color.TRANSPARENT) {
 					if (mStrokePaint == null) {
 						mStrokePaint = new Paint();
 						mStrokePaint.setStyle(Paint.Style.STROKE);
@@ -1765,7 +1778,8 @@ public class VectorDrawable extends Drawable {
 					}
 
 					strokePaint.setStrokeMiter(fullPath.mStrokeMiterlimit);
-					strokePaint.setColor(applyAlpha(fullPath.mStrokeColor, fullPath.mStrokeAlpha));
+					strokePaint.setShader(strokeShader);
+					strokePaint.setColor(applyAlpha(strokeShader != null ? Color.BLACK : fullPath.mStrokeColor, fullPath.mStrokeAlpha));
 					strokePaint.setColorFilter(filter);
 					final float finalStrokeScale = minScale * matrixScale;
 					strokePaint.setStrokeWidth(fullPath.mStrokeWidth * finalStrokeScale);
@@ -2135,8 +2149,11 @@ public class VectorDrawable extends Drawable {
 		float mStrokeWidth = 0;
 
 		int mFillColor = Color.TRANSPARENT;
+		/* the fill and stroke as the resource gave them: a GradientColor draws as its shader */
+		ComplexColor mFillColors;
+		ComplexColor mStrokeColors;
 		float mStrokeAlpha = 1.0f;
-		int mFillRule;
+		int mFillRule = FILL_TYPE_WINDING;
 		float mFillAlpha = 1.0f;
 		float mTrimPathStart = 0;
 		float mTrimPathEnd = 1;
@@ -2158,6 +2175,8 @@ public class VectorDrawable extends Drawable {
 			mStrokeWidth = copy.mStrokeWidth;
 			mStrokeAlpha = copy.mStrokeAlpha;
 			mFillColor = copy.mFillColor;
+			mFillColors = copy.mFillColors;
+			mStrokeColors = copy.mStrokeColors;
 			mFillRule = copy.mFillRule;
 			mFillAlpha = copy.mFillAlpha;
 			mTrimPathStart = copy.mTrimPathStart;
@@ -2167,6 +2186,17 @@ public class VectorDrawable extends Drawable {
 			mStrokeLineCap = copy.mStrokeLineCap;
 			mStrokeLineJoin = copy.mStrokeLineJoin;
 			mStrokeMiterlimit = copy.mStrokeMiterlimit;
+		}
+
+		/* a gradient fill or stroke as a shader in the drawn path's coordinates (the path is drawn
+		 * already mapped by pathMatrix, the gradient is in viewport units); null for a plain colour */
+		Shader shader(ComplexColor colors, Matrix pathMatrix) {
+			if (!(colors instanceof GradientColor))
+				return null;
+			Shader shader = ((GradientColor)colors).getShader();
+			if (shader != null)
+				shader.setLocalMatrix(pathMatrix);
+			return shader;
 		}
 
 		private Paint.Cap getStrokeLineCap(int id, Paint.Cap defValue) {
@@ -2225,10 +2255,13 @@ public class VectorDrawable extends Drawable {
 			}
 
 			ComplexColor fillColor = a.getComplexColor(R.styleable.VectorDrawablePath_fillColor);
-			if (fillColor != null)
+			if (fillColor != null) {
+				mFillColors = fillColor;
 				mFillColor = fillColor.getDefaultColor();
+			}
 			mFillAlpha = a.getFloat(R.styleable.VectorDrawablePath_fillAlpha,
 			                        mFillAlpha);
+			mFillRule = a.getInt(R.styleable.VectorDrawablePath_fillType, mFillRule);
 			mStrokeLineCap = getStrokeLineCap(a.getInt(
 							      R.styleable.VectorDrawablePath_strokeLineCap, -1),
 			                                  mStrokeLineCap);
@@ -2238,8 +2271,10 @@ public class VectorDrawable extends Drawable {
 			mStrokeMiterlimit = a.getFloat(
 			    R.styleable.VectorDrawablePath_strokeMiterLimit, mStrokeMiterlimit);
 			ComplexColor strokeColor = a.getComplexColor(R.styleable.VectorDrawablePath_strokeColor);
-			if (strokeColor != null)
+			if (strokeColor != null) {
+				mStrokeColors = strokeColor;
 				mStrokeColor = strokeColor.getDefaultColor();
+			}
 			mStrokeAlpha = a.getFloat(R.styleable.VectorDrawablePath_strokeAlpha,
 			                          mStrokeAlpha);
 			mStrokeWidth = a.getFloat(R.styleable.VectorDrawablePath_strokeWidth,
