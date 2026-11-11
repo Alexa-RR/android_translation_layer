@@ -18,6 +18,7 @@ import android.util.DisplayMetrics;
 import android.util.Slog;
 import dalvik.system.BaseDexClassLoader;
 import dalvik.system.PathClassLoader;
+import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.util.Arrays;
@@ -99,9 +100,13 @@ public final class ATLLoadedApp {
 
 	@NonNull
 	public static ATLLoadedApp loadFromPath(String mainApk, String nativePath, String classLoaderPath) throws IOException {
+		if (ATLToggles.ATL_GHAX) {
+			// Always load ghax.jar as the first element to override application library classes
+			classLoaderPath = ATLPaths.ghax_jar.getPath() + File.pathSeparator + classLoaderPath;
+		}
 		BaseDexClassLoader classLoader = new PathClassLoader(
 		    classLoaderPath, nativePath, ATLLoadedApp.class.getClassLoader());
-		AssetManager assetManager = new AssetManager(classLoader);
+		AssetManager assetManager = new AssetManager(classLoaderPath + ":" + System.getProperty("java.class.path"));
 		PackageParser packageParser = new PackageParser(mainApk);
 		Resources resources = new Resources(assetManager, new DisplayMetrics(), Context.sys_config);
 		String[] outError = new String[1];
@@ -120,6 +125,7 @@ public final class ATLLoadedApp {
 		if (play_services.contains(pkg.packageName)) {
 			ATLSigHelper.addGMSSignatures(pkg);
 		}
+		pkg.applicationInfo.sourceDir = mainApk;
 		return new ATLLoadedApp(resources, classLoader, pkg);
 	}
 
@@ -138,7 +144,6 @@ public final class ATLLoadedApp {
 		Configuration effective = new Configuration(Context.sys_config);
 		effective.updateFrom(override);
 		Resources resources = new Resources(this.default_resources.getAssets().tlNewSharing(), displayMetrics, effective);
-		resources.applyPackageQuirks(this.pkg.applicationInfo.minSdkVersion);
 		synchronized (tl_resources) {
 			tl_resources.add(new Object[] {new java.lang.ref.WeakReference<Resources>(resources), override});
 		}
@@ -287,6 +292,8 @@ public final class ATLLoadedApp {
 	}
 
 	public boolean stopService(Intent intent) {
+		if (intent.getComponent() == null)
+			return false;
 		String className = intent.getComponent().getClassName();
 		Service service = running_services.get(className);
 		if (service == null)

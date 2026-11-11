@@ -16,6 +16,7 @@
 
 package android.content.pm;
 
+import android.app.Person;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -34,8 +35,7 @@ import java.util.Set;
  * Represents a shortcut that can be published via {@link ShortcutManager} (AOSP).
  *
  * <p>teslalinux: the fields, flags, builder checks and parcel form of AOSP's ShortcutInfo. Left
- * out: android.app.Person (not in ATL), capability bindings and AppSearch documents (system
- * APIs), and starting themes.
+ * out: capability bindings and AppSearch documents (system APIs), and starting themes.
  */
 public final class ShortcutInfo implements Parcelable {
     static final String RES_TYPE_STRING = "string";
@@ -114,6 +114,7 @@ public final class ShortcutInfo implements Parcelable {
     private int mIconResId;
     private final int mUserId;
     private int mDisabledReason;
+    private Person[] mPersons;
     private LocusId mLocusId;
     private int mExcludedSurfacesFlags;
 
@@ -134,6 +135,7 @@ public final class ShortcutInfo implements Parcelable {
         fixUpIntentExtras();
         mRank = b.mRank;
         mExtras = b.mExtras;
+        mPersons = clonePersons(b.mPersons);
         mLocusId = b.mLocusId;
         mExcludedSurfacesFlags = b.mExcludedSurfacesFlags;
         if (b.mIsLongLived) {
@@ -227,6 +229,7 @@ public final class ShortcutInfo implements Parcelable {
             }
             mRank = source.mRank;
             mExtras = source.mExtras;
+            mPersons = clonePersons(source.mPersons);
             mExcludedSurfacesFlags = source.mExcludedSurfacesFlags;
         } else {
             // Set this bit.
@@ -277,6 +280,7 @@ public final class ShortcutInfo implements Parcelable {
         }
         if (source.mRank != RANK_NOT_SET) mRank = source.mRank;
         if (source.mExtras != null) mExtras = source.mExtras;
+        if (source.mPersons != null) mPersons = clonePersons(source.mPersons);
         mExcludedSurfacesFlags = source.mExcludedSurfacesFlags;
     }
 
@@ -297,6 +301,7 @@ public final class ShortcutInfo implements Parcelable {
         private boolean mIsLongLived;
         private int mRank = RANK_NOT_SET;
         private PersistableBundle mExtras;
+        private Person[] mPersons;
         private LocusId mLocusId;
         private int mExcludedSurfacesFlags;
 
@@ -420,6 +425,23 @@ public final class ShortcutInfo implements Parcelable {
             return this;
         }
 
+        /** Add a person that is relevant to this shortcut. */
+        public Builder setPerson(Person person) {
+            return setPersons(new Person[] {person});
+        }
+
+        /** Sets multiple persons instead of a single person. */
+        public Builder setPersons(Person[] persons) {
+            if (persons == null)
+                throw new NullPointerException("persons cannot be null");
+            for (Person person : persons) {
+                if (person == null)
+                    throw new NullPointerException("persons cannot contain null");
+            }
+            mPersons = clonePersons(persons);
+            return this;
+        }
+
         /** Sets if a shortcut would be valid even if it has been unpublished/invisible by the app. */
         public Builder setLongLived(boolean longLived) {
             mIsLongLived = longLived;
@@ -455,6 +477,25 @@ public final class ShortcutInfo implements Parcelable {
     /** Returns the ID of a shortcut. */
     public String getId() {
         return mId;
+    }
+
+    private static Person[] clonePersons(Person[] persons) {
+        if (persons == null) {
+            return null;
+        }
+        final Person[] ret = new Person[persons.length];
+        for (int i = 0; i < ret.length; i++) {
+            if (persons[i] != null) {
+                // Don't need to keep the icon, remove it to save space
+                ret[i] = persons[i].toBuilder().setIcon(null).build();
+            }
+        }
+        return ret;
+    }
+
+    /** @hide */
+    public Person[] getPersons() {
+        return clonePersons(mPersons);
     }
 
     /** Gets the LocusId associated with this shortcut. */
@@ -772,6 +813,7 @@ public final class ShortcutInfo implements Parcelable {
                 mCategories.add(source.readString8().intern());
             }
         }
+        mPersons = source.readParcelableArray(cl, Person.class);
         mLocusId = source.readParcelable(cl, LocusId.class);
         mExcludedSurfacesFlags = source.readInt();
     }
@@ -819,6 +861,7 @@ public final class ShortcutInfo implements Parcelable {
             dest.writeInt(0);
         }
 
+        dest.writeParcelableArray(mPersons, flags);
         dest.writeParcelable(mLocusId, flags);
         dest.writeInt(mExcludedSurfacesFlags);
     }

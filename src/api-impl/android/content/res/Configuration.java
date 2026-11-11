@@ -1590,6 +1590,19 @@ public final class Configuration implements Comparable<Configuration> {
 
 	public int fontWeightAdjustment;
 
+	/** AOSP: the screenLayout bits that tell whether the screen is round. */
+	public static final int SCREENLAYOUT_ROUND_MASK = 0x300;
+	/** @hide */
+	public static final int SCREENLAYOUT_ROUND_SHIFT = 8;
+	public static final int SCREENLAYOUT_ROUND_UNDEFINED = 0x00;
+	public static final int SCREENLAYOUT_ROUND_NO = 0x1 << SCREENLAYOUT_ROUND_SHIFT;
+	public static final int SCREENLAYOUT_ROUND_YES = 0x2 << SCREENLAYOUT_ROUND_SHIFT;
+
+	/** AOSP: whether the screen is round (the native side sets ROUND_YES when ATL_IS_WATCH is set). */
+	public boolean isScreenRound() {
+		return (screenLayout & SCREENLAYOUT_ROUND_MASK) == SCREENLAYOUT_ROUND_YES;
+	}
+
 	/** AOSP (API 31): no font weight adjustment has been set. */
 	public static final int FONT_WEIGHT_ADJUSTMENT_UNDEFINED = Integer.MAX_VALUE;
 

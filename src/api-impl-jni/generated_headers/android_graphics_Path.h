@@ -229,6 +229,14 @@ JNIEXPORT void JNICALL Java_android_graphics_Path_native_1add_1reverse_1path
 JNIEXPORT void JNICALL Java_android_graphics_Path_native_1conic_1to
   (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat);
 
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_contains
+ * Signature: (JIZFF)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1contains
+  (JNIEnv *, jclass, jlong, jint, jboolean, jfloat, jfloat);
+
 #ifdef __cplusplus
 }
 #endif

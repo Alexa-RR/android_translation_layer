@@ -16,6 +16,7 @@
 
 package android.media;
 
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.res.AssetFileDescriptor;
 import android.net.Uri;
@@ -62,6 +63,7 @@ public class MediaPlayer implements AudioRouting {
     public static final int SEEK_CLOSEST = 0x03;
 
     public interface OnCompletionListener {
+        @Export
         void onCompletion(MediaPlayer mp);
     }
 

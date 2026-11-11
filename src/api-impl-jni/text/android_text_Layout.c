@@ -259,9 +259,8 @@ JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1width(JNIEnv *env, 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1height(JNIEnv *env, jobject object, jlong layout)
 {
 	PangoLayout *pango_layout = _PTR(layout);
-	PangoRectangle ink_rect;
 	PangoRectangle logical_rect;
-	pango_layout_get_extents(pango_layout, &ink_rect, &logical_rect);
+	pango_layout_get_extents(pango_layout, NULL, &logical_rect);
 	return logical_rect.height / PANGO_SCALE;
 }
 
@@ -297,6 +296,16 @@ static void tl_line_layout_extents(PangoLayout *pango_layout, int line, PangoRec
 	pango_layout_iter_free(iter);
 }
 
+static void get_line_metrics(PangoLayout *pango_layout, jint line, int *baseline, PangoRectangle *logical_rect)
+{
+	PangoLayoutIter *pango_iter = pango_layout_get_iter(pango_layout);
+	while (line--)
+		pango_layout_iter_next_line(pango_iter);
+	*baseline = pango_layout_iter_get_baseline(pango_iter) / PANGO_SCALE;
+	pango_layout_line_get_extents(pango_layout_iter_get_line_readonly(pango_iter), NULL, logical_rect);
+	pango_layout_iter_free(pango_iter);
+}
+
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1top(JNIEnv *env, jobject object, jlong layout, jint line)
 {
 	PangoRectangle logical_rect;
@@ -329,36 +338,34 @@ JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1width(JNIEnv 
 {
 	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(PANGO_LAYOUT(_PTR(layout)), line);
 	PangoRectangle logical_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, NULL);
+	pango_layout_line_get_extents(pango_line, NULL, &logical_rect);
 	return logical_rect.width / PANGO_SCALE;
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1baseline(JNIEnv *env, jobject object, jlong layout, jint line)
 {
-	PangoLayout *pango_layout = _PTR(layout);
-	PangoLayoutIter *pango_iter = pango_layout_get_iter(pango_layout);
-	while (line--)
-		pango_layout_iter_next_line(pango_iter);
-
-	return pango_layout_iter_get_baseline(pango_iter) / PANGO_SCALE;
+	int baseline;
+	PangoRectangle logical_rect;
+	get_line_metrics(_PTR(layout), line, &baseline, &logical_rect);
+	return baseline;
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1ascent(JNIEnv *env, jobject object, jlong layout, jint line)
 {
 	PangoLayout *pango_layout = _PTR(layout);
 	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(pango_layout, line);
-	PangoRectangle logical_rect, ink_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, &ink_rect);
-	return -PANGO_ASCENT(ink_rect) / PANGO_SCALE;
+	PangoRectangle logical_rect;
+	pango_layout_line_get_extents(pango_line, NULL, &logical_rect);
+	return -PANGO_ASCENT(logical_rect) / PANGO_SCALE;
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1descent(JNIEnv *env, jobject object, jlong layout, jint line)
 {
 	PangoLayout *pango_layout = _PTR(layout);
 	PangoLayoutLine *pango_line = pango_layout_get_line_readonly(pango_layout, line);
-	PangoRectangle logical_rect, ink_rect;
-	pango_layout_line_get_extents(pango_line, &logical_rect, &ink_rect);
-	return PANGO_DESCENT(ink_rect) / PANGO_SCALE;
+	PangoRectangle logical_rect;
+	pango_layout_line_get_extents(pango_line, NULL, &logical_rect);
+	return PANGO_DESCENT(logical_rect) / PANGO_SCALE;
 }
 
 JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1line_1for_1vertical(JNIEnv *env, jobject object, jlong layout, jint y)
@@ -441,10 +448,10 @@ JNIEXPORT void JNICALL Java_android_text_Layout_native_1draw_1custom_1canvas(JNI
 				memcpy(buf + (es - start) + 1, text_u16 + ee, (gsize)(end - ee) * sizeof(jchar));
 				jstring line_jstr = (*env)->NewString(env, buf, n);
 				g_free(buf);
-				(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, line_jstr, 0, n, x, y, paint);
+				J__Canvas__drawText(env, canvas, line_jstr, (jint)0, (jint)n, x, y, paint);
 				(*env)->DeleteLocalRef(env, line_jstr);
 			} else {
-				(*env)->CallVoidMethod(env, canvas, handle_cache.canvas.drawText, text_jstr, start, end, x, y, paint);
+				J__Canvas__drawText(env, canvas, text_jstr, start, end, x, y, paint);
 			}
 			if ((*env)->ExceptionCheck(env)) {
 				(*env)->ExceptionDescribe(env);

@@ -334,7 +334,7 @@ public final class MediaCodec {
     private native void native_start(long codec);
     private native int native_queueInputBuffer(long codec, ByteBuffer buffer, long presentationTimeUs);
     private native int native_dequeueOutputBuffer(long codec, ByteBuffer buffer, BufferInfo info);
-    private native void native_releaseOutputBuffer(long codec, ByteBuffer buffer, boolean render);
+    private native void native_releaseOutputBuffer(long codec, ByteBuffer buffer, boolean render, long releaseTimeNs);
     private native void native_release(long codec);
     private native void native_flush(long codec);
     private native void native_setOutputSurface(long codec, Surface surface);
@@ -742,7 +742,8 @@ public final class MediaCodec {
                 throw new IllegalStateException("bad output buffer index " + index);
             if (mFreeOutputs.contains(index))
                 throw new IllegalStateException("output buffer " + index + " was not dequeued");
-            native_releaseOutputBuffer(mNative, mOutputBuffers[index], render && mVideo);
+            // a release time (System.nanoTime base) schedules the frame; 0 renders it as soon as possible
+            native_releaseOutputBuffer(mNative, mOutputBuffers[index], render && mVideo, renderTimestampNs == Long.MIN_VALUE ? 0 : renderTimestampNs);
             mFreeOutputs.add(index);
             if (render && mVideo && mFrameRenderedListener != null) {
                 listener = mFrameRenderedListener;

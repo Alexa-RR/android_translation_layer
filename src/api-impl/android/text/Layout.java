@@ -4,6 +4,7 @@ import android.atl.GskCanvas;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Path;
+import android.text.style.ReplacementSpan;
 
 public class Layout {
 
@@ -25,6 +26,12 @@ public class Layout {
 	private Alignment align;
 
 	protected Layout(CharSequence text, TextPaint paint, int width, Layout.Alignment align, float spacingMult, float spacingAdd) {
+		if (text instanceof Spanned) {
+			Spanned spanned = (Spanned)text;
+			// call every ReplacementSpan.getSize method to prevent "PlaceholderSpan is not laid out yet." errors in ComposeUI
+			for (ReplacementSpan span : spanned.getSpans(0, spanned.length(), ReplacementSpan.class))
+				span.getSize(paint, text, spanned.getSpanStart(span), spanned.getSpanEnd(span), paint.getFontMetricsInt());
+		}
 		this.text = text;
 		this.paint = paint;
 		this.spacing_mult = spacingMult;
@@ -186,6 +193,10 @@ public class Layout {
 		return spacing_mult;
 	}
 
+	public float getSpacingAdd() {
+		return spacing_add;
+	}
+
 	public float getSpacing_add() {
 		return spacing_add;
 	}
@@ -204,6 +215,10 @@ public class Layout {
 	}
 
 	public Alignment getParagraphAlignment(int line) {
+		return align;
+	}
+
+	public Alignment getAlignment() {
 		return align;
 	}
 

@@ -10,8 +10,7 @@
 
 #include "../generated_headers/android_net_ConnectivityManager.h"
 
-static jclass tl_cm_class;
-static jmethodID tl_cm_changed;
+static gboolean tl_cm_started;
 
 JNIEXPORT jboolean JNICALL Java_android_net_ConnectivityManager_nativeGetNetworkAvailable(JNIEnv *env, jclass this)
 {
@@ -31,16 +30,15 @@ JNIEXPORT jint JNICALL Java_android_net_ConnectivityManager_nativeGetConnectivit
 static void on_network_changed(GNetworkMonitor *monitor, gboolean network_available, gpointer user_data)
 {
 	JNIEnv *env = get_jni_env();
-	(*env)->CallStaticVoidMethod(env, tl_cm_class, tl_cm_changed, (jboolean)network_available);
+	J__ConnectivityManager__tlOnNetworkChanged(env, (jboolean)network_available);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 }
 
 JNIEXPORT void JNICALL Java_android_net_ConnectivityManager_nativeStartMonitor(JNIEnv *env, jclass this)
 {
-	if (tl_cm_class)
+	if (tl_cm_started)
 		return;
-	tl_cm_class = _REF(this);
-	tl_cm_changed = (*env)->GetStaticMethodID(env, this, "tlOnNetworkChanged", "(Z)V");
+	tl_cm_started = TRUE;
 	g_signal_connect(g_network_monitor_get_default(), "network-changed", G_CALLBACK(on_network_changed), NULL);
 }

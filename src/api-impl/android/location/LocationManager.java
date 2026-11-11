@@ -16,6 +16,7 @@
 
 package android.location;
 
+import android.atl.annotation.Export;
 import android.app.PendingIntent;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -654,6 +655,7 @@ public class LocationManager {
 	}
 
 	/** Callback from the desktop location portal (api-impl-jni/location). */
+	@Export
 	private static void locationUpdated(double latitude, double longitude, double altitude, double accuracy, double speed, double bearing, long timestamp) {
 		reportLocation(GPS_PROVIDER, makeFix(GPS_PROVIDER, latitude, longitude, altitude, accuracy, speed, bearing, timestamp > 0 ? timestamp : System.currentTimeMillis()));
 	}

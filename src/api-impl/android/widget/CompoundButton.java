@@ -20,6 +20,7 @@ import android.annotation.DrawableRes;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.UnsupportedAppUsage;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
@@ -258,6 +259,7 @@ public abstract class CompoundButton extends Button implements Checkable {
          * @param buttonView The compound button view whose state has changed.
          * @param isChecked  The new checked state of buttonView.
          */
+        @Export
         void onCheckedChanged(CompoundButton buttonView, boolean isChecked);
     }
 

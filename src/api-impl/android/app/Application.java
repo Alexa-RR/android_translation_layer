@@ -4,6 +4,7 @@ import android.R;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.atl.ATLLoadedApp;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.pm.PackageParser;
@@ -18,6 +19,7 @@ import java.util.ArrayList;
 public class Application extends ContextWrapper {
 	public long native_window;
 
+	@Export
 	private String get_app_icon_path() {
 		String icon_path = null;
 		try {
@@ -33,14 +35,17 @@ public class Application extends ContextWrapper {
 		return icon_path;
 	}
 
+	@Export
 	private long get_app_icon_paintable() {
 		return getPackageManager().getApplicationIcon(this.get_atl_loaded_app().pkg.applicationInfo).paintable;
 	}
 
+	@Export
 	String get_app_label() {
 		return getString(this.get_atl_loaded_app().pkg.applicationInfo.labelRes);
 	}
 
+	@Export
 	String get_supported_mime_types() {
 		StringBuilder mimeTypes = new StringBuilder();
 		for (PackageParser.Activity activity : this.get_atl_loaded_app().pkg.activities) {
@@ -99,6 +104,16 @@ public class Application extends ContextWrapper {
 		super(null);
 	}
 
+	/**
+	 * Called when the application is starting, before any activity, service,
+	 * or receiver objects (excluding content providers) have been created.
+	 * Implementations should be as quick as possible (for example using
+	 * lazy initialization of state) since the time spent in this function
+	 * directly impacts the performance of starting the first activity,
+	 * service, or receiver in a process.
+	 * If you override this method, be sure to call super.onCreate().
+	 */
+	@Export
 	public void onCreate() {
 	}
 

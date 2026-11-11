@@ -1,5 +1,6 @@
 package android.app;
 
+import android.accounts.AccountManager;
 import android.annotation.Nullable;
 import android.annotation.UnsupportedAppUsage;
 import android.app.SearchManager;
@@ -31,6 +32,7 @@ import android.util.Log;
 import android.util.Slog;
 import android.view.Display;
 import android.view.LayoutInflater;
+import android.view.WindowManager;
 import android.view.WindowManagerImpl;
 import android.view.accessibility.AccessibilityManager;
 import android.view.accessibility.CaptioningManager;
@@ -156,6 +158,8 @@ public final class ContextImpl extends Context {
 				return new AudioManager();
 			case "activity":
 				return new ActivityManager();
+			case "account":
+				return AccountManager.get(this);
 			case "usb":
 				return new UsbManager();
 			case "vibrator":
@@ -212,6 +216,8 @@ public final class ContextImpl extends Context {
 			case "content_capture":
 				/* no content capture service on this device: Android returns null for the service too */
 				return null;
+			case "batterymanager":
+				return new BatteryManager();
 			default:
 				Slog.e(TAG, "!!!!!!! getSystemService: case >" + name + "< is not implemented yet");
 				return null;
@@ -278,6 +284,8 @@ public final class ContextImpl extends Context {
 			case "android.app.StatusBarManager": return "statusbar";
 			case "android.hardware.display.ColorDisplayManager": return "color_display";
 			case "android.media.metrics.MediaMetricsManager": return "media_metrics";
+			case "android.os.BatteryManager": return "batterymanager";
+			case "android.accounts.AccountManager": return "account";
 			default: return null;
 		}
 	}
@@ -296,8 +304,8 @@ public final class ContextImpl extends Context {
 	}
 
 	public ComponentName startService(Intent intent) {
-		// Newer applications use a Messenger instead of a BroadcastReceiver for the GCM token return Intent.
-		// To support new and old apps with a common interface, we wrap the Messenger in a BroadcastReceiver
+		// One way Messenger interface for GCM. Request per intent and response per Messenger.
+		// Wrap the response part in a BroadcastReceiver for compatibility with our gcm_service
 		if ("com.google.android.c2dm.intent.REGISTER".equals(intent.getAction()) && intent.getParcelableExtra("google.messenger") instanceof Messenger) {
 			final Messenger messenger = (Messenger)intent.getParcelableExtra("google.messenger");
 			this.registerReceiver(new BroadcastReceiver() {
@@ -312,9 +320,11 @@ public final class ContextImpl extends Context {
 			}, new IntentFilter("com.google.android.c2dm.intent.REGISTRATION"));
 		}
 		ATLLoadedApp targetApp = this.atl_get_intent_target(intent);
-		if (targetApp == null) {
+		// Cloud Messaging (c2dm) intents should always be started using DBus. Delivering them to the in process gstub is pointless
+		if (targetApp == null || (intent.getAction() != null && intent.getAction().startsWith("com.google.android.c2dm"))) {
 			// External package. Try to start using DBus Action
-			nativeStartExternalService(intent);
+			if (intent.getPackage() != null)
+				nativeStartExternalService(intent);
 			return null;
 		}
 		return targetApp.startOrBindService(intent, null);
@@ -322,6 +332,39 @@ public final class ContextImpl extends Context {
 
 	@Override
 	public boolean bindService(Intent intent, ServiceConnection serviceConnection, int flags) {
+		// Two way Messenger interface for GCM. Request and response are send over Messenger.
+		// Wrap it on top of the old intent interface for compatibility with our gcm_service
+		if ("com.google.android.c2dm.intent.REGISTER".equals(intent.getAction())) {
+			Messenger requestMessenger = new Messenger(new Handler(Looper.getMainLooper()) {
+				@Override
+				public void handleMessage(Message requestMessage) {
+					int request_id = requestMessage.arg1;
+					Messenger responseMessenger = requestMessage.replyTo;
+					registerReceiver(new BroadcastReceiver() {
+						@Override
+						public void onReceive(Context context, Intent responseIntent) {
+							try {
+								// map response Intent to Message
+								Message responseMessage = Message.obtain(null, 0, request_id, 0);
+								Bundle data = new Bundle();
+								data.putBundle("data", responseIntent.getExtras());
+								responseMessage.setData(data);
+								responseMessenger.send(responseMessage);
+							} catch (RemoteException e) {
+								e.printStackTrace();
+							}
+						}
+					}, new IntentFilter("com.google.android.c2dm.intent.REGISTRATION"));
+					// map request Message to Intent
+					Intent requestIntent = new Intent("com.google.android.c2dm.intent.REGISTER");
+					requestIntent.setPackage("com.google.android.gms");
+					requestIntent.putExtras(requestMessage.getData().getBundle("data"));
+					nativeStartExternalService(requestIntent);
+				}
+			});
+			serviceConnection.onServiceConnected(intent.getComponent(), requestMessenger.getBinder());
+			return true;
+		}
 		ATLLoadedApp targetApp = this.atl_get_intent_target(intent);
 		if (targetApp == null) {
 			return false;
@@ -466,8 +509,12 @@ public final class ContextImpl extends Context {
 	}
 
 	@Override
-	public Context createConfigurationContext(Configuration configuration) {
-		return this.atl_loaded_app.createContext(null, configuration, getTheme());
+	public Context createConfigurationContext(Configuration config_override) {
+		Configuration config = new Configuration();
+		config.setTo(getResources().getConfiguration());
+		if (config_override != null)
+			config.updateFrom(config_override);
+		return this.atl_loaded_app.createContext(null, config, getTheme());
 	}
 
 	@Override

@@ -16,6 +16,11 @@
 
 package android.view.accessibility;
 
+import android.annotation.NonNull;
+import android.annotation.Nullable;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.text.TextUtils;
 import java.util.ArrayList;
 import java.util.Locale;
 
@@ -83,6 +88,15 @@ public class CaptioningManager {
         return DEFAULT_PRESET;
     }
 
+    /**
+     * @return the user's preferred visual properties for captions as a
+     *         {@link CaptionStyle}, or the default style if not specified
+     */
+    @NonNull
+    public CaptionStyle getUserStyle() {
+        return CaptionStyle.PRESETS[getRawUserStyle()];
+    }
+
     /** AOSP: whether system audio captioning (Live Caption) is on; the car has none */
     public final boolean isSystemAudioCaptioningEnabled() {
         return false;
@@ -121,6 +135,9 @@ public class CaptioningManager {
         /** Called when the captioning enabled state changes. */
         public void onEnabledChanged(boolean enabled) {}
 
+        /** Called when the captioning user style changes. */
+        public void onUserStyleChanged(@NonNull CaptionStyle userStyle) {}
+
         /** Called when the captioning locale changes. */
         public void onLocaleChanged(Locale locale) {}
 
@@ -132,5 +149,239 @@ public class CaptioningManager {
 
         /** Called when the system audio caption UI enabled state changes. */
         public void onSystemAudioCaptioningUiChanged(boolean enabled) {}
+    }
+
+    /**
+     * Specifies visual properties for video captions, including foreground and
+     * background colors, edge properties, and typeface.
+     */
+    public static final class CaptionStyle {
+        /**
+         * Packed value for a color of 'none' and a cached opacity of 100%.
+         *
+         * @hide
+         */
+        private static final int COLOR_NONE_OPAQUE = 0x000000FF;
+
+        /**
+         * Packed value for a color of 'default' and opacity of 100%.
+         *
+         * @hide
+         */
+        public static final int COLOR_UNSPECIFIED = 0x00FFFFFF;
+
+        private static final CaptionStyle WHITE_ON_BLACK;
+        private static final CaptionStyle BLACK_ON_WHITE;
+        private static final CaptionStyle YELLOW_ON_BLACK;
+        private static final CaptionStyle YELLOW_ON_BLUE;
+        private static final CaptionStyle DEFAULT_CUSTOM;
+        private static final CaptionStyle UNSPECIFIED;
+
+        /** The default caption style used to fill in unspecified values. @hide */
+        public static final CaptionStyle DEFAULT;
+
+        /** @hide */
+        public static final CaptionStyle[] PRESETS;
+
+        /** @hide */
+        public static final int PRESET_CUSTOM = -1;
+
+        /** Unspecified edge type value. */
+        public static final int EDGE_TYPE_UNSPECIFIED = -1;
+
+        /** Edge type value specifying no character edges. */
+        public static final int EDGE_TYPE_NONE = 0;
+
+        /** Edge type value specifying uniformly outlined character edges. */
+        public static final int EDGE_TYPE_OUTLINE = 1;
+
+        /** Edge type value specifying drop-shadowed character edges. */
+        public static final int EDGE_TYPE_DROP_SHADOW = 2;
+
+        /** Edge type value specifying raised bevel character edges. */
+        public static final int EDGE_TYPE_RAISED = 3;
+
+        /** Edge type value specifying depressed bevel character edges. */
+        public static final int EDGE_TYPE_DEPRESSED = 4;
+
+        /** The preferred foreground color for video captions. */
+        public final int foregroundColor;
+
+        /** The preferred background color for video captions. */
+        public final int backgroundColor;
+
+        /**
+         * The preferred edge type for video captions, one of:
+         * <ul>
+         * <li>{@link #EDGE_TYPE_UNSPECIFIED}
+         * <li>{@link #EDGE_TYPE_NONE}
+         * <li>{@link #EDGE_TYPE_OUTLINE}
+         * <li>{@link #EDGE_TYPE_DROP_SHADOW}
+         * <li>{@link #EDGE_TYPE_RAISED}
+         * <li>{@link #EDGE_TYPE_DEPRESSED}
+         * </ul>
+         */
+        public final int edgeType;
+
+        /**
+         * The preferred edge color for video captions, if using an edge type
+         * other than {@link #EDGE_TYPE_NONE}.
+         */
+        public final int edgeColor;
+
+        /** The preferred window color for video captions. */
+        public final int windowColor;
+
+        /**
+         * @hide
+         */
+        public final String mRawTypeface;
+
+        private final boolean mHasForegroundColor;
+        private final boolean mHasBackgroundColor;
+        private final boolean mHasEdgeType;
+        private final boolean mHasEdgeColor;
+        private final boolean mHasWindowColor;
+
+        /** Lazily-created typeface based on the raw typeface string. */
+        private Typeface mParsedTypeface;
+
+        private CaptionStyle(int foregroundColor, int backgroundColor, int edgeType, int edgeColor,
+                int windowColor, String rawTypeface) {
+            mHasForegroundColor = hasColor(foregroundColor);
+            mHasBackgroundColor = hasColor(backgroundColor);
+            mHasEdgeType = edgeType != EDGE_TYPE_UNSPECIFIED;
+            mHasEdgeColor = hasColor(edgeColor);
+            mHasWindowColor = hasColor(windowColor);
+
+            // Always use valid colors, even when no override is specified, to
+            // ensure backwards compatibility with apps targeting KitKat MR2.
+            this.foregroundColor = mHasForegroundColor ? foregroundColor : Color.WHITE;
+            this.backgroundColor = mHasBackgroundColor ? backgroundColor : Color.BLACK;
+            this.edgeType = mHasEdgeType ? edgeType : EDGE_TYPE_NONE;
+            this.edgeColor = mHasEdgeColor ? edgeColor : Color.BLACK;
+            this.windowColor = mHasWindowColor ? windowColor : COLOR_NONE_OPAQUE;
+
+            mRawTypeface = rawTypeface;
+        }
+
+        /**
+         * Returns whether a packed color indicates a non-default value.
+         *
+         * @param packedColor the packed color value
+         * @return {@code true} if a non-default value is specified
+         * @hide
+         */
+        public static boolean hasColor(int packedColor) {
+            // Matches the color packing code from Settings. "Default" packed
+            // colors are indicated by zero alpha and non-zero red/blue. The
+            // cached alpha value used by Settings is stored in green.
+            return (packedColor >>> 24) != 0 || (packedColor & 0xFFFF00) == 0;
+        }
+
+        /**
+         * Applies a caption style, overriding any properties that are specified
+         * in the overlay caption.
+         *
+         * @param overlay The style to apply
+         * @return A caption style with the overlay style applied
+         * @hide
+         */
+        @NonNull
+        public CaptionStyle applyStyle(@NonNull CaptionStyle overlay) {
+            final int newForegroundColor = overlay.hasForegroundColor() ?
+                    overlay.foregroundColor : foregroundColor;
+            final int newBackgroundColor = overlay.hasBackgroundColor() ?
+                    overlay.backgroundColor : backgroundColor;
+            final int newEdgeType = overlay.hasEdgeType() ?
+                    overlay.edgeType : edgeType;
+            final int newEdgeColor = overlay.hasEdgeColor() ?
+                    overlay.edgeColor : edgeColor;
+            final int newWindowColor = overlay.hasWindowColor() ?
+                    overlay.windowColor : windowColor;
+            final String newRawTypeface = overlay.mRawTypeface != null ?
+                    overlay.mRawTypeface : mRawTypeface;
+            return new CaptionStyle(newForegroundColor, newBackgroundColor, newEdgeType,
+                    newEdgeColor, newWindowColor, newRawTypeface);
+        }
+
+        /**
+         * @return {@code true} if the user has specified a background color
+         *         that should override the application default, {@code false}
+         *         otherwise
+         */
+        public boolean hasBackgroundColor() {
+            return mHasBackgroundColor;
+        }
+
+        /**
+         * @return {@code true} if the user has specified a foreground color
+         *         that should override the application default, {@code false}
+         *         otherwise
+         */
+        public boolean hasForegroundColor() {
+            return mHasForegroundColor;
+        }
+
+        /**
+         * @return {@code true} if the user has specified an edge type that
+         *         should override the application default, {@code false}
+         *         otherwise
+         */
+        public boolean hasEdgeType() {
+            return mHasEdgeType;
+        }
+
+        /**
+         * @return {@code true} if the user has specified an edge color that
+         *         should override the application default, {@code false}
+         *         otherwise
+         */
+        public boolean hasEdgeColor() {
+            return mHasEdgeColor;
+        }
+
+        /**
+         * @return {@code true} if the user has specified a window color that
+         *         should override the application default, {@code false}
+         *         otherwise
+         */
+        public boolean hasWindowColor() {
+            return mHasWindowColor;
+        }
+
+        /**
+         * @return the preferred {@link Typeface} for video captions, or null if
+         *         not specified
+         */
+        @Nullable
+        public Typeface getTypeface() {
+            if (mParsedTypeface == null && !TextUtils.isEmpty(mRawTypeface)) {
+                mParsedTypeface = Typeface.create(mRawTypeface, Typeface.NORMAL);
+            }
+            return mParsedTypeface;
+        }
+
+        static {
+            WHITE_ON_BLACK = new CaptionStyle(Color.WHITE, Color.BLACK, EDGE_TYPE_NONE,
+                    Color.BLACK, COLOR_NONE_OPAQUE, null);
+            BLACK_ON_WHITE = new CaptionStyle(Color.BLACK, Color.WHITE, EDGE_TYPE_NONE,
+                    Color.BLACK, COLOR_NONE_OPAQUE, null);
+            YELLOW_ON_BLACK = new CaptionStyle(Color.YELLOW, Color.BLACK, EDGE_TYPE_NONE,
+                    Color.BLACK, COLOR_NONE_OPAQUE, null);
+            YELLOW_ON_BLUE = new CaptionStyle(Color.YELLOW, Color.BLUE, EDGE_TYPE_NONE,
+                    Color.BLACK, COLOR_NONE_OPAQUE, null);
+            UNSPECIFIED = new CaptionStyle(COLOR_UNSPECIFIED, COLOR_UNSPECIFIED,
+                    EDGE_TYPE_UNSPECIFIED, COLOR_UNSPECIFIED, COLOR_UNSPECIFIED, null);
+
+            // The ordering of these cannot change since we store the index
+            // directly in preferences.
+            PRESETS = new CaptionStyle[] {
+                    WHITE_ON_BLACK, BLACK_ON_WHITE, YELLOW_ON_BLACK, YELLOW_ON_BLUE, UNSPECIFIED
+            };
+
+            DEFAULT_CUSTOM = WHITE_ON_BLACK;
+            DEFAULT = WHITE_ON_BLACK;
+        }
     }
 }

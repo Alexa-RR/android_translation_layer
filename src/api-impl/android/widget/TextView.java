@@ -22,6 +22,7 @@ import android.graphics.Canvas;
 import android.graphics.BlendMode;
 
 import android.annotation.UnsupportedAppUsage;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
@@ -222,6 +223,7 @@ public class TextView extends View {
 	/* teslalinux (+text) 10: replaced by the AOSP implementation in TextView.java+text.frag */
 
 	public static interface OnEditorActionListener {
+		@Export
 		public abstract boolean onEditorAction(TextView v, int actionId, KeyEvent event);
 	}
 
@@ -301,6 +303,12 @@ public class TextView extends View {
 	}
 
 	/* teslalinux (+text) 21: replaced by the AOSP implementation in TextView.java+text.frag */
+
+	public int getJustificationMode() {
+		return 0; // JUSTIFICATION_MODE_NONE
+	}
+
+	public void setImeActionLabel(CharSequence label, int actionId) {}
 
 	@UnsupportedAppUsage /* androidx ACTVAutoSizeHelper seems to love this */
 	/* Copyright (C) 2006 The Android Open Source Project */

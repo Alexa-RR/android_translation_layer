@@ -254,3 +254,8 @@ JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1is_1empty(JNIEnv *
 	GskPath *path = _PTR(path_ptr);
 	return path == NULL || gsk_path_is_empty(path);
 }
+
+JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1contains(JNIEnv *env, jclass class, jlong path_ptr, jint fill_rule, jboolean inverse, jfloat x, jfloat y)
+{
+	return gsk_path_in_fill(_PTR(path_ptr), &GRAPHENE_POINT_INIT(x, y), fill_rule) ^ inverse;
+}

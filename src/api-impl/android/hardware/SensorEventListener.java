@@ -16,11 +16,14 @@
 
 package android.hardware;
 
+import android.atl.annotation.Export;
+
 /**
  * Used for receiving notifications from the SensorManager when there is new sensor data. (AOSP.)
  */
 public interface SensorEventListener {
 	/** Called when there is a new sensor event. */
+	@Export
 	public void onSensorChanged(SensorEvent event);
 
 	/** Called when the accuracy of the registered sensor has changed. */

@@ -17,7 +17,9 @@
 package android.net;
 
 import android.annotation.SystemApi;
+import android.atl.annotation.Export;
 import android.os.Environment;
+import android.os.Parcel;
 import android.os.Parcelable;
 import android.util.Log;
 import java.io.File;
@@ -444,6 +446,7 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
 	 * @throws NullPointerException if uriString is null
 	 * @return Uri for this given uri string
 	 */
+	@Export
 	public static Uri parse(String uriString) {
 		return new StringUri(uriString);
 	}
@@ -484,6 +487,17 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
 			}
 
 			this.uriString = uriString;
+		}
+
+		static final int TYPE_ID = 1;
+
+		static Uri readFrom(Parcel parcel) {
+			return new StringUri(parcel.readString());
+		}
+
+		public void writeToParcel(Parcel parcel, int flags) {
+			parcel.writeInt(TYPE_ID);
+			parcel.writeString(uriString);
 		}
 
 		/** Cached scheme separator index. */
@@ -847,6 +861,18 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
 			this.fragment = fragment == null ? Part.NULL : fragment;
 		}
 
+		static final int TYPE_ID = 2;
+
+		static Uri readFrom(Parcel parcel) {
+			final StringUri stringUri = new StringUri(parcel.readString());
+			return new OpaqueUri(stringUri.parseScheme(), stringUri.getSsp(), stringUri.getFragmentPart());
+		}
+
+		public void writeToParcel(Parcel parcel, int flags) {
+			parcel.writeInt(TYPE_ID);
+			parcel.writeString(toString());
+		}
+
 		public boolean isHierarchical() {
 			return false;
 		}
@@ -1146,6 +1172,19 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
 			this.path = generatePath(path);
 			this.query = Part.nonNull(query);
 			this.fragment = Part.nonNull(fragment);
+		}
+
+		static final int TYPE_ID = 3;
+
+		static Uri readFrom(Parcel parcel) {
+			final StringUri stringUri = new StringUri(parcel.readString());
+			return new HierarchicalUri(stringUri.getScheme(), stringUri.getAuthorityPart(),
+			                           stringUri.getPathPart(), stringUri.getQueryPart(), stringUri.getFragmentPart());
+		}
+
+		public void writeToParcel(Parcel parcel, int flags) {
+			parcel.writeInt(TYPE_ID);
+			parcel.writeString(toString());
 		}
 
 		private PathPart generatePath(PathPart originalPath) {
@@ -2258,40 +2297,44 @@ public abstract class Uri implements Parcelable, Comparable<Uri> {
 		return true;
 	}
 
-	/* AOSP: parcelling; the in-process parcel carries the string form, which Uri.parse restores */
+	/** Identifies a null parcelled Uri. */
 	private static final int NULL_TYPE_ID = 0;
-	private static final int STRING_TYPE_ID = 1;
-
-	public static void writeToParcel(android.os.Parcel out, Uri uri) {
-		if (uri == null) {
-			out.writeInt(NULL_TYPE_ID);
-		} else {
-			out.writeInt(STRING_TYPE_ID);
-			out.writeString(uri.toString());
-		}
-	}
-
-	@Override
-	public void writeToParcel(android.os.Parcel dest, int flags) {
-		dest.writeInt(STRING_TYPE_ID);
-		dest.writeString(toString());
-	}
 
 	@Override
 	public int describeContents() {
 		return 0;
 	}
 
-	public static final android.os.Parcelable.Creator<Uri> CREATOR = new android.os.Parcelable.Creator<Uri>() {
-		@Override
-		public Uri createFromParcel(android.os.Parcel in) {
+	/**
+	 * Writes a Uri to a Parcel.
+	 *
+	 * @param out parcel to write to
+	 * @param uri to write, can be null
+	 */
+	public static void writeToParcel(Parcel out, Uri uri) {
+		if (uri == null) {
+			out.writeInt(NULL_TYPE_ID);
+		} else {
+			uri.writeToParcel(out, 0);
+		}
+	}
+
+	public static final Parcelable.Creator<Uri> CREATOR = new Parcelable.Creator<Uri>() {
+		public Uri createFromParcel(Parcel in) {
 			int type = in.readInt();
-			if (type == NULL_TYPE_ID)
-				return null;
-			return Uri.parse(in.readString());
+			switch (type) {
+				case NULL_TYPE_ID:
+					return null;
+				case StringUri.TYPE_ID:
+					return StringUri.readFrom(in);
+				case OpaqueUri.TYPE_ID:
+					return OpaqueUri.readFrom(in);
+				case HierarchicalUri.TYPE_ID:
+					return HierarchicalUri.readFrom(in);
+			}
+			throw new IllegalArgumentException("Unknown URI type: " + type);
 		}
 
-		@Override
 		public Uri[] newArray(int size) {
 			return new Uri[size];
 		}

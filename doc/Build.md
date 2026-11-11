@@ -1,12 +1,12 @@
 ## Dependencies
 ### Debian
 ```sh
-sudo apt install libasound2-dev libavcodec-dev libcap-dev  libdrm-dev libglib2.0-dev libgtk-4-dev libgudev-1.0-dev libopenxr-dev libportal-dev libsqlite3-dev libwebkitgtk-6.0-dev
+sudo apt install libasound2-dev libavcodec-dev libcap-dev  libdrm-dev libglib2.0-dev libgtk-4-dev libgudev-1.0-dev libopenxr-dev libportal-dev libsqlite3-dev libwebkitgtk-6.0-dev libsecret-1-dev
 ```
 
 ### Fedora
 ```sh
-sudo dnf install java-17-openjdk-devel 'pkgconfig(gtk4)' 'pkgconfig(libbsd)' 'pkgconfig(libportal)' 'pkgconfig(sqlite3)' 'pkgconfig(libwebp)' 'pkgconfig(liblz4)' 'pkgconfig(openxr)' 'pkgconfig(webkitgtk-6.0)'
+sudo dnf install java-17-openjdk-devel 'pkgconfig(gtk4)' 'pkgconfig(libbsd)' 'pkgconfig(libportal)' 'pkgconfig(sqlite3)' 'pkgconfig(libwebp)' 'pkgconfig(liblz4)' 'pkgconfig(openxr)' 'pkgconfig(webkitgtk-6.0)' 'pkgconfig(libsecret-1)'
 ```
 
 ### Alpine Edge
@@ -41,7 +41,7 @@ If you want to build ATL from source, you can take advantage of the packages for
 ```sh
 sudo apk add build-base meson java-common openjdk8-jdk \
     pc:alsa pc:glib-2.0 pc:gtk4 pc:gudev-1.0 pc:libportal \
-    pc:openxr pc:vulkan pc:webkitgtk-6.0 ffmpeg-dev \
+    pc:openxr pc:vulkan pc:webkitgtk-6.0 pc:libsecret-1 ffmpeg-dev \
     bionic_translation-dev art_standalone-dev libandroidfw-dev
 ```
 
@@ -94,11 +94,59 @@ meson compile
 sudo meson install
 ```
 
+## More Additional Dependencies
+We use some custom tools for header generation (see Upcalls.md).
+
+To compile (and run) those tools, some relatively commonly packaged java libraries are needed.
+Unfortunately, it's much less common for there to be a way to query for java libraries installed
+on a system (pkgconfig solves this for C/C++). To work around this very annoying issue, we support
+two modes:
+- With `-Ddownload_tool_deps=false` (the default), we attempt to use xmvn-resolve to locate and
+  use distro-installed dependencies, and if we fail to do so the meson configuration doesn't complete.
+  You can also pass a manual override for each dependency if it's present but can't be located
+  automatically, in which case the meson configuration will complete and these paths will be passed
+  to `build.py`.
+- With `-Ddownload_tool_deps=true`, dependencies that we are not able to resolve will be automagically
+downloaded from maven central using `mvn`. If `mvn` is not found, the configuration doesn't complete.
+
+With this:
+- on many distros, `-Ddownload_tool_deps=true` is necessary because `xmvn-resolve` doesn't exist
+  and no proper system for packaging java libraries exists.
+- on Debian, `-Ddownload_tool_deps=true` is not necessary, but you need to use
+  `-Dasm_jar_path=/usr/share/java/asm.jar -Dasm_tree_jar_path=/usr/share/java/asm-tree.jar -Dgetopt_jar_path=/usr/share/java/gnu-getopt.jar`.
+- on OpenSuse, `-Ddownload_tool_deps=true` is not necessary, but you need to use
+  `-Dgetopt_jar_path=/usr/share/java/gnu.getopt.jar` because the java-getopt package doesn't
+  properly register with the `xmvn` database.
+- on Fedora, `-Ddownload_tool_deps=true` is necessary because the java-getopt package doesn't exist
+  at all anymore (unmaintained and failed to build at some point)
+
+One issue is that `xmvn` is technically somewhat rpm-specific and maintained by Fedora. There is
+similarly a suite of tools Debian uses to maintain their java packages, however that suite doesn't
+include any tool that could be used instead of `xmvn-resolve`.
+
+These dependencies are only needed for compilation.
+
+### Debian
+```sh
+sudo apt install libasm-java libgetopt-java
+```
+
+### Fedora
+```sh
+sudo dnf install objectweb-asm
+```
+getopt is not packaged
+
+### OpenSuse
+```sh
+sudo zypper install objectweb-asm gnu-getopt
+```
+
 ## Build
 ```sh
 git clone https://gitlab.com/android_translation_layer/android_translation_layer.git
 cd android_translation_layer
-meson setup builddir
+meson setup builddir [-Ddownload_tool_deps=true]
 cd builddir
 meson compile
 ```

@@ -16,6 +16,8 @@
 
 package android.hardware;
 
+import android.atl.annotation.Export;
+
 /**
  * This class represents a {@link android.hardware.Sensor Sensor} event and holds information such
  * as the sensor's type, the time-stamp, accuracy and of course the sensor's data. (AOSP fields;
@@ -41,6 +43,7 @@ public class SensorEvent {
 		values = new float[valueSize];
 	}
 
+	@Export
 	public SensorEvent(float[] values, Sensor sensor) {
 		this.values = values;
 		this.sensor = sensor;

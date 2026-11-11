@@ -1,5 +1,6 @@
 package android.view;
 
+import android.atl.annotation.Export;
 import android.graphics.Rect;
 import java.util.ArrayList;
 
@@ -34,6 +35,13 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	 * further scheduling because every widget below already queued its own redraw).
 	 */
 	private static class WindowViewParent implements ViewParent {
+
+		/** the window's root view */
+		private final View root;
+
+		WindowViewParent(View root) {
+			this.root = root;
+		}
 
 		@Override
 		public android.view.ViewParent getParent() {
@@ -106,6 +114,15 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		public ViewParent invalidateChildInParent(int[] location, android.graphics.Rect dirty) {
 			return null;
 		}
+
+		/**
+		 * ViewRootImpl.requestLayout: schedules a traversal of the window. The window's layer is laid
+		 * out on GTK's allocation, so the root view queues the resize that relayouts the window.
+		 */
+		@Override
+		public void requestLayout() {
+			root.requestLayout();
+		}
 	}
 
 	/** One added window: its root view, its attributes and where the last layout put it. */
@@ -149,7 +166,7 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		if (DEBUG)
 			android.util.Log.i(TAG, "addView " + view.getClass().getName() + " " + describe(w.params));
 		view.setLayoutParams(params);
-		view.parent = new WindowViewParent();
+		view.parent = new WindowViewParent(view);
 		sWindows.add(w);
 		w.layer = native_addWindow(view, view.widget, w.params.flags, w.params.dimAmount);
 		view.onAttachedToWindow();
@@ -210,6 +227,7 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	 * Called by the layer's GTK allocation with the display frame (the main window's size): measures
 	 * the root view and returns the window frame in out[0..3] (x, y, width, height).
 	 */
+	@Export
 	private static void tlLayoutWindow(View view, int displayWidth, int displayHeight, int[] out) {
 		AddedWindow w = findWindow(view);
 		WindowManager.LayoutParams p = w != null ? w.params : (WindowManager.LayoutParams) view.getLayoutParams();
@@ -256,6 +274,7 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	 * A touch-modal window gets the touches outside its frame as well (AOSP: without
 	 * FLAG_NOT_TOUCH_MODAL a focusable window consumes all pointer events); x/y are window-relative.
 	 */
+	@Export
 	private static void tlModalOutsideTouch(View view, int action, float x, float y) {
 		long now = android.os.SystemClock.uptimeMillis();
 		MotionEvent ev = MotionEvent.obtain(now, now, action, x, y, 0);
@@ -268,6 +287,7 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	 * focusable one; an app-added focusable window above the activity takes them. True when such a
 	 * window exists (its root got the key, handled or not, as ViewRootImpl does).
 	 */
+	@Export
 	static boolean tlDispatchKeyToFocusedWindow(KeyEvent event) {
 		for (int i = sWindows.size() - 1; i >= 0; i--) {
 			AddedWindow w = sWindows.get(i);

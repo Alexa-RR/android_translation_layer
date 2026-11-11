@@ -34,6 +34,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SuppressLint;
 import android.annotation.TestApi;
+import android.atl.annotation.Export;
 import android.graphics.Matrix;
 import android.os.Build;
 import android.os.Parcel;
@@ -2451,6 +2452,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
     private static final int RAW_Y_OFFSET = 3;
 
     /** teslalinux: a touch from ATL's native code (ids and x, y, rawX, rawY per pointer) */
+    @Export("constructor")
     public MotionEvent(int source, int action, long eventTime, int[] ids, float[] coords) {
         tlInitFromAtl(source, action, eventTime, ids, coords, 0, 0);
     }
@@ -2461,6 +2463,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      * pointer per sample in the same order. The last sample is the current one; the others become
      * the event's history (getHistoricalX & co.), added with addBatch as InputConsumer does.
      */
+    @Export("constructor_batched")
     public MotionEvent(int source, int action, long[] eventTimes, int[] ids, float[] coords) {
         final int pointerCount = ids.length;
         final int stride = 4 * pointerCount;
@@ -2481,11 +2484,13 @@ public final class MotionEvent extends InputEvent implements Parcelable {
     }
 
     /** teslalinux: a single-pointer event (hover) from ATL's native code */
+    @Export("constructor_single")
     public MotionEvent(int source, int action, long eventTime, float x, float y, float raw_x, float raw_y) {
         tlInitFromAtl(source, action, eventTime, new int[] {0}, new float[] {x, y, raw_x, raw_y}, 0, 0);
     }
 
     /** teslalinux: a wheel event from ATL's native code: AXIS_HSCROLL and AXIS_VSCROLL */
+    @Export("constructor_scroll")
     public MotionEvent(int source, int action, long eventTime, float x, float y, float raw_x, float raw_y, float scroll_dx, float scroll_dy) {
         tlInitFromAtl(source, action, eventTime, new int[] {0}, new float[] {x, y, raw_x, raw_y}, scroll_dx, scroll_dy);
     }
@@ -2981,6 +2986,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      * @return The action, such as {@link #ACTION_DOWN} or
      * the combination of {@link #ACTION_POINTER_DOWN} with a shifted pointer index.
      */
+    @Export
     public final int getAction() {
         return nativeGetAction(mNativePtr);
     }
@@ -3170,6 +3176,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      *
      * @see #AXIS_X
      */
+    @Export("getX")
     public final float getX() {
         return nativeGetAxisValue(mNativePtr, AXIS_X, 0, HISTORY_CURRENT);
     }
@@ -3183,6 +3190,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      *
      * @see #AXIS_Y
      */
+    @Export("getY")
     public final float getY() {
         return nativeGetAxisValue(mNativePtr, AXIS_Y, 0, HISTORY_CURRENT);
     }
@@ -3274,6 +3282,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      * The number of pointers of data contained in this event.  Always
      * >= 1.
      */
+    @Export
     public final int getPointerCount() {
         return nativeGetPointerCount(mNativePtr);
     }
@@ -3338,6 +3347,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      *
      * @see #AXIS_X
      */
+    @Export("getX_pointer")
     public final float getX(int pointerIndex) {
         return nativeGetAxisValue(mNativePtr, AXIS_X, pointerIndex, HISTORY_CURRENT);
     }
@@ -3360,6 +3370,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      *
      * @see #AXIS_Y
      */
+    @Export("getY_pointer")
     public final float getY(int pointerIndex) {
         return nativeGetAxisValue(mNativePtr, AXIS_Y, pointerIndex, HISTORY_CURRENT);
     }
@@ -4228,6 +4239,7 @@ public final class MotionEvent extends InputEvent implements Parcelable {
      * @param x New absolute X location.
      * @param y New absolute Y location.
      */
+    @Export
     public final void setLocation(float x, float y) {
         float oldX = getX();
         float oldY = getY();

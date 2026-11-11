@@ -1,5 +1,6 @@
 package android.content;
 
+import android.atl.annotation.Export;
 import android.content.pm.PackageManager;
 import android.content.res.Resources;
 import android.content.res.TypedArray;
@@ -492,6 +493,7 @@ public class Intent implements Parcelable {
 	private String packageName;
 	private Intent selector;
 
+	@Export
 	public Intent() {}
 	/** AOSP: a copy of o; the extras, categories, bounds and selector are copied, not shared. */
 	public Intent(Intent o) {
@@ -551,6 +553,7 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	@Export("putExtraParcelable")
 	public Intent putExtra(String name, Parcelable value) {
 		extras.putParcelable(name, value);
 		return this;
@@ -571,6 +574,7 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	@Export("putExtraCharSequence")
 	public Intent putExtra(String name, CharSequence value) {
 		extras.putCharSequence(name, value);
 		return this;
@@ -581,6 +585,7 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	@Export("putExtraInt")
 	public Intent putExtra(String name, int value) {
 		extras.putInt(name, value);
 		return this;
@@ -591,6 +596,7 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	@Export("putExtraByteArray")
 	public Intent putExtra(String name, byte[] value) {
 		extras.putByteArray(name, value);
 		return this;
@@ -646,6 +652,7 @@ public class Intent implements Parcelable {
 		return this;
 	}
 
+	@Export("putExtraLong")
 	public Intent putExtra(String name, long value) {
 		extras.putLong(name, value);
 		return this;
@@ -711,6 +718,7 @@ public class Intent implements Parcelable {
 		return data;
 	}
 
+	@Export
 	public String getDataString() {
 		if (data == null)
 			return "";
@@ -850,6 +858,8 @@ public class Intent implements Parcelable {
 		if (extras != null)
 			extras.setClassLoader(loader);
 	}
+
+	@Export
 	public Intent setClassName(Context packageContext, String className) {
 		setComponent(new ComponentName(packageContext, className));
 		return this;
@@ -1174,4 +1184,21 @@ public class Intent implements Parcelable {
 			return new Intent[size];
 		}
 	};
+
+	public float getFloatExtra(String name, float def) {
+		return extras == null ? def : extras.getFloat(name, def);
+	}
+
+	/** AOSP: the MIME type in its canonical form: trimmed, lower case, without parameters. */
+	public static String normalizeMimeType(String type) {
+		if (type == null) {
+			return null;
+		}
+		type = type.trim().toLowerCase(java.util.Locale.ROOT);
+		final int semicolonIndex = type.indexOf(';');
+		if (semicolonIndex != -1) {
+			type = type.substring(0, semicolonIndex);
+		}
+		return type;
+	}
 }

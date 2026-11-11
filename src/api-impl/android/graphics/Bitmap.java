@@ -1,15 +1,18 @@
 package android.graphics;
 
+import android.atl.annotation.Export;
+import android.os.Parcelable;
 import android.util.DisplayMetrics;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.Buffer;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /*
  * Bitmap is implemented as GdkTexture or GtkSnapshot. It can only be one of the two at a time.
  * The methods getTexture() and getSnapshot() automatically convert between the two as needed.
  */
-public final class Bitmap {
+public final class Bitmap implements Parcelable {
 
 	public enum Config {
 		RGB_565(2, -1, /*ANDROID_BITMAP_FORMAT_RGB_565*/ 4),
@@ -48,6 +51,8 @@ public final class Bitmap {
 	long bytes = 0; // used by native function AndroidBitmap_lockPixels()
 	private boolean recycled = false;
 	boolean mutable = true;
+	private static final AtomicInteger nextGenerationId = new AtomicInteger(1);
+	private int generationId = nextGenerationId.getAndIncrement();
 
 	Bitmap(long texture) {
 		this(native_get_width(texture), native_get_height(texture), Config.ARGB_8888);
@@ -165,6 +170,7 @@ public final class Bitmap {
 		return config;
 	}
 
+	@Export
 	public synchronized long getTexture() {
 		if (texture == 0) {
 			texture = native_create_texture(snapshot, width, height, stride, config.gdk_memory_format);
@@ -174,7 +180,7 @@ public final class Bitmap {
 	}
 
 	synchronized long getSnapshot() {
-		tlGeneration++; // a canvas or setPixels is about to change the pixels
+		notifyPixelsChanged();
 		if (snapshot == 0) {
 			snapshot = native_create_snapshot(texture);
 			texture = 0;
@@ -196,18 +202,46 @@ public final class Bitmap {
 			paint.setColor(color);
 			new Canvas(this).drawRect(0, 0, width, height, paint);
 		}
-		tlGeneration++;
+		notifyPixelsChanged();
 	}
 
+	@Export
 	public void recycle() {
 		native_recycle(texture, snapshot);
 		texture = 0;
 		snapshot = 0;
 		recycled = true;
+		notifyPixelsChanged();
 	}
 
 	public int getRowBytes() {
 		return stride;
+	}
+
+	// used by BitmapFactory to satify Options.inBitmap if set
+	void transferFrom(Bitmap src) {
+		native_recycle(this.texture, this.snapshot);
+		this.texture = src.texture;
+		this.snapshot = src.snapshot;
+		this.width = src.width;
+		this.height = src.height;
+		this.stride = src.stride;
+		this.config = src.config;
+		this.hasAlpha = src.hasAlpha;
+		this.mutable = src.mutable;
+		this.recycled = false;
+		src.texture = 0;
+		src.snapshot = 0;
+		src.recycled = true;
+		notifyPixelsChanged();
+	}
+
+	public int getGenerationId() {
+		return generationId;
+	}
+
+	private void notifyPixelsChanged() {
+		generationId = nextGenerationId.getAndIncrement();
 	}
 
 	public int getAllocationByteCount() {
@@ -465,7 +499,6 @@ public final class Bitmap {
 	private int tlDensity = -1;
 	private boolean tlPremultiplied = true;
 	private int tlAllocation;
-	private int tlGeneration;
 	private ColorSpace tlColorSpace;
 	private Gainmap tlGainmap;
 
@@ -473,11 +506,6 @@ public final class Bitmap {
 		if (tlDensity < 0)
 			tlDensity = android.content.res.Resources.getSystem().getDisplayMetrics().densityDpi;
 		return tlDensity;
-	}
-
-	/** AOSP: changes whenever the pixels change. */
-	public int getGenerationId() {
-		return tlGeneration;
 	}
 
 	/** AOSP: same size, config and pixels. */

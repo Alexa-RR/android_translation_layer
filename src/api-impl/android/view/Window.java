@@ -236,27 +236,66 @@ public class Window {
 		set_title(native_window, title != null ? title.toString() : context.getPackageName());
 	}
 
+	/* AOSP PhoneWindow: the activity transitions the app set; android.transition does not run them
+	 * here (TODO-real.md), the values are kept for the app to read back. Unset shared element
+	 * transitions read as an empty Transition, as before. */
+	private Transition tlEnterTransition;
+	private Transition tlReturnTransition;
+	private Transition tlSharedElementEnterTransition;
+	private Transition tlSharedElementExitTransition;
+	private Transition tlSharedElementReenterTransition;
+	private Transition tlSharedElementReturnTransition;
+
 	public Transition getSharedElementEnterTransition() {
-		return new Transition();
+		return tlSharedElementEnterTransition != null ? tlSharedElementEnterTransition : new Transition();
 	}
 
-	public void setSharedElementExitTransition(Transition transition) {}
+	public void setSharedElementExitTransition(Transition transition) {
+		tlSharedElementExitTransition = transition;
+	}
 
-	public void setSharedElementReenterTransition(Transition transition) {}
+	public void setSharedElementReenterTransition(Transition transition) {
+		tlSharedElementReenterTransition = transition;
+	}
 
-	public void setSharedElementReturnTransition(Transition transition) {}
+	public void setSharedElementReturnTransition(Transition transition) {
+		tlSharedElementReturnTransition = transition;
+	}
 
 	public Transition getSharedElementExitTransition() {
-		return new Transition();
+		return tlSharedElementExitTransition != null ? tlSharedElementExitTransition : new Transition();
 	}
 
 	public Transition getSharedElementReenterTransition() {
-		return new Transition();
+		return tlSharedElementReenterTransition != null ? tlSharedElementReenterTransition : new Transition();
 	}
 
-	public void setReturnTransition(Transition transition) {}
+	/** AOSP: the shared element return transition, the enter one when none was set */
+	public Transition getSharedElementReturnTransition() {
+		return tlSharedElementReturnTransition != null ? tlSharedElementReturnTransition : getSharedElementEnterTransition();
+	}
 
-	public void setEnterTransition(Transition transition) {}
+	public void setReturnTransition(Transition transition) {
+		tlReturnTransition = transition;
+	}
+
+	/** AOSP: the return transition, the enter one when none was set */
+	public Transition getReturnTransition() {
+		return tlReturnTransition != null ? tlReturnTransition : tlEnterTransition;
+	}
+
+	public void setEnterTransition(Transition transition) {
+		tlEnterTransition = transition;
+	}
+
+	/** AOSP: the enter transition the app set, null when none (no theme transition is inflated) */
+	public Transition getEnterTransition() {
+		return tlEnterTransition;
+	}
+
+	public void setSharedElementEnterTransition(Transition transition) {
+		tlSharedElementEnterTransition = transition;
+	}
 
 	// (layout) setGravity: see Window+layout.frag
 

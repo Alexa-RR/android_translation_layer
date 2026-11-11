@@ -34,6 +34,7 @@ import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.annotation.SuppressLint;
 import android.annotation.TestApi;
+import android.atl.annotation.Export;
 import android.text.TextUtils;
 import android.util.ArrayMap;
 import android.util.ArraySet;
@@ -2481,6 +2482,7 @@ public class Parcel {
      * @param parcelableFlags Contextual flags as per
      * {@link Parcelable#writeToParcel(Parcel, int) Parcelable.writeToParcel()}.
      */
+    @Export
     public final void writeParcelable(@Nullable Parcelable p, int parcelableFlags) {
         if (p == null) {
             writeString(null);
@@ -4735,6 +4737,7 @@ public class Parcel {
     // ATL classes outside android.os still catch it around this call; the clause is kept so they
     // compile. Nothing throws it (failures are BadParcelableException, as in AOSP), and a throws
     // clause is not part of the method's binary signature, so apps see the AOSP method.
+    @Export
     public final <T extends Parcelable> T readParcelable(@Nullable ClassLoader loader)
             throws ReflectiveOperationException {
         return readParcelableInternal(loader, /* clazz */ null);

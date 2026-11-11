@@ -36,6 +36,7 @@ import static android.view.WindowManager.LayoutParams.PRIVATE_FLAG_LAYOUT_CHILD_
 
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.PixelFormat;
@@ -2363,6 +2364,7 @@ public class PopupWindow {
         /**
          * Called when this popup window is dismissed.
          */
+        @Export
         public void onDismiss();
     }
 

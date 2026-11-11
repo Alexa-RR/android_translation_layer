@@ -16,6 +16,7 @@
 
 package android.webkit;
 
+import android.atl.annotation.Export;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
@@ -34,6 +35,7 @@ import android.util.AttributeSet;
 import android.util.Base64;
 import android.util.Log;
 import android.util.SparseArray;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.widget.EditText;
 import java.io.ByteArrayOutputStream;
@@ -229,6 +231,12 @@ public class WebView extends ViewGroup {
 	@Deprecated
 	public WebView(Context context, AttributeSet attrs, int defStyleAttr, boolean privateBrowsing) {
 		this(context, attrs, defStyleAttr, 0);
+	}
+
+	/* the engine is a GTK widget: touches dispatched through the Java hierarchy are handed back to GTK */
+	@Override
+	public boolean onTouchEvent(MotionEvent event) {
+		return native_gtkEventPropagation();
 	}
 
 	/* ---- thread and engine ---- */
@@ -1452,6 +1460,7 @@ public class WebView extends ViewGroup {
 	}
 
 	// to be used by native code
+	@Export
 	AssetManager internalGetAssetManager() {
 		return getContext().getResources().getAssets();
 	}
@@ -1468,6 +1477,7 @@ public class WebView extends ViewGroup {
 		return new WebResourceRequest.Impl(toAppUrl(url), true, redirect, gesture, method, null);
 	}
 
+	@Export
 	void internalLoadChanged(int event, String uri) {
 		uri = toAppUrl(uri);
 		WebViewClient c = client();

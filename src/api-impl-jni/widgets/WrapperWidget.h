@@ -13,9 +13,7 @@ struct _WrapperWidget {
 	JavaVM *jvm;
 	jobject jobj;
 	jobject canvas;
-	jmethodID draw_method;
-	jmethodID measure_method;
-	jmethodID computeScroll_method;
+	jmethodID draw_method; /* the class's draw(Canvas) when it draws in Java (set: custom drawing) */
 	gboolean tl_layout; /* tl_leaf_layout: class overrides onLayout/onSizeChanged */
 	int layout_width;
 	int layout_height;
@@ -32,6 +30,7 @@ struct _WrapperWidget {
 	graphene_rect_t tl_clip_bounds;
 	gboolean tl_outline_clip; /* tl_view_clip: View.setClipToOutline with a (round) rect outline */
 	GskRoundedRect tl_outline;
+	bool have_custom_computeScroll;
 };
 
 struct _WrapperWidgetClass {
@@ -47,6 +46,7 @@ void wrapper_widget_queue_draw(WrapperWidget *wrapper);
 void wrapper_widget_set_layout_params(WrapperWidget *wrapper, int width, int height);
 void wrapper_widget_set_background(WrapperWidget *wrapper, GdkPaintable *paintable);
 void wrapper_widget_consume_touch_events(WrapperWidget *wrapper);
+void wrapper_widget_register_invalidation_listener(WrapperWidget *wrapper);
 
 void _setOnTouchListener(JNIEnv *env, jobject this, GtkWidget *widget);
 /* tl_layout_clip: pushes the clipToPadding clip of a group wrapper; TRUE when a clip was pushed */

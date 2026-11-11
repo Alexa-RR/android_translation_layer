@@ -29,4 +29,16 @@ public class KeyguardManager {
 	public boolean isDeviceLocked() { return false; }
 	public android.content.Intent createConfirmDeviceCredentialIntent(CharSequence title, CharSequence description) { return null; }
 	public void requestDismissKeyguard(Activity activity, KeyguardDismissCallback callback) { if (callback != null) callback.onDismissSucceeded(); }
+
+	public KeyguardLock newKeyguardLock(String tag) {
+		return new KeyguardLock();
+	}
+
+	/* AOSP: disables and re-enables the keyguard for this lock's holder. This runtime has no
+	 * keyguard (isKeyguardLocked() is always false), so there is nothing to hide or bring back,
+	 * as on a device whose keyguard is disabled. */
+	public class KeyguardLock {
+		public void disableKeyguard() {}
+		public void reenableKeyguard() {}
+	}
 }

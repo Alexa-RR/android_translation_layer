@@ -52,10 +52,10 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRect
 /*
  * Class:     android_atl_GskCanvas
  * Method:    native_drawPath
- * Signature: (JJJ)V
+ * Signature: (JJIJ)V
  */
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawPath
-  (JNIEnv *, jobject, jlong, jlong, jlong);
+  (JNIEnv *, jobject, jlong, jlong, jint, jlong);
 
 /*
  * Class:     android_atl_GskCanvas

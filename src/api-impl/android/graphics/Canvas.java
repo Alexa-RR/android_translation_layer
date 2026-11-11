@@ -17,6 +17,7 @@
 package android.graphics;
 
 import android.atl.GskCanvas;
+import android.atl.annotation.Export;
 
 /**
  * teslalinux: AOSP's Canvas API on GSK.
@@ -144,7 +145,9 @@ public class Canvas {
 	public int save() {
 		if (tlNoTarget())
 			return 1;
-		return gc().save();
+		synchronized (this.bitmap) {
+			return gc().save();
+		}
 	}
 
 	/** API 21 save with flags; AOSP (API 28+) always saves matrix and clip. */
@@ -155,13 +158,17 @@ public class Canvas {
 	public void restore() {
 		if (tlNoTarget())
 			return;
-		gc().restore();
+		synchronized (this.bitmap) {
+			gc().restore();
+		}
 	}
 
 	public int getSaveCount() {
 		if (tlNoTarget())
 			return 1;
-		return gc().getSaveCount();
+		synchronized (this.bitmap) {
+			return gc().getSaveCount();
+		}
 	}
 
 	public void restoreToCount(int count) {
@@ -175,7 +182,9 @@ public class Canvas {
 	public int tlSaveLayer(RectF bounds, Paint paint) {
 		if (tlNoTarget())
 			return save();
-		return gc().tlSaveLayer(bounds, paint);
+		synchronized (this.bitmap) {
+			return gc().tlSaveLayer(bounds, paint);
+		}
 	}
 
 	public int saveLayer(RectF bounds, Paint paint, int saveFlags) {
@@ -221,13 +230,17 @@ public class Canvas {
 	public void translate(float dx, float dy) {
 		if (tlNoTarget())
 			return;
-		gc().translate(dx, dy);
+		synchronized (this.bitmap) {
+			gc().translate(dx, dy);
+		}
 	}
 
 	public void scale(float sx, float sy) {
 		if (tlNoTarget())
 			return;
-		gc().scale(sx, sy);
+		synchronized (this.bitmap) {
+			gc().scale(sx, sy);
+		}
 	}
 
 	public final void scale(float sx, float sy, float px, float py) {
@@ -241,7 +254,9 @@ public class Canvas {
 	public void rotate(float degrees) {
 		if (tlNoTarget())
 			return;
-		gc().rotate(degrees);
+		synchronized (this.bitmap) {
+			gc().rotate(degrees);
+		}
 	}
 
 	public final void rotate(float degrees, float px, float py) {
@@ -262,7 +277,9 @@ public class Canvas {
 	public void concat(Matrix matrix) {
 		if (tlNoTarget())
 			return;
-		gc().concat(matrix);
+		synchronized (this.bitmap) {
+			gc().concat(matrix);
+		}
 	}
 
 	public void getMatrix(Matrix matrix) {
@@ -270,7 +287,9 @@ public class Canvas {
 			matrix.reset();
 			return;
 		}
-		gc().getMatrix(matrix);
+		synchronized (this.bitmap) {
+			gc().getMatrix(matrix);
+		}
 	}
 
 	public final Matrix getMatrix() {
@@ -297,7 +316,9 @@ public class Canvas {
 	public boolean clipRect(float left, float top, float right, float bottom) {
 		if (tlNoTarget())
 			return false;
-		return gc().clipRect(left, top, right, bottom);
+		synchronized (this.bitmap) {
+			return gc().clipRect(left, top, right, bottom);
+		}
 	}
 
 	public boolean clipRect(int left, int top, int right, int bottom) {
@@ -332,7 +353,9 @@ public class Canvas {
 	public boolean clipOutRect(float left, float top, float right, float bottom) {
 		if (tlNoTarget())
 			return false;
-		return gc().clipOutRect(left, top, right, bottom);
+		synchronized (this.bitmap) {
+			return gc().clipOutRect(left, top, right, bottom);
+		}
 	}
 
 	public boolean clipOutRect(int left, int top, int right, int bottom) {
@@ -350,7 +373,9 @@ public class Canvas {
 	public boolean clipPath(Path path, Region.Op op) {
 		if (tlNoTarget())
 			return false;
-		return gc().clipPath(path, op);
+		synchronized (this.bitmap) {
+			return gc().clipPath(path, op);
+		}
 	}
 
 	public boolean clipPath(Path path) {
@@ -367,7 +392,9 @@ public class Canvas {
 				bounds.setEmpty();
 			return false;
 		}
-		return gc().getClipBounds(bounds);
+		synchronized (this.bitmap) {
+			return gc().getClipBounds(bounds);
+		}
 	}
 
 	public final Rect getClipBounds() {
@@ -379,7 +406,9 @@ public class Canvas {
 	public boolean quickReject(float left, float top, float right, float bottom) {
 		if (tlNoTarget())
 			return true;
-		return gc().quickReject(left, top, right, bottom);
+		synchronized (this.bitmap) {
+			return gc().quickReject(left, top, right, bottom);
+		}
 	}
 
 	public boolean quickReject(float left, float top, float right, float bottom, EdgeType type) {
@@ -423,7 +452,9 @@ public class Canvas {
 	public void drawRect(float left, float top, float right, float bottom, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawRect(left, top, right, bottom, paint);
+		synchronized (this.bitmap) {
+			gc().drawRect(left, top, right, bottom, paint);
+		}
 	}
 
 	public void drawRect(RectF r, Paint paint) {
@@ -437,7 +468,9 @@ public class Canvas {
 	public void drawRoundRect(float left, float top, float right, float bottom, float rx, float ry, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawRoundRect(left, top, right, bottom, rx, ry, paint);
+		synchronized (this.bitmap) {
+			gc().drawRoundRect(left, top, right, bottom, rx, ry, paint);
+		}
 	}
 
 	public void drawRoundRect(RectF rect, float rx, float ry, Paint paint) {
@@ -447,13 +480,17 @@ public class Canvas {
 	public void drawCircle(float cx, float cy, float radius, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawCircle(cx, cy, radius, paint);
+		synchronized (this.bitmap) {
+			gc().drawCircle(cx, cy, radius, paint);
+		}
 	}
 
 	public void drawOval(float left, float top, float right, float bottom, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawOval(left, top, right, bottom, paint);
+		synchronized (this.bitmap) {
+			gc().drawOval(left, top, right, bottom, paint);
+		}
 	}
 
 	public void drawOval(RectF oval, Paint paint) {
@@ -465,7 +502,9 @@ public class Canvas {
 	public void drawArc(float left, float top, float right, float bottom, float startAngle, float sweepAngle, boolean useCenter, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter, paint);
+		synchronized (this.bitmap) {
+			gc().drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter, paint);
+		}
 	}
 
 	public void drawArc(RectF oval, float startAngle, float sweepAngle, boolean useCenter, Paint paint) {
@@ -477,19 +516,25 @@ public class Canvas {
 	public void drawPath(Path path, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawPath(path, paint);
+		synchronized (this.bitmap) {
+			gc().drawPath(path, paint);
+		}
 	}
 
 	public void drawLine(float startX, float startY, float stopX, float stopY, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawLine(startX, startY, stopX, stopY, paint);
+		synchronized (this.bitmap) {
+			gc().drawLine(startX, startY, stopX, stopY, paint);
+		}
 	}
 
 	public void drawLines(float[] points, int offset, int count, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawLines(points, offset, count, paint);
+		synchronized (this.bitmap) {
+			gc().drawLines(points, offset, count, paint);
+		}
 	}
 
 	public void drawLines(float[] points, Paint paint) {
@@ -499,7 +544,9 @@ public class Canvas {
 	public void drawPoint(float x, float y, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawPoint(x, y, paint);
+		synchronized (this.bitmap) {
+			gc().drawPoint(x, y, paint);
+		}
 	}
 
 	/** AOSP: count floats from offset, two per point. */
@@ -584,7 +631,9 @@ public class Canvas {
 	public void drawBitmap(Bitmap bitmap, Rect src, Rect dst, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawBitmap(bitmap, src, dst, paint);
+		synchronized (this.bitmap) {
+			gc().drawBitmap(bitmap, src, dst, paint);
+		}
 	}
 
 	public void drawBitmap(Bitmap bitmap, Rect src, RectF dst, Paint paint) {
@@ -793,7 +842,9 @@ public class Canvas {
 	public void drawRenderNode(android.view.RenderNode node) {
 		if (tlNoTarget())
 			return;
-		gc().drawRenderNode(node);
+		synchronized (this.bitmap) {
+			gc().drawRenderNode(node);
+		}
 	}
 
 	public void drawRenderNode(android.graphics.RenderNode node) {
@@ -810,7 +861,9 @@ public class Canvas {
 	public void drawText(String text, float x, float y, Paint paint) {
 		if (tlNoTarget())
 			return;
-		gc().drawText(text, x, y, paint);
+		synchronized (this.bitmap) {
+			gc().drawText(text, x, y, paint);
+		}
 	}
 
 	public void drawText(String text, int start, int end, float x, float y, Paint paint) {
@@ -819,6 +872,7 @@ public class Canvas {
 		drawText(text.substring(start, end), x, y, paint);
 	}
 
+	@Export
 	public void drawText(CharSequence text, int start, int end, float x, float y, Paint paint) {
 		if ((start | end | (end - start) | (text.length() - end)) < 0)
 			throw new IndexOutOfBoundsException();

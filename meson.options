@@ -1,0 +1,7 @@
+# set this to true if your distro doesn't have xmvn or doesn't (properly) package asm and getopt
+option('download_tool_deps', type : 'boolean', value : false)
+option('asm_jar_path', type : 'string')
+option('asm_tree_jar_path', type : 'string')
+option('getopt_jar_path', type : 'string')
+option('r8_jar', type: 'string', value: '',
+       description: 'Path to r8.jar. When set, the Java code is dexed with D8 (--min-api 24, lambdas desugared) instead of dx; required for code that uses lambdas, which dx turns into invoke-custom')

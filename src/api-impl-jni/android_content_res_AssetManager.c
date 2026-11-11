@@ -64,6 +64,11 @@ JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_openAssetFd(JNIEnv 
 	struct Asset *asset = AssetManager_openNonAsset(asset_manager, file_name, mode);
 	android_log_printf(ANDROID_LOG_VERBOSE, "[" __FILE__ "]", "AssetManager_openAssetFd(%p, %s, %d, ...)\n", asset_manager, file_name, mode);
 
+	if (asset == NULL) {
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/io/FileNotFoundException"), file_name);
+		return -1;
+	}
+
 	fd = Asset_openFileDescriptor(asset, &offset, &size);
 
 	(*env)->SetLongArrayRegion(env, _offset, 0, 1, (jlong[]){offset});
@@ -119,7 +124,7 @@ JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_seekAsset(JNIEnv *
 	AM_SCOPEDLOCK(asset_manager)
 
 	struct Asset *asset = _PTR(_asset);
-	return Asset_seek(asset, offset, whence);
+	return Asset_seek(asset, offset, whence > 0 ? SEEK_END : (whence < 0 ? SEEK_SET : SEEK_CUR));
 }
 
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_destroyAsset(JNIEnv *env, jobject this, jlong _asset)
@@ -155,21 +160,30 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAsset
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
 	const struct ApkAssets *apk_assets[num_assets];
+	int actual_count = 0;
 	for (int i = 0; i < num_assets; i++) {
 		jstring path_jstr = (jstring)((*env)->GetObjectArrayElement(env, paths, i));
+		if (path_jstr == NULL)
+			continue;
 		const char *path = (*env)->GetStringUTFChars(env, path_jstr, NULL);
+		const struct ApkAssets *a;
 		if (path[strlen(path) - 1] == '/')
-			apk_assets[i] = ApkAssets_loadDir(strdup(path));
+			a = ApkAssets_loadDir(strdup(path));
 		else
-			apk_assets[i] = ApkAssets_load(strdup(path), false);
+			a = ApkAssets_load(strdup(path), false);
+		if (a == NULL)
+			android_log_printf(ANDROID_LOG_WARN, "[" __FILE__ "]", "failed to load ApkAssets from %s\n", path);
 		(*env)->ReleaseStringUTFChars(env, path_jstr, path);
+		if (a != NULL)
+			apk_assets[actual_count++] = a;
 	}
-	AssetManager_setApkAssets(asset_manager, apk_assets, num_assets, true, true);
+	if (actual_count > 0)
+		AssetManager_setApkAssets(asset_manager, apk_assets, actual_count, true, true);
 	/* tl_assets_share: keep the loaded ApkAssets so sibling managers can share them */
-	const struct ApkAssets **keep = malloc(sizeof(*keep) * (num_assets > 0 ? num_assets : 1));
-	memcpy(keep, apk_assets, sizeof(*keep) * num_assets);
+	const struct ApkAssets **keep = malloc(sizeof(*keep) * (actual_count > 0 ? actual_count : 1));
+	memcpy(keep, apk_assets, sizeof(*keep) * actual_count);
 	_SET_LONG_FIELD(this, "tlApkAssets", _INTPTR(keep));
-	_SET_INT_FIELD(this, "tlApkAssetsCount", num_assets);
+	_SET_INT_FIELD(this, "tlApkAssetsCount", actual_count);
 }
 
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1shareApkAssets(JNIEnv *env, jobject this, jlong apk_assets_ptr, jint num_assets)
@@ -177,7 +191,8 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1shareApkAss
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
 	const struct ApkAssets **apk_assets = _PTR(apk_assets_ptr);
-	AssetManager_setApkAssets(asset_manager, apk_assets, num_assets, true, true);
+	if (num_assets > 0)
+		AssetManager_setApkAssets(asset_manager, apk_assets, num_assets, true, true);
 	_SET_LONG_FIELD(this, "tlApkAssets", apk_assets_ptr);
 	_SET_INT_FIELD(this, "tlApkAssetsCount", num_assets);
 }
@@ -223,7 +238,7 @@ JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_getArrayStr
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
 	const struct ResolvedBag *bag = AssetManager_getBag(asset_manager, ident);
-	jobjectArray array = (*env)->NewObjectArray(env, bag->entry_count, (*env)->FindClass(env, "java/lang/String"), NULL);
+	jobjectArray array = (*env)->NewObjectArray(env, bag->entry_count, _CACHED_CLASS(String), NULL);
 	for (int i = 0; i < bag->entry_count; i++) {
 		const struct ResolvedBag_Entry entry = bag->entries[i];
 		struct Res_value value = entry.value;
@@ -352,7 +367,7 @@ JNIEXPORT jboolean JNICALL Java_android_content_res_AssetManager_resolveAttrs(JN
 	const jsize attrs_len = (*env)->GetArrayLength(env, java_attrs);
 	const jsize out_values_len = (*env)->GetArrayLength(env, out_java_values);
 	if (out_values_len < (attrs_len * STYLE_NUM_ENTRIES)) {
-		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IndexOutOfBoundsException"), "outValues too small");
+		(*env)->ThrowNew(env, _CACHED_CLASS(IndexOutOfBoundsException), "outValues too small");
 		return false;
 	}
 
@@ -643,13 +658,13 @@ JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_list(JNIEnv
 	struct AssetDir *asset_dir = AssetManager_openDir(asset_manager, path);
 	(*env)->ReleaseStringUTFChars(env, path_jstr, path);
 	if (!asset_dir) {
-		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/io/FileNotFoundException"), path);
+		(*env)->ThrowNew(env, _CACHED_CLASS(FileNotFoundException), path);
 		return NULL;
 	}
 
 	const size_t file_count = AssetDir_getFileCount(asset_dir);
 
-	jobjectArray array = (*env)->NewObjectArray(env, file_count, (*env)->FindClass(env, "java/lang/String"), NULL);
+	jobjectArray array = (*env)->NewObjectArray(env, file_count, _CACHED_CLASS(String), NULL);
 	if (!array)
 		return NULL;
 
@@ -685,7 +700,7 @@ JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_getLocales(
 	int i = 0;
 	while (locales[i] != NULL)
 		i++;
-	jobjectArray array = (*env)->NewObjectArray(env, i, (*env)->FindClass(env, "java/lang/String"), NULL);
+	jobjectArray array = (*env)->NewObjectArray(env, i, _CACHED_CLASS(String), NULL);
 	for (i = 0; locales[i] != NULL; i++) {
 		(*env)->SetObjectArrayElement(env, array, i, (*env)->NewStringUTF(env, locales[i]));
 		free(locales[i]);

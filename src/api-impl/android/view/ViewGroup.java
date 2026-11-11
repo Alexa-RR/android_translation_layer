@@ -4,11 +4,13 @@ import android.R;
 import android.animation.LayoutTransition;
 import android.annotation.UnsupportedAppUsage;
 import android.atl.GskCanvas;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.Slog;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -130,7 +132,7 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		}
 	}
 
-	/* We never call this ourselves */
+	@Export
 	@Override
 	/**
 	 * AOSP ViewGroup.dispatchTouchEvent: the children under the point get the event first (the native

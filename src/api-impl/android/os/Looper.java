@@ -16,6 +16,8 @@
 
 package android.os;
 
+import android.atl.ATLLoadedApp;
+import android.atl.annotation.Export;
 import android.util.Log;
 import android.util.PrefixPrinter;
 import android.util.Printer;
@@ -86,10 +88,13 @@ public final class Looper {
 	 * is created by the Android environment, so you should never need
 	 * to call this function yourself.  See also: {@link #prepare()}
 	 */
+	@Export
 	public static void prepareMainLooper() {
 		prepare(false);
 		synchronized (Looper.class) {
-			if (sMainLooper != null) {
+			// following check was added in AOSP Jelly Bean release. Disable it based on targetSdk for compatibility with old CTS
+			if (sMainLooper != null
+			    && ATLLoadedApp.getPrimaryApplication().pkg.applicationInfo.targetSdkVersion >= Build.VERSION_CODES.JELLY_BEAN) {
 				throw new IllegalStateException("The main Looper has already been prepared.");
 			}
 			sMainLooper = myLooper();
@@ -109,6 +114,7 @@ public final class Looper {
 	 * Run the message queue in this thread. Be sure to call
 	 * {@link #quit()} to end the loop.
 	 */
+	@Export
 	public static void loop() {
 		final Looper me = myLooper();
 		if (me == null) {

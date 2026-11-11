@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 
 /**
  * teslalinux: ActivityManager after AOSP (android14-release) for a runtime that is one app process
@@ -569,6 +570,7 @@ public class ActivityManager {
 	public static class RecentTaskInfo extends TaskInfo {
 		@Deprecated public int id;
 		@Deprecated public int persistentId;
+		@Deprecated public CharSequence description;
 		public int affiliatedTaskId;
 		public RecentTaskInfo() {
 		}
@@ -577,6 +579,7 @@ public class ActivityManager {
 	/** AOSP: a running task. */
 	public static class RunningTaskInfo extends TaskInfo {
 		@Deprecated public int id;
+		@Deprecated public Bitmap thumbnail;
 		@Deprecated public CharSequence description;
 		@Deprecated public int numRunning;
 		public RunningTaskInfo() {
@@ -675,12 +678,98 @@ public class ActivityManager {
 		return list;
 	}
 
+	/** AOSP (deprecated): only the caller's own tasks are returned since API 21. */
+	@Deprecated
+	public List<RecentTaskInfo> getRecentTasks(int maxNum, int flags) {
+		List<RecentTaskInfo> list = new ArrayList<>();
+		if (maxNum > 0 && !Activity.tlActivities().isEmpty()) {
+			RecentTaskInfo info = new RecentTaskInfo();
+			tlFillTaskInfo(info);
+			info.id = info.isRunning ? info.taskId : -1;
+			info.persistentId = info.taskId;
+			info.affiliatedTaskId = info.taskId;
+			list.add(info);
+		}
+		return list;
+	}
+
 	/** AOSP: the task is always the front one on this display. */
 	public void moveTaskToFront(int taskId, int flags) {
 		moveTaskToFront(taskId, flags, null);
 	}
 
 	public void moveTaskToFront(int taskId, int flags, Bundle options) {
+	}
+
+	/* ---------------- process errors (AOSP) ---------------- */
+
+	/** AOSP: information about a process in a crashed or ANR state. */
+	public static class ProcessErrorStateInfo implements Parcelable {
+		public static final int NO_ERROR = 0;
+		public static final int CRASHED = 1;
+		public static final int NOT_RESPONDING = 2;
+
+		public int condition;
+		public String processName;
+		public int pid;
+		public int uid;
+		public String tag;
+		public String shortMsg;
+		public String longMsg;
+		public String stackTrace;
+		public byte[] crashData = null;
+
+		public ProcessErrorStateInfo() {
+		}
+
+		public int describeContents() {
+			return 0;
+		}
+
+		public void writeToParcel(Parcel dest, int flags) {
+			dest.writeInt(condition);
+			dest.writeString(processName);
+			dest.writeInt(pid);
+			dest.writeInt(uid);
+			dest.writeString(tag);
+			dest.writeString(shortMsg);
+			dest.writeString(longMsg);
+			dest.writeString(stackTrace);
+		}
+
+		public void readFromParcel(Parcel source) {
+			condition = source.readInt();
+			processName = source.readString();
+			pid = source.readInt();
+			uid = source.readInt();
+			tag = source.readString();
+			shortMsg = source.readString();
+			longMsg = source.readString();
+			stackTrace = source.readString();
+		}
+
+		public static final Parcelable.Creator<ProcessErrorStateInfo> CREATOR = new Parcelable.Creator<ProcessErrorStateInfo>() {
+			public ProcessErrorStateInfo createFromParcel(Parcel source) {
+				return new ProcessErrorStateInfo(source);
+			}
+
+			public ProcessErrorStateInfo[] newArray(int size) {
+				return new ProcessErrorStateInfo[size];
+			}
+		};
+
+		private ProcessErrorStateInfo(Parcel source) {
+			readFromParcel(source);
+		}
+	}
+
+	/**
+	 * AOSP: the caller's processes that are in an error condition, or null when there is none.
+	 * The app is this runtime's only process and a crash or ANR ends it, so a running caller
+	 * never has one.
+	 */
+	public List<ProcessErrorStateInfo> getProcessesInErrorState() {
+		return null;
 	}
 
 	/* ---------------- services ---------------- */

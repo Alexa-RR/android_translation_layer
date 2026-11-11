@@ -16,6 +16,7 @@ import android.app.StatusBarManager;
 import android.app.UiModeManager;
 import android.app.job.JobScheduler;
 import android.atl.ATLLoadedApp;
+import android.atl.annotation.Export;
 import android.bluetooth.BluetoothManager;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -55,6 +56,7 @@ import android.os.Vibrator;
 import android.telephony.TelephonyManager;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.util.Slog;
 import android.view.Display;
 import android.view.LayoutInflater;
@@ -80,6 +82,7 @@ public abstract class Context {
 	private final static String TAG = "Context";
 
 	public static final int MODE_PRIVATE = 0;
+	public static final String ACCOUNT_SERVICE = "account";
 	public static final String ACTIVITY_SERVICE = "activity";
 	public static final String AUDIO_SERVICE = "audio";
 	public static final String CLIPBOARD_SERVICE = "clipboard";
@@ -179,6 +182,7 @@ public abstract class Context {
 	private static native void nativeRegisterUnifiedPush(String token, String application);
 	protected static native void nativeStartExternalService(Intent service);
 
+	@Export
 	static Application createApplication(long native_window) throws Exception {
 		Application application = ATLLoadedApp.getPrimaryApplication().getApplication();
 		application.native_window = native_window;
@@ -187,7 +191,8 @@ public abstract class Context {
 	}
 
 	public Context() {
-		Slog.v(TAG, "new Context! this one is: " + this);
+		if (Log.isLoggable(TAG, Log.VERBOSE))
+			Slog.v(TAG, "new Context! this one is: " + this);
 	}
 
 	public int checkPermission(String permission, int pid, int uid) {
@@ -221,6 +226,7 @@ public abstract class Context {
 		return Looper.getMainLooper();
 	}
 
+	@Export
 	public String getPackageName() {
 		return getApplicationInfo().packageName;
 	}
@@ -395,7 +401,8 @@ public abstract class Context {
 	private static Map<String, SharedPreferences> sharedPrefs = new HashMap<String, SharedPreferences>();
 
 	public SharedPreferences getSharedPreferences(String name, int mode) {
-		Slog.v(TAG, "\n\n...> getSharedPreferences(" + name + ")\n\n");
+		if (Log.isLoggable(TAG, Log.VERBOSE))
+			Slog.v(TAG, "\n\n...> getSharedPreferences(" + name + ")\n\n");
 		if (sharedPrefs.containsKey(name)) {
 			return sharedPrefs.get(name);
 		} else {
@@ -406,20 +413,24 @@ public abstract class Context {
 		}
 	}
 
+	@Export
 	public abstract ClassLoader getClassLoader();
 
+	@Export
 	public abstract ComponentName startService(Intent intent);
 
 	// TODO: do these both work? make them look more alike
 	public FileInputStream openFileInput(String name) throws FileNotFoundException {
-		Slog.v(TAG, "openFileInput called for: '" + name + "'");
+		if (Log.isLoggable(TAG, Log.VERBOSE))
+			Slog.v(TAG, "openFileInput called for: '" + name + "'");
 		File file = new File(getFilesDir(), name);
 
 		return new FileInputStream(file);
 	}
 
 	public FileOutputStream openFileOutput(String name, int mode) throws java.io.FileNotFoundException {
-		Slog.v(TAG, "openFileOutput called for: '" + name + "'");
+		if (Log.isLoggable(TAG, Log.VERBOSE))
+			Slog.v(TAG, "openFileOutput called for: '" + name + "'");
 		return new FileOutputStream(android.os.Environment.getExternalStorageDirectory().getPath() + "/files/" + name);
 	}
 
@@ -452,6 +463,7 @@ public abstract class Context {
 	public abstract boolean bindService(final Intent intent, final ServiceConnection serviceConnection, int flags);
 
 	/* For use from native code */
+	@Export
 	static Activity resolveActivityInternal(Intent intent) throws ReflectiveOperationException {
 		String className = null;
 		ATLLoadedApp primary = ATLLoadedApp.getPrimaryApplication();
@@ -476,6 +488,7 @@ public abstract class Context {
 		}
 	}
 
+	@Export
 	public abstract void startActivity(Intent intent);
 
 	public void startActivity(Intent intent, Bundle options) {
@@ -512,12 +525,21 @@ public abstract class Context {
 	public abstract boolean isRestricted();
 
 	public File getDatabasePath(String dbName) {
-		File databaseDir = new File(getDataDirFile(), "databases");
+		File databaseFile;
+		File databaseDir;
+		if (dbName.startsWith("/")) {
+			databaseFile = new File(dbName);
+			databaseDir = databaseFile.getParentFile();
+		} else {
+			databaseDir = new File(getDataDirFile(), "databases");
+			databaseFile = new File(databaseDir, dbName);
+		}
 		if (!databaseDir.exists())
 			databaseDir.mkdirs();
-		return new File(databaseDir, dbName);
+		return databaseFile;
 	}
 
+	@Export
 	public void sendBroadcast(Intent intent) {
 		if ("org.unifiedpush.android.distributor.REGISTER".equals(intent.getAction())) {
 			nativeRegisterUnifiedPush(intent.getStringExtra("token"), intent.getStringExtra("application"));
@@ -528,6 +550,10 @@ public abstract class Context {
 			}
 		}
 		ATLLoadedApp.getPrimaryApplication().receiveBroadcast(this, intent);
+	}
+
+	public void sendBroadcast(Intent intent, String receiverPermission) {
+		sendBroadcast(intent);
 	}
 
 	public abstract boolean stopService(Intent intent);
@@ -640,7 +666,7 @@ public abstract class Context {
 	}
 
 	public String getPackageResourcePath() {
-		return native_get_apk_path();
+		return get_atl_loaded_app().pkg.applicationInfo.sourceDir;
 	}
 
 	public abstract int getThemeResId();
@@ -746,6 +772,7 @@ public abstract class Context {
 	 * teslalinux: the window size changed (native-config.sh updated sys_config and the Display);
 	 * refresh the system resources' metrics and configuration like AOSP's ResourcesManager does.
 	 */
+	@Export
 	public static void tlOnConfigurationChanged() {
 		android.content.res.Resources sys = android.content.res.Resources.getSystem();
 		android.util.DisplayMetrics metrics = sys.getDisplayMetrics();

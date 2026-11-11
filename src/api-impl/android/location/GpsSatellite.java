@@ -35,6 +35,13 @@ public final class GpsSatellite {
     float mElevation;
     float mAzimuth;
 
+    /**
+     * An invalid satellite with PRN 0 (not in AOSP's API; ATL has always exposed it).
+     */
+    public GpsSatellite() {
+        this(0);
+    }
+
     GpsSatellite(int prn) {
         mPrn = prn;
     }

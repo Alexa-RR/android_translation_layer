@@ -2,6 +2,7 @@ package android.app;
 
 import android.app.ActionBar;
 import android.atl.ATLLoadedApp;
+import android.atl.annotation.Export;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -68,6 +69,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	 * @return  instance of main activity class
 	 * @throws Exception
 	 */
+	@Export
 	private static Activity createMainActivity(String className, long native_window, String uriString) throws ReflectiveOperationException {
 		Uri uri = uriString != null ? Uri.parse(uriString) : null;
 		if (className == null) {
@@ -153,6 +155,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return mVolumeControlStream;
 	}
 
+	@Export
 	protected void onCreate(Bundle savedInstanceState) {
 		Slog.i(TAG, "- onCreate - yay!");
 
@@ -164,11 +167,13 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return;
 	}
 
+	@Export
 	protected void onPostCreate(Bundle savedInstanceState) {
 		Slog.i(TAG, "- onPostCreate - yay!");
 		return;
 	}
 
+	@Export
 	protected void onStart() {
 		Slog.i(TAG, "- onStart - yay!");
 		/* tl_activity_transition: the pending transition animates this page change (AOSP app transition) */
@@ -195,6 +200,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return;
 	}
 
+	@Export
 	protected void onResume() {
 		Slog.i(TAG, "- onResume - yay!");
 
@@ -208,11 +214,13 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return;
 	}
 
+	@Export
 	protected void onPostResume() {
 		Slog.i(TAG, "- onPostResume - yay!");
 		return;
 	}
 
+	@Export
 	protected void onPause() {
 		dispatchActivityPaused(); // AOSP dispatches Paused first
 		Slog.i(TAG, "- onPause - yay!");
@@ -225,6 +233,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return;
 	}
 
+	@Export
 	protected void onStop() {
 		Slog.i(TAG, "- onStop - yay!");
 
@@ -236,6 +245,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return;
 	}
 
+	@Export
 	protected void onDestroy() {
 		Slog.i(TAG, "- onDestroy - yay!");
 
@@ -252,6 +262,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return;
 	}
 
+	@Export
 	public void onWindowFocusChanged(boolean hasFocus) {
 		Slog.i(TAG, "- onWindowFocusChanged - yay! (hasFocus: " + hasFocus + ")");
 
@@ -330,6 +341,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	);
 
 	// callback from native code
+	@Export
 	protected void fileChooserResultCallback(int requestCode, int resultCode, int action, String uri) {
 		onActivityResult(requestCode, resultCode, new Intent(FILE_CHOOSER_ACTIONS.get(action), uri != null ? Uri.parse(uri) : null));
 	}
@@ -553,6 +565,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return title;
 	}
 
+	@Export
 	public void onBackPressed() {
 		System.out.println("onBackPressed() called");
 		finish();
@@ -631,6 +644,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return getSharedPreferences(getLocalClassName(), mode);
 	}
 
+	@Export
 	protected void onNewIntent(Intent intent) {}
 
 	public final Activity getParent() {
@@ -1009,8 +1023,8 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	public void onTrimMemory(int level) {}
 
 	/* ---- AOSP activity-level lifecycle callbacks (API 29) and the perform*() entry points ----
-	 * ATL's native side calls performCreate/Start/Resume/Pause/Stop/Destroy (handle_cache.c, patched by
-	 * native-lifecycle.sh); each wraps the virtual on*() with the Pre/Post dispatch exactly as AOSP's
+	 * ATL's native side calls performCreate/Start/Resume/Pause/Stop/Destroy (android_app_Activity.c,
+	 * through the generated J__Activity__perform* upcall wrappers); each wraps the virtual on*() with the Pre/Post dispatch exactly as AOSP's
 	 * Activity does. The plain Created/Started/... dispatch sits in the base on*() methods, as in AOSP. */
 	private final java.util.ArrayList<Application.ActivityLifecycleCallbacks> mActivityLifecycleCallbacks = new java.util.ArrayList<>();
 
@@ -1048,6 +1062,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	private void dispatchActivityPostDestroyed() { Object[] c = collectActivityLifecycleCallbacks(); if (c != null) for (Object o : c) ((Application.ActivityLifecycleCallbacks) o).onActivityPostDestroyed(this); getApplication().dispatchActivityPostDestroyed(this); }
 
 	/** Native entry points: AOSP's perform*() ordering. */
+	@Export
 	public final void performCreate(android.os.Bundle savedInstanceState) {
 		if (savedInstanceState == null)
 			savedInstanceState = tlPendingSavedState; /* recreate(): the replaced instance's state */
@@ -1056,20 +1071,25 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	}
 	/** AOSP: a stopped activity gets onRestart before onStart. */
 	private boolean mStopped;
+	@Export
 	public final void performStart() {
 		if (mStopped) { mStopped = false; tlRequeryManagedCursors(); onRestart(); }
 		dispatchActivityPreStarted(); onStart(); tlAfterStart(); dispatchActivityPostStarted();
 	}
+	@Export
 	public final void performResume() {
 		tlDispatchPendingResults(); /* AOSP: results of finished activities arrive right before onResume */
 		dispatchActivityPreResumed(); onResume(); dispatchActivityPostResumed();
 		if (tlResumeUptime == 0)
 			tlResumeUptime = android.os.SystemClock.uptimeMillis();
 	}
+	@Export
 	public final void performPause() { dispatchActivityPrePaused(); onPause(); dispatchActivityPostPaused(); }
+	@Export
 	public final void performStop() {
 		dispatchActivityPreStopped(); onStop(); mStopped = true; tlAfterStop(); dispatchActivityPostStopped();
 	}
+	@Export
 	public final void performDestroy() {
 		dispatchActivityPreDestroyed(); onDestroy(); dispatchActivityPostDestroyed();
 		tlAfterDestroy();
@@ -1168,6 +1188,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return false;
 	}
 	/** teslalinux: ATL's window focus entry (AOSP ViewRootImpl): the decor views first, then this activity. */
+	@Export
 	public void tlWindowFocusChanged(boolean hasFocus) {
 		View decor = window != null ? window.getDecorView() : null;
 		if (decor != null)
@@ -1879,5 +1900,54 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 			for (int i = 0; i < group.getChildCount(); i++)
 				tlDumpView(prefix + "  ", writer, group.getChildAt(i));
 		}
+	}
+
+	/**
+	 * AOSP: hierarchical Up navigation from the manifest's parent activity. A target in another task
+	 * affinity rebuilds the parent stack (TaskStackBuilder) and finishes this affinity; otherwise
+	 * navigateUpTo returns to the parent.
+	 */
+	public boolean onNavigateUp() {
+		Intent upIntent = getParentActivityIntent();
+		if (upIntent != null) {
+			android.content.pm.ActivityInfo info = tlActivityInfo();
+			if (info == null || info.taskAffinity == null) {
+				// Activities with a null affinity are special; they really shouldn't
+				// specify a parent activity intent in the first place. Just finish
+				// the current activity and call it a day.
+				finish();
+			} else if (shouldUpRecreateTask(upIntent)) {
+				TaskStackBuilder b = TaskStackBuilder.create(this);
+				onCreateNavigateUpTaskStack(b);
+				onPrepareNavigateUpTaskStack(b);
+				b.startActivities();
+
+				// We can't finishAffinity if we have a result.
+				// Fall back and simply finish the current activity instead.
+				boolean haveResult;
+				synchronized (this) {
+					haveResult = mResultCode != RESULT_CANCELED || mResultData != null;
+				}
+				if (haveResult) {
+					Slog.i(TAG, "onNavigateUp only finishing topmost activity to return a result");
+					finish();
+				} else {
+					finishAffinity();
+				}
+			} else {
+				navigateUpTo(upIntent);
+			}
+			return true;
+		}
+		return false;
+	}
+
+	/** AOSP: the default up task stack is the parent stack of this activity. */
+	public void onCreateNavigateUpTaskStack(TaskStackBuilder builder) {
+		builder.addParentStack(this);
+	}
+
+	/** AOSP: a hook to adjust the up task stack before it is started; the base class adds nothing. */
+	public void onPrepareNavigateUpTaskStack(TaskStackBuilder builder) {
 	}
 }

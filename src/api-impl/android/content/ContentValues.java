@@ -104,6 +104,10 @@ public final class ContentValues {
 		mValues.putAll(other.mValues);
 	}
 
+	public void fillIn(ContentValues other) {
+		mValues.putAll(other.mValues);
+	}
+
 	/**
 	 * Adds a value to the set.
 	 *
@@ -191,6 +195,33 @@ public final class ContentValues {
 	 */
 	public void putNull(String key) {
 		mValues.put(key, null);
+	}
+
+	/** {@hide} */
+	public void putObject(String key, Object value) {
+		if (value == null) {
+			putNull(key);
+		} else if (value instanceof String) {
+			put(key, (String)value);
+		} else if (value instanceof Byte) {
+			put(key, (Byte)value);
+		} else if (value instanceof Short) {
+			put(key, (Short)value);
+		} else if (value instanceof Integer) {
+			put(key, (Integer)value);
+		} else if (value instanceof Long) {
+			put(key, (Long)value);
+		} else if (value instanceof Float) {
+			put(key, (Float)value);
+		} else if (value instanceof Double) {
+			put(key, (Double)value);
+		} else if (value instanceof Boolean) {
+			put(key, (Boolean)value);
+		} else if (value instanceof byte[]) {
+			put(key, (byte[])value);
+		} else {
+			throw new IllegalArgumentException("Unsupported type " + value.getClass());
+		}
 	}
 
 	/**

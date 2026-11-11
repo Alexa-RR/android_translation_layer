@@ -138,6 +138,15 @@ public final class PowerManager {
         // no display timeout to reset: the car's browser shows the screen while it is connected
     }
 
+    /**
+     * AOSP (hidden): forces the device to sleep. It needs android.permission.DEVICE_POWER, which only
+     * system processes hold, so an app gets the SecurityException the power manager service throws.
+     */
+    public void goToSleep(long time) {
+        throw new SecurityException("Neither user " + Process.myUid() + " nor current process has "
+                + "android.permission.DEVICE_POWER.");
+    }
+
     /** AOSP: whether the device is interactive (always: no screen of its own to turn off). */
     public boolean isInteractive() {
         return true;

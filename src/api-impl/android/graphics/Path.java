@@ -10,10 +10,18 @@ import android.util.Log;
 public class Path {
 
 	public enum FillType {
-		WINDING,
-		EVEN_ODD,
-		INVERSE_WINDING,
-		INVERSE_EVEN_ODD,
+		WINDING(0, false),         // GSK_FILL_RULE_WINDING
+		EVEN_ODD(1, false),        // GSK_FILL_RULE_EVEN_ODD
+		INVERSE_WINDING(0, true),  // GSK_FILL_RULE_WINDING
+		INVERSE_EVEN_ODD(1, true); // GSK_FILL_RULE_EVEN_ODD
+
+		public int fill_rule;
+		boolean inverse;
+
+		private FillType(int fill_rule, boolean inverse) {
+			this.fill_rule = fill_rule;
+			this.inverse = inverse;
+		}
 	}
 
 	public enum Direction {
@@ -22,11 +30,17 @@ public class Path {
 	}
 
 	public enum Op {
-		DIFFERENCE,
-		INTERSECT,
-		UNION,
-		XOR,
-		REVERSE_DIFFERENCE,
+		DIFFERENCE(Region.Op.DIFFERENCE),
+		INTERSECT(Region.Op.INTERSECT),
+		UNION(Region.Op.UNION),
+		XOR(Region.Op.XOR),
+		REVERSE_DIFFERENCE(Region.Op.REVERSE_DIFFERENCE);
+
+		private Region.Op region_op;
+
+		private Op(Region.Op region_op) {
+			this.region_op = region_op;
+		}
 	}
 
 	private long builder;
@@ -269,6 +283,26 @@ public class Path {
 	 */
 	private static final boolean ATL_DEBUG_PATHOP = System.getenv("ATL_DEBUG_PATHOP") != null;
 	public boolean op(Path path1, Path path2, Op op) {
+		// fast path for composeUI ShapeContainingUtil.isInPath, which puts a tiny rectangle in one of the paths to represent a point
+		if (op == Op.INTERSECT) {
+			RectF bounds1 = new RectF();
+			RectF bounds2 = new RectF();
+			path1.computeBounds(bounds1, false);
+			path2.computeBounds(bounds2, false);
+			if (bounds2.width() < 1 && bounds2.height() < 1) {
+				if (native_contains(path1.getGskPath(), path1.fillType.fill_rule, path1.fillType.inverse, bounds2.centerX(), bounds2.centerY()))
+					set(path2);
+				else
+					reset();
+				return true;
+			} else if (bounds1.width() < 1 && bounds1.height() < 1) {
+				if (native_contains(path2.getGskPath(), path2.fillType.fill_rule, path2.fillType.inverse, bounds1.centerX(), bounds1.centerY()))
+					set(path1);
+				else
+					reset();
+				return true;
+			}
+		}
 		long result = native_op(path1.getGskPath(), path2.getGskPath(), op.ordinal());
 		if (ATL_DEBUG_PATHOP) {
 			RectF b1 = new RectF(), b2 = new RectF();
@@ -728,4 +762,5 @@ public class Path {
 	static java.util.ArrayList<float[]> tlFlattenPublic(float[] ops, float err) {
 		return tlFlatten(ops, err, false);
 	}
+	private static native boolean native_contains(long path, int fill_rule, boolean inverse, float x, float y);
 }

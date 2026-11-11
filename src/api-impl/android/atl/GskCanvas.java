@@ -1,5 +1,6 @@
 package android.atl;
 
+import android.atl.annotation.Export;
 import android.graphics.*;
 import android.view.DisplayListCanvas;
 import android.view.RenderNode;
@@ -17,6 +18,7 @@ public class GskCanvas extends DisplayListCanvas {
 
 	private static Paint default_paint = new Paint();
 
+	@Export
 	public GskCanvas(long snapshot) {
 		this.snapshot = snapshot;
 		state_stack.push(new Matrix());
@@ -157,7 +159,7 @@ public class GskCanvas extends DisplayListCanvas {
 		final Path.FillType ft = path.getFillType();
 		final long p = paint != null ? paint.paint : default_paint.paint;
 		if (ft == null || ft == Path.FillType.WINDING) {
-			native_drawPath(snapshot, path.getGskPath(), p);
+			native_drawPath(snapshot, path.getGskPath(), 0 /* GSK_FILL_RULE_WINDING */, p);
 			return;
 		}
 		Rect bounds = new Rect();
@@ -305,7 +307,7 @@ public class GskCanvas extends DisplayListCanvas {
 	protected native void native_drawBitmap(long snapshot, long texture, int x, int y, int width, int height, long paint);
 	protected native void native_drawBitmap(long snapshot, long texture, int x, int y, int width, int height, int src_x, int src_y, int src_width, int src_height, long paint);
 	protected native void native_drawRect(long snapshot, float left, float top, float right, float bottom, long paint);
-	protected native void native_drawPath(long snapshot, long path, long paint);
+	protected native void native_drawPath(long snapshot, long path, int fill_rule, long paint);
 	protected native void native_translate(long snapshot, float dx, float dy);
 	protected native void native_rotate(long snapshot, float degrees);
 	protected native void native_save(long snapshot);

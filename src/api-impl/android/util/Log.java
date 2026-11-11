@@ -396,4 +396,5 @@ public final class Log {
 	 * @hide
 	 */
 	public static native int println_native(int bufID, int priority, String tag, String msg);
+	private static native boolean native_is_loggable(int priority, String tag);
 }

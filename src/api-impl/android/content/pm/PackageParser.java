@@ -456,6 +456,8 @@ public class PackageParser {
 			if (N > 0) {
 				pi.signatures = new Signature[N];
 				System.arraycopy(p.mSignatures, 0, pi.signatures, 0, N);
+			} else {
+				pi.signatures = new Signature[0];
 			}
 		}
 		if ((flags & PackageManager.GET_SIGNING_CERTIFICATES) != 0 && p.mSignatures != null) {

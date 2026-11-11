@@ -17,6 +17,7 @@
 package android.widget;
 
 import android.annotation.UnsupportedAppUsage;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.util.AttributeSet;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -53,6 +54,7 @@ public class SeekBar extends AbsSeekBar {
          *                 min is 0 and max is 100.)
          * @param fromUser True if the progress change was initiated by the user.
          */
+        @Export
         void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser);
 
         /**
@@ -60,6 +62,7 @@ public class SeekBar extends AbsSeekBar {
          * to disable advancing the seekbar.
          * @param seekBar The SeekBar in which the touch gesture began
          */
+        @Export
         void onStartTrackingTouch(SeekBar seekBar);
 
         /**
@@ -67,6 +70,7 @@ public class SeekBar extends AbsSeekBar {
          * to re-enable advancing the seekbar.
          * @param seekBar The SeekBar in which the touch gesture began
          */
+        @Export
         void onStopTrackingTouch(SeekBar seekBar);
     }
 

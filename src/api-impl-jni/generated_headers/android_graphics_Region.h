@@ -9,86 +9,6 @@ extern "C" {
 #endif
 /*
  * Class:     android_graphics_Region
- * Method:    isEmpty
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_isEmpty
-  (JNIEnv *, jobject);
-
-/*
- * Class:     android_graphics_Region
- * Method:    isRect
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_isRect
-  (JNIEnv *, jobject);
-
-/*
- * Class:     android_graphics_Region
- * Method:    isComplex
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_isComplex
-  (JNIEnv *, jobject);
-
-/*
- * Class:     android_graphics_Region
- * Method:    contains
- * Signature: (II)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_contains
-  (JNIEnv *, jobject, jint, jint);
-
-/*
- * Class:     android_graphics_Region
- * Method:    quickContains
- * Signature: (IIII)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_quickContains
-  (JNIEnv *, jobject, jint, jint, jint, jint);
-
-/*
- * Class:     android_graphics_Region
- * Method:    quickReject
- * Signature: (IIII)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_quickReject__IIII
-  (JNIEnv *, jobject, jint, jint, jint, jint);
-
-/*
- * Class:     android_graphics_Region
- * Method:    quickReject
- * Signature: (Landroid/graphics/Region;)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_quickReject__Landroid_graphics_Region_2
-  (JNIEnv *, jobject, jobject);
-
-/*
- * Class:     android_graphics_Region
- * Method:    translate
- * Signature: (IILandroid/graphics/Region;)V
- */
-JNIEXPORT void JNICALL Java_android_graphics_Region_translate
-  (JNIEnv *, jobject, jint, jint, jobject);
-
-/*
- * Class:     android_graphics_Region
- * Method:    scale
- * Signature: (FLandroid/graphics/Region;)V
- */
-JNIEXPORT void JNICALL Java_android_graphics_Region_scale
-  (JNIEnv *, jobject, jfloat, jobject);
-
-/*
- * Class:     android_graphics_Region
- * Method:    nativeEquals
- * Signature: (JJ)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeEquals
-  (JNIEnv *, jclass, jlong, jlong);
-
-/*
- * Class:     android_graphics_Region
  * Method:    nativeConstructor
  * Signature: ()J
  */
@@ -122,10 +42,34 @@ JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeSetRect
 /*
  * Class:     android_graphics_Region
  * Method:    nativeSetPath
- * Signature: (JJJ)Z
+ * Signature: (JJJIZ)Z
  */
 JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeSetPath
-  (JNIEnv *, jclass, jlong, jlong, jlong);
+  (JNIEnv *, jclass, jlong, jlong, jlong, jint, jboolean);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeIsEmpty
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeIsEmpty
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeIsRect
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeIsRect
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeIsComplex
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeIsComplex
+  (JNIEnv *, jclass, jlong);
 
 /*
  * Class:     android_graphics_Region
@@ -137,43 +81,91 @@ JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeGetBounds
 
 /*
  * Class:     android_graphics_Region
- * Method:    nativeOp
- * Signature: (JIIIII)Z
+ * Method:    nativeGetBoundaryPathRects
+ * Signature: (J)[I
  */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeOp__JIIIII
-  (JNIEnv *, jclass, jlong, jint, jint, jint, jint, jint);
-
-/*
- * Class:     android_graphics_Region
- * Method:    nativeOp
- * Signature: (JLandroid/graphics/Rect;JI)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeOp__JLandroid_graphics_Rect_2JI
-  (JNIEnv *, jclass, jlong, jobject, jlong, jint);
-
-/*
- * Class:     android_graphics_Region
- * Method:    nativeOp
- * Signature: (JJJI)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeOp__JJJI
-  (JNIEnv *, jclass, jlong, jlong, jlong, jint);
-
-/*
- * Class:     android_graphics_Region
- * Method:    nativeGetRectCount
- * Signature: (J)I
- */
-JNIEXPORT jint JNICALL Java_android_graphics_Region_nativeGetRectCount
+JNIEXPORT jintArray JNICALL Java_android_graphics_Region_nativeGetBoundaryPathRects
   (JNIEnv *, jclass, jlong);
 
 /*
  * Class:     android_graphics_Region
- * Method:    nativeGetRect
- * Signature: (JILandroid/graphics/Rect;)Z
+ * Method:    nativeContains
+ * Signature: (JII)Z
  */
-JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeGetRect
-  (JNIEnv *, jclass, jlong, jint, jobject);
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeContains
+  (JNIEnv *, jclass, jlong, jint, jint);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeQuickContains
+ * Signature: (JIIII)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeQuickContains
+  (JNIEnv *, jclass, jlong, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeQuickRejectRect
+ * Signature: (JIIII)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeQuickRejectRect
+  (JNIEnv *, jclass, jlong, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeQuickRejectRegion
+ * Signature: (JJ)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeQuickRejectRegion
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeTranslate
+ * Signature: (JIIJ)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Region_nativeTranslate
+  (JNIEnv *, jclass, jlong, jint, jint, jlong);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeScale
+ * Signature: (JFJ)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Region_nativeScale
+  (JNIEnv *, jclass, jlong, jfloat, jlong);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeOpRect
+ * Signature: (JIIIII)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeOpRect
+  (JNIEnv *, jclass, jlong, jint, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeOpRegionRect
+ * Signature: (JJIIIII)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeOpRegionRect
+  (JNIEnv *, jclass, jlong, jlong, jint, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeOpRegionRegion
+ * Signature: (JJJI)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeOpRegionRegion
+  (JNIEnv *, jclass, jlong, jlong, jlong, jint);
+
+/*
+ * Class:     android_graphics_Region
+ * Method:    nativeEquals
+ * Signature: (JJ)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Region_nativeEquals
+  (JNIEnv *, jclass, jlong, jlong);
 
 /*
  * Class:     android_graphics_Region

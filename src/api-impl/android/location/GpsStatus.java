@@ -160,7 +160,10 @@ public final class GpsStatus {
         return new GpsStatus();
     }
 
-    private GpsStatus() {
+    /**
+     * An empty status (AOSP's constructor is private; ATL has always exposed it).
+     */
+    public GpsStatus() {
     }
 
     /**

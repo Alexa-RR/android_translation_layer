@@ -1,7 +1,6 @@
 #include <gtk/gtk.h>
 
 #include "defines.h"
-#include "util.h"
 
 #include "generated_headers/android_view_Window.h"
 

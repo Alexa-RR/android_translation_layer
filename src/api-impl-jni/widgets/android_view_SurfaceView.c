@@ -176,7 +176,6 @@ void surface_view_widget_set_texture(SurfaceViewWidget *surface_view_widget, Gdk
 struct jni_callback_data {
 	JavaVM *jvm;
 	jobject this;
-	jclass this_class;
 	gint resize_width;
 	gint resize_height;
 	guint destroy_source; /* tl_surface_destroy_order: pending surfaceDestroyed */
@@ -189,7 +188,7 @@ static gboolean on_resize_delayed(struct jni_callback_data *d)
 
 	// TODO: are there cases where returning RGBA_8888 is a bad idea?
 	// NOTE: we want to call the private method of android.view.SurfaceView, not the related method with this name in the API
-	(*env)->CallVoidMethod(env, d->this, handle_cache.surface_view.surfaceChanged, 1 /*RGBA_8888*/, d->resize_width, d->resize_height);
+	J__SurfaceView__surfaceChanged(env, d->this, 1 /*RGBA_8888*/, d->resize_width, d->resize_height);
 
 	return G_SOURCE_REMOVE;
 }
@@ -208,7 +207,7 @@ static gboolean on_realize_delayed(struct jni_callback_data *d)
 	(*d->jvm)->GetEnv(d->jvm, (void **)&env, JNI_VERSION_1_6);
 
 	// NOTE: we want to call the private method of android.view.SurfaceView, not the related method with this name in the API
-	(*env)->CallVoidMethod(env, d->this, handle_cache.surface_view.surfaceCreated);
+	J__SurfaceView__surfaceCreated(env, d->this);
 
 	return G_SOURCE_REMOVE;
 }
@@ -220,7 +219,7 @@ static gboolean on_unrealize_delayed(struct jni_callback_data *d)
 {
 	d->destroy_source = 0;
 	JNIEnv *env = get_jni_env();
-	jmethodID surface_destroyed = _METHOD(handle_cache.surface_view.class, "surfaceDestroyed", "()V"); /* private: look it up on SurfaceView itself */
+	jmethodID surface_destroyed = _METHOD(_CACHED_CLASS(SurfaceView), "surfaceDestroyed", "()V"); /* private: look it up on SurfaceView itself */
 	(*env)->CallVoidMethod(env, d->this, surface_destroyed);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
@@ -272,7 +271,6 @@ JNIEXPORT jlong JNICALL Java_android_view_SurfaceView_native_1constructor(JNIEnv
 	struct jni_callback_data *callback_data = malloc(sizeof(struct jni_callback_data));
 	callback_data->jvm = jvm;
 	callback_data->this = _REF(this);
-	callback_data->this_class = _REF((*env)->FindClass(env, "android/view/SurfaceView"));
 	callback_data->destroy_source = 0;
 
 	g_signal_connect(dummy, "resize", G_CALLBACK(on_resize), callback_data);
@@ -311,7 +309,8 @@ JNIEXPORT void JNICALL Java_android_view_SurfaceView_native_1postSnapshot(JNIEnv
 	GskRenderer *renderer = g_object_new(renderer_type, NULL);
 	gsk_renderer_realize(renderer, NULL, NULL);
 	GskRenderNode *node = gtk_snapshot_free_to_node(snapshot);
-	GdkTexture *texture = gsk_renderer_render_texture(renderer, node, NULL);
+	graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, gtk_widget_get_width(view), gtk_widget_get_height(view));
+	GdkTexture *texture = gsk_renderer_render_texture(renderer, node, &bounds);
 	gsk_render_node_unref(node);
 	gsk_renderer_unrealize(renderer);
 	g_object_unref(renderer);

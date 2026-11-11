@@ -17,9 +17,11 @@
 package android.widget;
 import android.view.KeyEvent;
 
+import android.atl.annotation.Export;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.drawable.Drawable;
 import android.view.Gravity;
 import android.view.Menu;
@@ -135,6 +137,7 @@ public class PopupMenu {
 	protected native void native_show(long popover, long anchor);
 
 	// callback from native code
+	@Export
 	protected void menuItemClickCallback(final int id) {
 		// (layout) AOSP MenuItemImpl.invoke: the item's listener, the popup's, the intent, the provider
 		final MenuItem item = getMenu().findItem(id);

@@ -20,8 +20,10 @@ import android.os.Parcel;
 import android.os.Parcelable;
 
 /**
- * AOSP Region (a set of integer rectangles with boolean operations), backed by a cairo region in
- * ATL (teslalinux, native/atl_region.c) instead of an SkRegion. Paths are rasterised with cairo.
+ * Region represents a set of integer-aligned pixels, stored as a collection of
+ * (non-overlapping) rectangles. It is backed by a cairo_region_t, which is the
+ * same kind of data structure that Skia's SkRegion uses on AOSP
+ * (graphics/android_graphics_Region.c). Paths are rasterised with cairo.
  */
 public class Region implements Parcelable {
 	/** @hide */
@@ -92,20 +94,28 @@ public class Region implements Parcelable {
 	 * Set the region to the area described by the path and clip.
 	 * Return true if the resulting region is non-empty. This produces a region
 	 * that is identical to the pixels that would be drawn by the path
-	 * (with no antialiasing).
+	 * (with no antialiasing). The path's fill type is honoured; an inverse fill
+	 * covers the clip minus the path.
 	 */
 	public boolean setPath(Path path, Region clip) {
-		return nativeSetPath(mNativeRegion, path.getGskPath(), clip.mNativeRegion);
+		Path.FillType fillType = path.getFillType();
+		return nativeSetPath(mNativeRegion, path.getGskPath(), clip == null ? 0 : clip.mNativeRegion, fillType.fill_rule, fillType.inverse);
 	}
 
 	/** Return true if this region is empty */
-	public native boolean isEmpty();
+	public boolean isEmpty() {
+		return nativeIsEmpty(mNativeRegion);
+	}
 
 	/** Return true if the region contains a single rectangle */
-	public native boolean isRect();
+	public boolean isRect() {
+		return nativeIsRect(mNativeRegion);
+	}
 
 	/** Return true if the region contains more than one rectangle */
-	public native boolean isComplex();
+	public boolean isComplex() {
+		return nativeIsComplex(mNativeRegion);
+	}
 
 	/** Return a new Rect set to the bounds of the region. If the region is empty, the Rect will be set to [0, 0, 0, 0] */
 	public Rect getBounds() {
@@ -131,18 +141,18 @@ public class Region implements Parcelable {
 
 	/** Set the path to the boundary of the region (one rectangle per span). */
 	public boolean getBoundaryPath(Path path) {
+		int[] rects = nativeGetBoundaryPathRects(mNativeRegion);
 		path.rewind();
-		int n = nativeGetRectCount(mNativeRegion);
-		Rect r = new Rect();
-		for (int i = 0; i < n; i++) {
-			nativeGetRect(mNativeRegion, i, r);
-			path.addRect(r.left, r.top, r.right, r.bottom, Path.Direction.CW);
+		for (int i = 0; i < rects.length; i += 4) {
+			path.addRect(rects[i], rects[i + 1], rects[i + 2], rects[i + 3], Path.Direction.CW);
 		}
-		return n > 0;
+		return rects.length > 0;
 	}
 
 	/** Return true if the region contains the specified point */
-	public native boolean contains(int x, int y);
+	public boolean contains(int x, int y) {
+		return nativeContains(mNativeRegion, x, y);
+	}
 
 	/** Return true if the region is a single rectangle (not complex) and it contains the specified rectangle. */
 	public boolean quickContains(Rect r) {
@@ -150,7 +160,9 @@ public class Region implements Parcelable {
 	}
 
 	/** Return true if the region is a single rectangle (not complex) and it contains the specified rectangle. */
-	public native boolean quickContains(int left, int top, int right, int bottom);
+	public boolean quickContains(int left, int top, int right, int bottom) {
+		return nativeQuickContains(mNativeRegion, left, top, right, bottom);
+	}
 
 	/** Return true if the region is empty, or if the specified rectangle does not intersect the region. */
 	public boolean quickReject(Rect r) {
@@ -158,26 +170,36 @@ public class Region implements Parcelable {
 	}
 
 	/** Return true if the region is empty, or if the specified rectangle does not intersect the region. */
-	public native boolean quickReject(int left, int top, int right, int bottom);
+	public boolean quickReject(int left, int top, int right, int bottom) {
+		return nativeQuickRejectRect(mNativeRegion, left, top, right, bottom);
+	}
 
 	/** Return true if the region is empty, or if the specified region does not intersect the region. */
-	public native boolean quickReject(Region rgn);
+	public boolean quickReject(Region rgn) {
+		if (rgn == null)
+			return true;
+		return nativeQuickRejectRegion(mNativeRegion, rgn.mNativeRegion);
+	}
 
 	/** Translate the region by [dx, dy]. If the region is empty, do nothing. */
 	public void translate(int dx, int dy) {
-		translate(dx, dy, null);
+		nativeTranslate(mNativeRegion, dx, dy, 0);
 	}
 
 	/** Set the dst region to the result of translating this region by [dx, dy]. If this region is empty, then dst will be set to empty. */
-	public native void translate(int dx, int dy, Region dst);
+	public void translate(int dx, int dy, Region dst) {
+		nativeTranslate(mNativeRegion, dx, dy, dst == null ? 0 : dst.mNativeRegion);
+	}
 
 	/** Scale the region by the given scale amount. @hide */
 	public void scale(float scale) {
-		scale(scale, null);
+		nativeScale(mNativeRegion, scale, 0);
 	}
 
 	/** Set the dst region to the result of scaling this region by the given scale amount. @hide */
-	public native void scale(float scale, Region dst);
+	public void scale(float scale, Region dst) {
+		nativeScale(mNativeRegion, scale, dst == null ? 0 : dst.mNativeRegion);
+	}
 
 	public final boolean union(Rect r) {
 		return op(r, Op.UNION);
@@ -185,12 +207,12 @@ public class Region implements Parcelable {
 
 	/** Perform the specified Op on this region and the specified rect. Return true if the result of the op is not empty. */
 	public boolean op(Rect r, Op op) {
-		return nativeOp(mNativeRegion, r.left, r.top, r.right, r.bottom, op.nativeInt);
+		return nativeOpRect(mNativeRegion, r.left, r.top, r.right, r.bottom, op.nativeInt);
 	}
 
 	/** Perform the specified Op on this region and the specified rect. Return true if the result of the op is not empty. */
 	public boolean op(int left, int top, int right, int bottom, Op op) {
-		return nativeOp(mNativeRegion, left, top, right, bottom, op.nativeInt);
+		return nativeOpRect(mNativeRegion, left, top, right, bottom, op.nativeInt);
 	}
 
 	/** Perform the specified Op on this region and the specified region. Return true if the result of the op is not empty. */
@@ -200,22 +222,26 @@ public class Region implements Parcelable {
 
 	/** Set this region to the result of performing the Op on the specified rect and region. Return true if the result is not empty. */
 	public boolean op(Rect rect, Region region, Op op) {
-		return nativeOp(mNativeRegion, rect, region.mNativeRegion, op.nativeInt);
+		return nativeOpRegionRect(mNativeRegion, region.mNativeRegion, rect.left, rect.top, rect.right, rect.bottom, op.nativeInt);
 	}
 
 	/** Set this region to the result of performing the Op on the specified regions. Return true if the result is not empty. */
 	public boolean op(Region region1, Region region2, Op op) {
-		return nativeOp(mNativeRegion, region1.mNativeRegion, region2.mNativeRegion, op.nativeInt);
+		return nativeOpRegionRegion(mNativeRegion, region1.mNativeRegion, region2.mNativeRegion, op.nativeInt);
 	}
 
 	/** @hide the number of rectangles the region consists of (RegionIterator) */
 	public int getRectCount() {
-		return nativeGetRectCount(mNativeRegion);
+		return nativeGetBoundaryPathRects(mNativeRegion).length / 4;
 	}
 
 	/** @hide the i-th rectangle of the region (RegionIterator) */
 	public boolean getRect(int index, Rect r) {
-		return nativeGetRect(mNativeRegion, index, r);
+		int[] rects = nativeGetBoundaryPathRects(mNativeRegion);
+		if (index < 0 || index * 4 >= rects.length)
+			return false;
+		r.set(rects[index * 4], rects[index * 4 + 1], rects[index * 4 + 2], rects[index * 4 + 3]);
+		return true;
 	}
 
 	@Override
@@ -250,16 +276,10 @@ public class Region implements Parcelable {
 	/** Write the region and its rectangles to the parcel (a count and four ints per rectangle). */
 	@Override
 	public void writeToParcel(Parcel p, int flags) {
-		int n = nativeGetRectCount(mNativeRegion);
-		p.writeInt(n);
-		Rect r = new Rect();
-		for (int i = 0; i < n; i++) {
-			nativeGetRect(mNativeRegion, i, r);
-			p.writeInt(r.left);
-			p.writeInt(r.top);
-			p.writeInt(r.right);
-			p.writeInt(r.bottom);
-		}
+		int[] rects = nativeGetBoundaryPathRects(mNativeRegion);
+		p.writeInt(rects.length / 4);
+		for (int i = 0; i < rects.length; i++)
+			p.writeInt(rects[i]);
 	}
 
 	@Override
@@ -298,17 +318,25 @@ public class Region implements Parcelable {
 		return mNativeRegion;
 	}
 
-	private static native boolean nativeEquals(long native_r1, long native_r2);
 	private static native long nativeConstructor();
-	private static native void nativeDestructor(long native_region);
-	private static native void nativeSetRegion(long native_dst, long native_src);
-	private static native boolean nativeSetRect(long native_dst, int left, int top, int right, int bottom);
-	private static native boolean nativeSetPath(long native_dst, long native_path, long native_clip);
-	private static native boolean nativeGetBounds(long native_region, Rect rect);
-	private static native boolean nativeOp(long native_dst, int left, int top, int right, int bottom, int op);
-	private static native boolean nativeOp(long native_dst, Rect rect, long native_region, int op);
-	private static native boolean nativeOp(long native_dst, long native_region1, long native_region2, int op);
-	private static native int nativeGetRectCount(long native_region);
-	private static native boolean nativeGetRect(long native_region, int index, Rect rect);
-	private static native String nativeToString(long native_region);
+	private static native void nativeDestructor(long region);
+	private static native void nativeSetRegion(long dst, long src);
+	private static native boolean nativeSetRect(long dst, int left, int top, int right, int bottom);
+	private static native boolean nativeSetPath(long dst, long path, long clip, int fill_type, boolean inverse);
+	private static native boolean nativeIsEmpty(long region);
+	private static native boolean nativeIsRect(long region);
+	private static native boolean nativeIsComplex(long region);
+	private static native boolean nativeGetBounds(long region, Rect bounds);
+	private static native int[] nativeGetBoundaryPathRects(long region);
+	private static native boolean nativeContains(long region, int x, int y);
+	private static native boolean nativeQuickContains(long region, int left, int top, int right, int bottom);
+	private static native boolean nativeQuickRejectRect(long region, int left, int top, int right, int bottom);
+	private static native boolean nativeQuickRejectRegion(long region, long other);
+	private static native void nativeTranslate(long region, int dx, int dy, long dst);
+	private static native void nativeScale(long region, float scale, long dst);
+	private static native boolean nativeOpRect(long dst, int left, int top, int right, int bottom, int op);
+	private static native boolean nativeOpRegionRect(long dst, long other, int left, int top, int right, int bottom, int op);
+	private static native boolean nativeOpRegionRegion(long dst, long region1, long region2, int op);
+	private static native boolean nativeEquals(long region1, long region2);
+	private static native String nativeToString(long region);
 }

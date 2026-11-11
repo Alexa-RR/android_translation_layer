@@ -264,3 +264,8 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativePathClipKeep(JNIEnv *
 	gsk_render_node_unref(color);
 	return _INTPTR(masked);
 }
+
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeCreateEmpyNode(JNIEnv *env, jobject this)
+{
+	return _INTPTR(gsk_container_node_new(NULL, 0));
+}

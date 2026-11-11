@@ -17,6 +17,7 @@
 package android.app;
 
 import android.R;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.DialogInterface;
@@ -67,7 +68,7 @@ public class Dialog implements DialogInterface, Window.Callback, KeyEvent.Callba
 	/* ---- ATL native dialog layer (android_app_Dialog.c) ---- */
 	protected long nativePtr;
 
-	protected native long nativeInit();
+	protected native long nativeInit(long decor_view);
 	private native void nativeSetTitle(long ptr, String title);
 	private native void nativeSetContentView(long ptr, long widget);
 	private native void nativeShow(long ptr);
@@ -141,7 +142,7 @@ public class Dialog implements DialogInterface, Window.Callback, KeyEvent.Callba
 		}
 
 		mWindow = new Window(mContext, this);
-		nativePtr = nativeInit();
+		nativePtr = nativeInit(mWindow.getDecorView().widget);
 		mWindow.set_native_window(nativePtr);
 
 		mListenersHandler = new ListenersHandler(this);
@@ -268,6 +269,7 @@ public class Dialog implements DialogInterface, Window.Callback, KeyEvent.Callba
 	}
 
 	@Override
+	@Export
 	public void dismiss() {
 		if (Looper.myLooper() == mHandler.getLooper()) {
 			dismissDialog();

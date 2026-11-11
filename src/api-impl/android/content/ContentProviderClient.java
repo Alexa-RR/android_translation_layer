@@ -25,6 +25,8 @@ import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 
 import java.io.FileNotFoundException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -223,6 +225,18 @@ public class ContentProviderClient implements AutoCloseable {
             throw new NullPointerException("method");
         beforeRemote();
         return mContentProvider.call(authority, method, arg, extras);
+    }
+
+    /** Opens the provider's file for reading (ATL addition: openFile in mode "r" as a stream). */
+    public InputStream openInputStream(Uri url) throws FileNotFoundException, RemoteException {
+        ParcelFileDescriptor fd = openFile(url, "r");
+        return fd != null ? new ParcelFileDescriptor.AutoCloseInputStream(fd) : null;
+    }
+
+    /** Opens the provider's file for writing (ATL addition: openFile in mode "w" as a stream). */
+    public OutputStream openOutputStream(Uri url) throws FileNotFoundException, RemoteException {
+        ParcelFileDescriptor fd = openFile(url, "w");
+        return fd != null ? new ParcelFileDescriptor.AutoCloseOutputStream(fd) : null;
     }
 
     /**

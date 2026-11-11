@@ -16,6 +16,7 @@
 
 package android.view;
 
+import android.atl.annotation.Export;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.os.Handler;
@@ -53,6 +54,7 @@ public final class ViewTreeObserver {
 
 	// accessed from native code
 	private long onGlobalLayout_signal_handle = 0;
+	private long onPreDraw_signal_handle = 0;
 
 	private long window;
 
@@ -351,7 +353,10 @@ public final class ViewTreeObserver {
 			}
 		}
 
-		if (observer.mOnPreDrawListeners != null) {
+		if (observer.mOnPreDrawListeners != null && observer.mOnPreDrawListeners.size() > 0) {
+			if (mOnPreDrawListeners == null || mOnPreDrawListeners.size() == 0)
+				native_set_have_predraw_listeners(true);
+
 			if (mOnPreDrawListeners != null) {
 				mOnPreDrawListeners.addAll(observer.mOnPreDrawListeners);
 			} else {
@@ -540,9 +545,8 @@ public final class ViewTreeObserver {
 		if (mOnGlobalLayoutListeners == null) {
 			return;
 		}
-		mOnGlobalLayoutListeners.remove(victim);
 
-		if (mOnGlobalLayoutListeners.size() == 0)
+		if (mOnGlobalLayoutListeners.remove(victim) && mOnGlobalLayoutListeners.size() == 0)
 			native_set_have_global_layout_listeners(false);
 	}
 
@@ -558,6 +562,10 @@ public final class ViewTreeObserver {
 
 		if (mOnPreDrawListeners == null) {
 			mOnPreDrawListeners = new CopyOnWriteArray<OnPreDrawListener>();
+		}
+
+		if (mOnPreDrawListeners.size() == 0) {
+			native_set_have_predraw_listeners(true);
 		}
 
 		mOnPreDrawListeners.add(listener);
@@ -581,7 +589,10 @@ public final class ViewTreeObserver {
 		if (mOnPreDrawListeners == null) {
 			return;
 		}
-		mOnPreDrawListeners.remove(victim);
+
+		if (mOnPreDrawListeners.remove(victim) && mOnPreDrawListeners.size() == 0) {
+			native_set_have_predraw_listeners(false);
+		}
 	}
 
 	/**
@@ -762,6 +773,8 @@ public final class ViewTreeObserver {
 		/* clear any callbacks */
 		if (mOnGlobalLayoutListeners != null && mOnGlobalLayoutListeners.size() > 0)
 			native_set_have_global_layout_listeners(false);
+		if (mOnPreDrawListeners != null && mOnPreDrawListeners.size() > 0)
+			native_set_have_predraw_listeners(false);
 		mAlive = false;
 	}
 
@@ -821,6 +834,7 @@ public final class ViewTreeObserver {
 	 * manually if you are forcing a layout on a View or a hierarchy of Views that are
 	 * not attached to a Window or in the GONE state.
 	 */
+	@Export
 	public final void dispatchOnGlobalLayout() {
 		// NOTE: because of the use of CopyOnWriteArrayList, we *must* use an iterator to
 		// perform the dispatching. The iterator is a safe guard against listeners that
@@ -856,6 +870,7 @@ public final class ViewTreeObserver {
 	 * @return True if the current draw should be canceled and resceduled, false otherwise.
 	 */
 	@SuppressWarnings("unchecked")
+	@Export
 	public final boolean dispatchOnPreDraw() {
 		boolean cancelDraw = false;
 		final CopyOnWriteArray<OnPreDrawListener> listeners = mOnPreDrawListeners;
@@ -1038,8 +1053,8 @@ public final class ViewTreeObserver {
 			getArray().addAll(array.mData);
 		}
 
-		void remove(T item) {
-			getArray().remove(item);
+		boolean remove(T item) {
+			return getArray().remove(item);
 		}
 
 		void clear() {
@@ -1056,7 +1071,8 @@ public final class ViewTreeObserver {
 	 * and keeps that rule. */
 	private Window tlWindow;
 
-	/** called by the native frame callback (paint phase, after layout) */
+	/** called by the native frame callback (layout phase, after GTK's own layout) */
+	@Export
 	void tlDispatchFrameGlobalLayout() {
 		final Window w = tlWindow;
 		if (w != null) {
@@ -1066,4 +1082,6 @@ public final class ViewTreeObserver {
 		}
 		dispatchOnGlobalLayout();
 	}
+
+	private native void native_set_have_predraw_listeners(boolean have_listeners);
 }

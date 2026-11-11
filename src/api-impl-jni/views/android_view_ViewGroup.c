@@ -108,18 +108,11 @@ static bool dispatch_motionevent_if_JavaWidget(GtkWidget *widget, GtkPropagation
 
 	WrapperWidget *wrapper = WRAPPER_WIDGET(view_parent);
 	if (getenv("ATL_DEBUG_TOUCH")) {
-		static jmethodID pc, gx, gy, ga;
-		if (!pc) {
-			pc = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getPointerCount", "()I");
-			gx = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getX", "(I)F");
-			gy = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getY", "(I)F");
-			ga = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getAction", "()I");
-		}
-		jint n = (*env)->CallIntMethod(env, motion_event, pc);
-		jint act = (*env)->CallIntMethod(env, motion_event, ga);
+		jint n = J__MotionEvent__getPointerCount(env, motion_event);
+		jint act = J__MotionEvent__getAction(env, motion_event);
 		fprintf(stderr, "[touch]   view widget %s phase=%d action=0x%x pointers=%d", G_OBJECT_TYPE_NAME(widget), phase, act, n);
 		for (jint i = 0; i < n && i < 4; i++)
-			fprintf(stderr, " p%d=%.0f,%.0f", i, (*env)->CallFloatMethod(env, motion_event, gx, i), (*env)->CallFloatMethod(env, motion_event, gy, i));
+			fprintf(stderr, " p%d=%.0f,%.0f", i, J__MotionEvent__getX_pointer(env, motion_event, i), J__MotionEvent__getY_pointer(env, motion_event, i));
 		fprintf(stderr, "\n");
 	}
 	bool plain = false;
@@ -131,46 +124,32 @@ static bool dispatch_motionevent_if_JavaWidget(GtkWidget *widget, GtkPropagation
 	}
 	int action = _GET_INT_FIELD(motion_event, "action");
 	/* tl_relocate_event: the event is in the coordinates of `toplevel`; the view expects its own */
-	static jmethodID get_x, get_y, set_location;
-	if (!set_location) {
-		get_x = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getX", "()F");
-		get_y = (*env)->GetMethodID(env, handle_cache.motion_event.class, "getY", "()F");
-		set_location = (*env)->GetMethodID(env, handle_cache.motion_event.class, "setLocation", "(FF)V");
-	}
-	jfloat orig_x = (*env)->CallFloatMethod(env, motion_event, get_x);
-	jfloat orig_y = (*env)->CallFloatMethod(env, motion_event, get_y);
+	jfloat orig_x = J__MotionEvent__getX(env, motion_event);
+	jfloat orig_y = J__MotionEvent__getY(env, motion_event);
 	graphene_point_t local;
 	bool relocated = false;
 	if (widget != toplevel && gtk_widget_compute_point(toplevel, widget, &GRAPHENE_POINT_INIT(orig_x, orig_y), &local)) {
-		(*env)->CallVoidMethod(env, motion_event, set_location, local.x, local.y);
+		J__MotionEvent__setLocation(env, motion_event, local.x, local.y);
 		relocated = true;
 	}
 	bool ret = view_dispatch_motionevent(env, wrapper, phase, motion_event, motion_event, action);
 	if (plain)
 		tl_force_plain_dispatch = false;
 	if (relocated)
-		(*env)->CallVoidMethod(env, motion_event, set_location, orig_x, orig_y);
+		J__MotionEvent__setLocation(env, motion_event, orig_x, orig_y);
 	return ret;
 }
 
-/* used by atl_propagate_synthetic_motionevent */
-#define GDK_ARRAY_ELEMENT_TYPE GtkWidget *
-#define GDK_ARRAY_TYPE_NAME    GtkWidgetStack
-#define GDK_ARRAY_NAME         gtk_widget_stack
-#define GDK_ARRAY_FREE_FUNC    g_object_unref
-#define GDK_ARRAY_PREALLOC     16
-#include "gdkarrayimpl.c"
-
-/* based on gtk_propagate_event_internal © GTK Team */
+/* based on gtk_propagate_event_internal © GTK Team (its GdkArray widget stack is a GPtrArray here) */
 bool atl_propagate_synthetic_motionevent(GtkWidget *widget, jobject motionevent, GtkWidget *toplevel)
 {
 	int handled_event = false;
-	GtkWidgetStack widget_array;
+	GPtrArray *widget_array;
 	int i;
 
 	/* First, propagate event down */
-	gtk_widget_stack_init(&widget_array);
-	gtk_widget_stack_append(&widget_array, g_object_ref(widget));
+	widget_array = g_ptr_array_new_full(16, g_object_unref);
+	g_ptr_array_add(widget_array, g_object_ref(widget));
 
 	for (;;) {
 		widget = gtk_widget_get_parent(widget);
@@ -180,12 +159,12 @@ bool atl_propagate_synthetic_motionevent(GtkWidget *widget, jobject motionevent,
 		if (widget == toplevel)
 			break;
 
-		gtk_widget_stack_append(&widget_array, g_object_ref(widget));
+		g_ptr_array_add(widget_array, g_object_ref(widget));
 	}
 
-	i = gtk_widget_stack_get_size(&widget_array) - 1;
+	i = widget_array->len - 1;
 	for (;;) {
-		widget = gtk_widget_stack_get(&widget_array, i);
+		widget = g_ptr_array_index(widget_array, i);
 
 		if (!gtk_widget_is_sensitive(widget)) {
 			handled_event = true;
@@ -209,8 +188,8 @@ bool atl_propagate_synthetic_motionevent(GtkWidget *widget, jobject motionevent,
 		 * parents can see the button and motion
 		 * events of the children.
 		 */
-		for (i = 0; i < gtk_widget_stack_get_size(&widget_array); i++) {
-			widget = gtk_widget_stack_get(&widget_array, i);
+		for (i = 0; i < (int)widget_array->len; i++) {
+			widget = g_ptr_array_index(widget_array, i);
 
 			/* Scroll events are special cased here because it
 			 * feels wrong when scrolling a GtkViewport, say,
@@ -229,7 +208,7 @@ bool atl_propagate_synthetic_motionevent(GtkWidget *widget, jobject motionevent,
 		}
 	}
 
-	gtk_widget_stack_clear(&widget_array);
+	g_ptr_array_unref(widget_array);
 	return handled_event;
 }
 

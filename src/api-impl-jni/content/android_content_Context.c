@@ -17,8 +17,11 @@
 
 #include "../generated_headers/android_content_Context.h"
 
+#include "android_content_Context.h"
+
 extern char *apk_path;
 
+/* the app's APK paths (base APK first, then the splits), separated by ':' */
 JNIEXPORT jstring JNICALL Java_android_content_Context_native_1get_1apk_1path(JNIEnv *env, jclass this)
 {
 	return _JSTRING(apk_path);
@@ -33,7 +36,7 @@ static void settings_changed_cb(XdpSettings *xdp_settings, gchar *namestpace, gc
 		g_object_set(gtk_settings_get_default(), "gtk-application-prefer-dark-theme", color_sheme == 1, NULL);
 		env = get_jni_env();
 		if (!configuration) {
-			configuration = _GET_STATIC_OBJ_FIELD(handle_cache.context.class, "sys_config", "Landroid/content/res/Configuration;");
+			configuration = _GET_STATIC_OBJ_FIELD(_CACHED_CLASS(Context), "sys_config", "Landroid/content/res/Configuration;");
 		}
 		if (color_sheme == 1) // Prefer dark appearance
 			_SET_INT_FIELD(configuration, "uiMode", /*UI_MODE_NIGHT_YES*/ 0x20);
@@ -90,7 +93,8 @@ static void tl_apply_window_config(JNIEnv *env, jobject config, int width, int h
 	/* SCREENLAYOUT_LONG_YES when the aspect ratio is at least 5:3 (AOSP: long side * 3 / 5 >= short side) */
 	layout |= (lw * 3 / 5 >= sw - 1) ? 0x20 : 0x10;
 	layout |= 0x40; /* SCREENLAYOUT_LAYOUTDIR_LTR */
-	layout |= 0x100; /* SCREENLAYOUT_ROUND_NO */
+	/* SCREENLAYOUT_ROUND_YES when ATL_IS_WATCH says the device is a (round) watch, else ROUND_NO */
+	layout |= g_getenv("ATL_IS_WATCH") ? 0x200 : 0x100;
 	_SET_INT_FIELD(config, "screenLayout", layout);
 	/* a touch screen without hardware keys or a d-pad, like a phone (AOSP values) */
 	_SET_INT_FIELD(config, "touchscreen", 3);        /* TOUCHSCREEN_FINGER */
@@ -162,12 +166,11 @@ static void tl_surface_layout_cb(GdkSurface *surface, int width, int height, gpo
 	if (w <= 0 || h <= 0 || (w == tl_config_width && h == tl_config_height))
 		return;
 	JNIEnv *env = get_jni_env();
-	jobject config = _GET_STATIC_OBJ_FIELD(handle_cache.context.class, "sys_config", "Landroid/content/res/Configuration;");
+	jobject config = _GET_STATIC_OBJ_FIELD(_CACHED_CLASS(Context), "sys_config", "Landroid/content/res/Configuration;");
 	if (!config)
 		return;
 	tl_apply_window_config(env, config, w, h);
-	jmethodID refresh = (*env)->GetStaticMethodID(env, handle_cache.context.class, "tlOnConfigurationChanged", "()V");
-	(*env)->CallStaticVoidMethod(env, handle_cache.context.class, refresh);
+	J__Context__tlOnConfigurationChanged(env);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 	activity_configuration_changed(env, config);
@@ -211,6 +214,15 @@ JNIEXPORT void JNICALL Java_android_content_Context_native_1updateConfig(JNIEnv 
 		g_variant_unref(color_sheme);
 	}
 #endif
+}
+
+/* the app window has its surface: the configuration is that of the window, and follows its layout */
+void update_config_for_window(GtkWindow *gtk_window)
+{
+	if (!gtk_widget_get_realized(GTK_WIDGET(gtk_window)))
+		return; /* native_updateConfig connects the layout handler on realize */
+	tl_surface_layout_cb(gtk_native_get_surface(GTK_NATIVE(gtk_window)), 0, 0, NULL);
+	tl_connect_surface_layout(GTK_WIDGET(gtk_window), NULL);
 }
 
 JNIEXPORT void JNICALL Java_android_content_Context_nativeOpenFile(JNIEnv *env, jclass class, jint fd)
@@ -339,13 +351,13 @@ static gboolean on_new_endpoint(Connector1 *connector, GDBusMethodInvocation *in
 	connector1_complete_new_endpoint(connector, invocation);
 
 	JNIEnv *env = get_jni_env();
-	jobject intent = (*env)->NewObject(env, handle_cache.intent.class, handle_cache.intent.constructor);
+	jobject intent = J_new__Intent(env);
 	_SET_OBJ_FIELD(intent, "action", "Ljava/lang/String;", _JSTRING("org.unifiedpush.android.connector.NEW_ENDPOINT"));
-	(*env)->CallObjectMethod(env, intent, handle_cache.intent.putExtraCharSequence, _JSTRING("token"), _JSTRING(token));
-	(*env)->CallObjectMethod(env, intent, handle_cache.intent.putExtraCharSequence, _JSTRING("endpoint"), _JSTRING(endpoint));
+	J__Intent__putExtraCharSequence(env, intent, _JSTRING("token"), _JSTRING(token));
+	J__Intent__putExtraCharSequence(env, intent, _JSTRING("endpoint"), _JSTRING(endpoint));
 
-	jobject context = _GET_STATIC_OBJ_FIELD(handle_cache.context.class, "this_application", "Landroid/app/Application;");
-	(*env)->CallVoidMethod(env, context, handle_cache.context.sendBroadcast, intent);
+	jobject context = _GET_STATIC_OBJ_FIELD(_CACHED_CLASS(Context), "this_application", "Landroid/app/Application;");
+	J__Context__sendBroadcast(env, context, intent);
 	if ((*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionDescribe(env);
 	}
@@ -362,15 +374,15 @@ static gboolean on_message(Connector1 *connector, GDBusMethodInvocation *invocat
 	connector1_complete_message(connector, invocation);
 
 	JNIEnv *env = get_jni_env();
-	jobject intent = (*env)->NewObject(env, handle_cache.intent.class, handle_cache.intent.constructor);
+	jobject intent = J_new__Intent(env);
 	_SET_OBJ_FIELD(intent, "action", "Ljava/lang/String;", _JSTRING("org.unifiedpush.android.connector.MESSAGE"));
-	(*env)->CallObjectMethod(env, intent, handle_cache.intent.putExtraCharSequence, _JSTRING("token"), _JSTRING(token));
+	J__Intent__putExtraCharSequence(env, intent, _JSTRING("token"), _JSTRING(token));
 	jbyteArray bytesMessage = (*env)->NewByteArray(env, size);
 	(*env)->SetByteArrayRegion(env, bytesMessage, 0, size, message);
-	(*env)->CallObjectMethod(env, intent, handle_cache.intent.putExtraByteArray, _JSTRING("bytesMessage"), bytesMessage);
+	J__Intent__putExtraByteArray(env, intent, _JSTRING("bytesMessage"), bytesMessage);
 
-	jobject context = _GET_STATIC_OBJ_FIELD(handle_cache.context.class, "this_application", "Landroid/app/Application;");
-	(*env)->CallVoidMethod(env, context, handle_cache.context.sendBroadcast, intent);
+	jobject context = _GET_STATIC_OBJ_FIELD(_CACHED_CLASS(Context), "this_application", "Landroid/app/Application;");
+	J__Context__sendBroadcast(env, context, intent);
 	if ((*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionDescribe(env);
 	}

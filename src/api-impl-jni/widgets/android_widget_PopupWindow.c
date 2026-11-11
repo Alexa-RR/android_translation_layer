@@ -96,14 +96,14 @@ JNIEXPORT void JNICALL Java_android_widget_PopupWindow_native_1setTouchModal(JNI
 static void on_closed_cb(GtkPopover *popover, jobject listener)
 {
 	JNIEnv *env = get_jni_env();
-	jmethodID onDismiss = _METHOD(_CLASS(listener), "onDismiss", "()V");
-	(*env)->CallVoidMethod(env, listener, onDismiss);
+	J__PopupWindow__OnDismissListener__onDismiss(env, listener);
 }
 
 JNIEXPORT void JNICALL Java_android_widget_PopupWindow_setOnDismissListener(JNIEnv *env, jobject this, jobject listener)
 {
 	GtkWidget *popover = GTK_WIDGET(_PTR(_GET_LONG_FIELD(this, "popover")));
-	g_signal_connect(popover, "closed", G_CALLBACK(on_closed_cb), _REF(listener));
+	if (listener)
+		g_signal_connect(popover, "closed", G_CALLBACK(on_closed_cb), _REF(listener));
 }
 
 JNIEXPORT jboolean JNICALL Java_android_widget_PopupWindow_native_1isShowing(JNIEnv *env, jobject this, jlong popover_ptr)

@@ -48,14 +48,6 @@ struct _TlWindowLayer {
 
 G_DEFINE_TYPE(TlWindowLayer, tl_window_layer, GTK_TYPE_WIDGET)
 
-static jclass tl_wm_class(JNIEnv *env)
-{
-	static jclass klass = NULL;
-	if (!klass)
-		klass = _REF((*env)->FindClass(env, "android/view/WindowManagerImpl"));
-	return klass;
-}
-
 static gboolean tl_window_layer_touch_modal(TlWindowLayer *self)
 {
 	/* AOSP: FLAG_NOT_FOCUSABLE implies FLAG_NOT_TOUCH_MODAL */
@@ -75,11 +67,8 @@ static void tl_window_layer_size_allocate(GtkWidget *widget, int width, int heig
 	if (!self->child || !self->view)
 		return;
 	JNIEnv *env = get_jni_env();
-	static jmethodID layout = NULL;
-	if (!layout)
-		layout = _STATIC_METHOD(tl_wm_class(env), "tlLayoutWindow", "(Landroid/view/View;II[I)V");
 	jintArray out = (*env)->NewIntArray(env, 4);
-	(*env)->CallStaticVoidMethod(env, tl_wm_class(env), layout, self->view, width, height, out);
+	J__WindowManagerImpl__tlLayoutWindow(env, self->view, width, height, out);
 	if ((*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionDescribe(env);
 		(*env)->ExceptionClear(env);
@@ -133,10 +122,7 @@ static gboolean tl_window_layer_outside(TlWindowLayer *self, double x, double y)
 static void tl_window_layer_modal_touch(TlWindowLayer *self, int action, double x, double y)
 {
 	JNIEnv *env = get_jni_env();
-	static jmethodID touch = NULL;
-	if (!touch)
-		touch = _STATIC_METHOD(tl_wm_class(env), "tlModalOutsideTouch", "(Landroid/view/View;IFF)V");
-	(*env)->CallStaticVoidMethod(env, tl_wm_class(env), touch, self->view, action, (jfloat)(x - self->frame.x), (jfloat)(y - self->frame.y));
+	J__WindowManagerImpl__tlModalOutsideTouch(env, self->view, action, (jfloat)(x - self->frame.x), (jfloat)(y - self->frame.y));
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 }

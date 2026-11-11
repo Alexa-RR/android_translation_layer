@@ -17,6 +17,7 @@ struct native_message_queue {
 };
 
 GThread *main_thread_id;
+ALooper *main_thread_looper;
 
 /**
  * callback to execute java handlers on glib managed thread loops
@@ -27,7 +28,7 @@ static gboolean dispatch_func(GSource *source, GSourceFunc callback, gpointer us
 	JNIEnv *env;
 	(*jvm)->GetEnv(jvm, (void **)&env, JNI_VERSION_1_6);
 	g_source_set_ready_time(source, -1); // clear previous timeout
-	(*env)->CallStaticVoidMethod(env, handle_cache.looper.class, handle_cache.looper.loop);
+	J__Looper__loop(env);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 
@@ -41,8 +42,9 @@ static GSource *source = NULL;
 void prepare_main_looper(JNIEnv *env)
 {
 	main_thread_id = g_thread_self();
+	main_thread_looper = ALooper_prepare(0);
 
-	(*env)->CallStaticVoidMethod(env, handle_cache.looper.class, handle_cache.looper.prepareMainLooper);
+	J__Looper__prepareMainLooper(env);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 	source = g_source_new(&source_funcs, sizeof(GSource));
@@ -101,6 +103,7 @@ JNIEXPORT void JNICALL Java_android_os_MessageQueue_nativeWake(JNIEnv *env, jcla
 
 	if (message_queue->is_main_thread) {        // thread loop is managed by glib
 		g_source_set_ready_time(source, 0); // immediately
+		g_main_context_wakeup(NULL);        // wake glib poll (needed when called from non-main thread)
 		return;
 	}
 

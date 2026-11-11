@@ -17,6 +17,7 @@
 package android.content.res;
 
 import android.atl.ATLLoadedApp;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.os.Build;
 import android.os.Environment;
@@ -39,6 +40,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import java.util.zip.ZipEntry;
 
 /**
  * Provides access to an application's raw asset files; see {@link Resources}
@@ -109,7 +111,7 @@ public final class AssetManager {
 	 * {@hide}
 	 */
 	public AssetManager() {
-		this(null);
+		this(System.getProperty("java.class.path"));
 	}
 
 	/**
@@ -119,10 +121,7 @@ public final class AssetManager {
 	 * use by applications.
 	 * {@hide}
 	 */
-	public AssetManager(ClassLoader classLoader) {
-		if (classLoader == null) {
-			classLoader = ClassLoader.getSystemClassLoader();
-		}
+	public AssetManager(String class_path) {
 		synchronized (this) {
 			if (DEBUG_REFS) {
 				mNumRefs = 0;
@@ -132,27 +131,11 @@ public final class AssetManager {
 			if (localLOGV)
 				Log.v(TAG, "New asset manager: " + this);
 			//            ensureSystemAssets()
-			try {
-				Enumeration<URL> resources = classLoader.getResources("AndroidManifest.xml");
-				ArrayList<String> paths = new ArrayList<>();
-				paths.add(null); // reserve first slot for framework-res.apk
-				while (resources.hasMoreElements()) {
-					String path = resources.nextElement().getPath();
-					path = URLDecoder.decode(path, "UTF-8");
-					if (path.contains("framework-res.apk")) // needs to be first, so it can be overridden
-						paths.set(0, path);
-					else
-						paths.add(path);
-				}
-				for (String path : paths) {
-					if (path != null) {
-						path = path.substring(path.indexOf("file:") + 5, path.indexOf("!/AndroidManifest.xml"));
-						asset_paths.add(path);
-					}
-				}
-			} catch (IOException e) {
-				Log.e(TAG, "failed to load resources.arsc" + e);
-			}
+
+			// libandroidfw resolves file-based assets in reverse order.
+			String[] paths = class_path.split(":");
+			for (int i = paths.length - 1; i >= 0; i--)
+				asset_paths.add(paths[i]);
 			asset_paths.add(android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
 			/*String*/ Object[] asset_paths_arr = asset_paths.toArray();
 			native_setApkAssets(asset_paths_arr, asset_paths_arr.length);
@@ -640,6 +623,8 @@ public final class AssetManager {
 	 */
 	/* this is not particularly efficient, avoid if possible */
 	public final void addAssetPath(String path) {
+		if (path == null)
+			return;
 		asset_paths.add(path);
 		/*String*/ Object[] asset_paths_arr = asset_paths.toArray();
 		native_setApkAssets(asset_paths_arr, asset_paths_arr.length);
@@ -647,6 +632,7 @@ public final class AssetManager {
 
 	private native final int addAssetPathNative(String path);
 
+	@Export
 	public static void extractFromAPK(String apk_resource_path, String path, String target) throws IOException {
 		String[] apk_paths = apk_resource_path.split(":");
 		if (path.endsWith("/")) { // directory
@@ -666,12 +652,16 @@ public final class AssetManager {
 			for (String apk_path : apk_paths) {
 				File apk_file = new File(apk_path);
 				if (!Files.exists(file) || Files.getLastModifiedTime(file).toMillis() < Files.getLastModifiedTime(apk_file.toPath()).toMillis()) {
-					try (JarFile apk = new JarFile(apk_file);
-					     InputStream inputStream = apk.getInputStream(apk.getEntry(path))) {
-						if (inputStream != null) {
-							Files.createDirectories(file.getParent());
-							Files.copy(inputStream, file, StandardCopyOption.REPLACE_EXISTING);
-							return;
+					try (JarFile apk = new JarFile(apk_file)) {
+						ZipEntry entry = apk.getEntry(path);
+						if (entry == null)
+							continue;
+						try (InputStream inputStream = apk.getInputStream(entry)) {
+							if (inputStream != null) {
+								Files.createDirectories(file.getParent());
+								Files.copy(inputStream, file, StandardCopyOption.REPLACE_EXISTING);
+								return;
+							}
 						}
 					}
 				}

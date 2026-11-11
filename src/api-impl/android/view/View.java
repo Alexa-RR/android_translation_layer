@@ -6,6 +6,7 @@ import android.animation.StateListAnimator;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.atl.GskCanvas;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.res.ColorStateList;
@@ -36,6 +37,7 @@ import android.util.Property;
 import android.util.Slog;
 import android.util.SparseArray;
 import android.util.TypedValue;
+import android.view.WindowInsets;
 import android.view.animation.Animation;
 import android.view.autofill.AutofillId;
 import android.view.inputmethod.EditorInfo;
@@ -51,6 +53,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 
 class WindowId {}
@@ -965,6 +968,7 @@ public class View implements Drawable.Callback {
 	private boolean pressed = false;
 	private Drawable background;
 	/* background tint: tlBgTintList / tlBgTintMode (View.java+bgtint.frag) */
+	private int mForegroundGravity = Gravity.START | Gravity.TOP;
 
 	private int minWidth = 0;
 	private int minHeight = 0;
@@ -977,6 +981,8 @@ public class View implements Drawable.Callback {
 	private boolean atl_enabled = true;
 	/** AOSP: NOT_FOCUSABLE, FOCUSABLE or FOCUSABLE_AUTO (the default when nothing sets it) (tl_focus_model) */
 	private int tlFocusableMode = FOCUSABLE_AUTO;
+
+	private Handler handler;
 
 	public static final Property<View, Float> TRANSLATION_X = new Property<View, Float>(Float.class, "translationX") {
 		@Override
@@ -1022,6 +1028,17 @@ public class View implements Drawable.Callback {
 		}
 	};
 
+	public static final Property<View, Float> ROTATION = new FloatProperty<View>("rotation") {
+		@Override
+		public void setValue(View object, float value) {
+			object.setRotation(value);
+		}
+		@Override
+		public Float get(View object) {
+			return object.getRotation();
+		}
+	};
+
 	public View(Context context, AttributeSet attrs) {
 		this(context, attrs, 0);
 	}
@@ -1054,11 +1071,7 @@ public class View implements Drawable.Callback {
 				Drawable background = a.getDrawable(com.android.internal.R.styleable.View_background);
 
 				if (background != null) {
-					if (background instanceof ColorDrawable) {
-						setBackgroundColor(((ColorDrawable)background).getColor());
-					} else {
-						setBackgroundDrawable(background);
-					}
+					setBackground(background);
 				}
 			} catch (Exception e) {
 				e.printStackTrace();
@@ -1193,12 +1206,14 @@ public class View implements Drawable.Callback {
 	/* teslalinux (offscreen): a view draws into any canvas with a target, a Canvas(Bitmap) included
 	 * (AOSP View.draw on a bitmap canvas, androidx drawToBitmap); see Canvas.tlGskCanvas and
 	 * native-zoffscreen-draw.sh for views that are not on screen */
+	@Export
 	public void onDraw(Canvas canvas) {
 		final GskCanvas gsk = canvas.tlGskCanvas();
 		if (gsk != null)
 			native_drawContent(widget, gsk.snapshot);
 	}
 
+	@Export
 	protected void dispatchDraw(Canvas canvas) {
 		final GskCanvas gsk = canvas.tlGskCanvas();
 		if (gsk != null)
@@ -1206,6 +1221,8 @@ public class View implements Drawable.Callback {
 	}
 	private static final String ATL_DEBUG_DRAW = System.getenv("ATL_DEBUG_DRAW");
 	private static final boolean ATL_DEBUG_TOUCH_JAVA = System.getenv("ATL_DEBUG_TOUCH") != null;
+
+	@Export
 	public void draw(Canvas canvas) {
 		if (ATL_DEBUG_DRAW != null && getClass().getName().contains(ATL_DEBUG_DRAW))
 			android.util.Log.i("View", "[draw] " + getClass().getName() + "@" + Integer.toHexString(System.identityHashCode(this)) + " " + getWidth() + "x" + getHeight() + " canvas=" + canvas.getClass().getSimpleName() + " parent=" + (parent == null ? "null" : parent.getClass().getSimpleName()));
@@ -1229,6 +1246,7 @@ public class View implements Drawable.Callback {
 		return parent;
 	}
 
+	@Export
 	public void setLayoutParams(ViewGroup.LayoutParams params) {
 		if (params == null) {
 			throw new NullPointerException("Layout parameters cannot be null");
@@ -1259,6 +1277,7 @@ public class View implements Drawable.Callback {
 		return layout_params;
 	}
 
+	@Export
 	protected final void setMeasuredDimension(int measuredWidth, int measuredHeight) {
 		this.measuredWidth = measuredWidth;
 		this.measuredHeight = measuredHeight;
@@ -1274,6 +1293,7 @@ public class View implements Drawable.Callback {
 
 	private OnTouchListener on_touch_listener = null;
 
+	@Export
 	public boolean onTouchEventInternal(MotionEvent event, boolean handle_gestures) {
 		boolean handled = false;
 		if (on_touch_listener != null)
@@ -1297,6 +1317,7 @@ public class View implements Drawable.Callback {
 	 * through the native click gesture ATL attaches to the widget, so this only performs it for
 	 * events that Java code dispatched to the view (Compose interop, a parent group).
 	 */
+	@Export
 	public boolean onTouchEvent(MotionEvent event) {
 		final float x = event.getX();
 		final float y = event.getY();
@@ -1437,6 +1458,11 @@ public class View implements Drawable.Callback {
 	protected native void native_drawContent(long widget, long snapshot);
 	protected void native_drawChildren(long widget, long snapshot) {} // override in ViewGroup
 
+	/* should be called from onTouchEvent() of GtkWidget implementations */
+	protected native boolean native_gtkEventPropagation();
+	/* used by the DecorView to register a GtkEventController and wire it to dispatchTouchEvent() */
+	protected native void native_registerTouchEventPropagation(long widget);
+
 	// --- stubs
 
 	/** AOSP: the accessibility description of the view. */
@@ -1522,6 +1548,7 @@ public class View implements Drawable.Callback {
 		return system_ui_visibility;
 	};
 
+	@Export
 	protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
 		if (haveCustomMeasure) // calling native_measure here would create infinite loop
 			setMeasuredDimension(getDefaultSize(getSuggestedMinimumWidth(), widthMeasureSpec), getDefaultSize(getSuggestedMinimumHeight(), heightMeasureSpec));
@@ -1635,6 +1662,13 @@ public class View implements Drawable.Callback {
 	}
 	private static native void nativeInvalidate(long widget);
 
+	// called from native code for GTK widgets or from invalidate() for Java widgets
+	@Export
+	private void propagateInvalidation() {
+		for (View child = this; child.parent instanceof View; child = (View)child.parent)
+			child.parent.onDescendantInvalidated(child, this);
+	}
+
 	protected native void native_setBackgroundColor(long widget, int color);
 	public void setBackgroundColor(int color) {
 		background = new ColorDrawable(color);
@@ -1687,7 +1721,7 @@ public class View implements Drawable.Callback {
 	public native void native_setPadding(long widget, int left, int top, int right, int bottom);
 
 	public void setBackgroundResource(int resid) {
-		setBackgroundDrawable(resid == 0 ? null : getContext().getDrawable(resid));
+		setBackground(resid == 0 ? null : getContext().getDrawable(resid));
 	}
 
 	public void getHitRect(Rect outRect) {
@@ -1703,9 +1737,12 @@ public class View implements Drawable.Callback {
 		return false;
 	}
 
+	@Export
 	public final int getScrollX() {
 		return scrollX;
 	}
+
+	@Export
 	public final int getScrollY() {
 		return scrollY;
 	}
@@ -1883,6 +1920,8 @@ public class View implements Drawable.Callback {
 	}
 
 	private OnLongClickListener on_long_click_listener = null;
+
+	@Export
 	public boolean performLongClick(float x, float y) {
 		if (on_long_click_listener != null) {
 			return on_long_click_listener.onLongClick(this);
@@ -1905,6 +1944,7 @@ public class View implements Drawable.Callback {
 
 	public void setOnHoverListener(OnHoverListener listener) {}
 
+	@Export
 	public final void measure(int widthMeasureSpec, int heightMeasureSpec) {
 		if (layoutRequested || widthMeasureSpec != oldWidthMeasureSpec || heightMeasureSpec != oldHeightMeasureSpec) {
 			layoutRequested = false;
@@ -1926,10 +1966,12 @@ public class View implements Drawable.Callback {
 
 	/** AOSP: the larger of the view's minimum height and its background's minimum height (a view is
 	 * never smaller than its background image: Waze's speedometer circles are only backgrounds) */
+	@Export
 	protected int getSuggestedMinimumHeight() {
 		return (background == null) ? getMinimumHeight() : Math.max(getMinimumHeight(), background.getMinimumHeight());
 	}
 	/** AOSP: the larger of the view's minimum width and its background's minimum width */
+	@Export
 	protected int getSuggestedMinimumWidth() {
 		return (background == null) ? getMinimumWidth() : Math.max(getMinimumWidth(), background.getMinimumWidth());
 	}
@@ -1973,15 +2015,21 @@ public class View implements Drawable.Callback {
 		return resolveSizeAndState(size, measureSpec, 0) & MEASURED_SIZE_MASK;
 	}
 
+	@Export
 	public final int getMeasuredWidth() {
 		return this.measuredWidth & MEASURED_SIZE_MASK;
 	}
 
+	@Export
 	public final int getMeasuredHeight() {
 		return this.measuredHeight & MEASURED_SIZE_MASK;
 	}
 
+	@Export
 	protected void onLayout(boolean changed, int l, int t, int r, int b) {}
+
+	private boolean layouted = false;
+	private boolean in_layout = false;
 
 	public void layout(int l, int t, int r, int b) {
 		tlLayoutDepth++;
@@ -1996,6 +2044,7 @@ public class View implements Drawable.Callback {
 	}
 
 	private void tlLayoutImpl(int l, int t, int r, int b) {
+		this.layouted = true;
 		this.left = l;
 		this.top = t;
 		this.right = r;
@@ -2003,15 +2052,21 @@ public class View implements Drawable.Callback {
 		// a default (centred) pivot follows the size: recompose before the allocation reads the matrix
 		if (!tlPivotSet && tlLayerMatrix != null && (r - l != tlLayerW || b - t != tlLayerH))
 			tlComputeLayerMatrix();
-		native_layout(widget, l, t, r, b);
+		if (this.in_layout)                   // check re-entrancy
+			native_queueAllocate(widget); // GTK is not re-entrant-safe. Queue allocation
+		else
+			native_layout(widget, l, t, r, b);
 	}
 
 	/** Helper function to be called from GTKs LayoutManager via JNI */
+	@Export
 	private void layoutInternal(int width, int height) {
 		tlLayoutDepth++;
+		in_layout = true;
 		try {
 			tlLayoutInternalImpl(width, height);
 		} finally {
+			in_layout = false;
 			tlLayoutDepth--;
 		}
 		tlLaidOut = true;
@@ -2030,7 +2085,18 @@ public class View implements Drawable.Callback {
 			onSizeChanged(width, height, oldWidth, oldHeight);
 		bottom = top + height;
 		right = left + width;
+		if (this instanceof ViewGroup) {
+			for (View child : ((ViewGroup)this).children)
+				child.layouted = false;
+		}
 		onLayout(changed, 0, 0, width, height);
+		// ReactViewGroup has onLayout implemented as no-op, so we need to walk children ourself in such cases
+		if (this instanceof ViewGroup) {
+			for (View child : ((ViewGroup)this).children) {
+				if (!child.layouted && child.visibility != GONE)
+					child.layout(child.left, child.top, child.right, child.bottom);
+			}
+		}
 		oldWidth = width;
 		oldHeight = height;
 		tlDispatchLayoutChange();
@@ -2069,6 +2135,10 @@ public class View implements Drawable.Callback {
 		if (changed)
 			tlPostRebuildOutline();
 		this.background = backgroundDrawable;
+		if (backgroundDrawable instanceof ColorDrawable) {
+			native_setBackgroundColor(widget, ((ColorDrawable)backgroundDrawable).getColor());
+			return;
+		}
 		if (backgroundDrawable != null) {
 			/* AOSP: a new background with padding (a nine-patch's padding box, an inset, a layer
 			 * list's) becomes the view's padding; XML padding attributes are applied after it */
@@ -2123,7 +2193,10 @@ public class View implements Drawable.Callback {
 
 	// (layout) setOverScrollMode: see View+layout.frag
 
+	@Export
 	public int getId() { return id; }
+
+	@Export
 	public String getIdName() {
 		if (this.id == View.NO_ID) {
 			return "NO_ID";
@@ -2135,6 +2208,8 @@ public class View implements Drawable.Callback {
 			return "NOT_FOUND";
 		}
 	}
+
+	@Export
 	public String getAllSuperClasses() {
 		StringBuilder sb = new StringBuilder();
 		Class<?> currentClass = getClass();
@@ -2326,8 +2401,10 @@ public class View implements Drawable.Callback {
 			invalidate();
 	}
 
+	@Export
 	public boolean onGenericMotionEvent(MotionEvent event) { return false; }
 
+	@Export
 	public boolean dispatchGenericMotionEvent(MotionEvent event) {
 		return onGenericMotionEvent(event);
 	}
@@ -2456,6 +2533,7 @@ public class View implements Drawable.Callback {
 	}
 	private boolean tlDuplicateParentState;
 
+	@Export
 	public boolean performClick() {
 		return callOnClick();
 	}
@@ -2473,6 +2551,7 @@ public class View implements Drawable.Callback {
 			am.playSoundEffect(soundConstant);
 	}
 
+	@Export
 	public void computeScroll() {}
 
 	/** AOSP: the background (and foreground) skip their state-change animations */
@@ -2722,6 +2801,16 @@ public class View implements Drawable.Callback {
 
 	public void setForeground(Drawable foreground) {}
 
+	/** AOSP: where the foreground drawable is placed (START | TOP unless set) */
+	public int getForegroundGravity() { return mForegroundGravity; }
+
+	public void setForegroundGravity(int gravity) {
+		if (mForegroundGravity != gravity) {
+			mForegroundGravity = gravity;
+			requestLayout();
+		}
+	}
+
 	// (layout) canScrollVertically: see View+layout.frag
 
 	/** AOSP: the display's touch mode (tl_touch_mode). */
@@ -2746,6 +2835,11 @@ public class View implements Drawable.Callback {
 		keepScreenOn = screenOn;
 	}
 
+	public boolean getKeepScreenOn() {
+		return keepScreenOn;
+	}
+
+	@Export
 	protected void onAttachedToWindow() {
 		if (System.getenv("ATL_DEBUG_ATTACH") != null)
 			android.util.Log.i("View", "onAttachedToWindow " + getClass().getName() + " " + getWidth() + "x" + getHeight());
@@ -2765,6 +2859,8 @@ public class View implements Drawable.Callback {
 		if (!(parent instanceof View))
 			tlScheduleApplyInsets();
 	}
+
+	@Export
 	protected void onDetachedFromWindow() {
 		tlLaidOut = false; // AOSP dispatchDetachedFromWindow clears PFLAG3_IS_LAID_OUT
 		/* AOSP dispatchDetachedFromWindow: a visible view becomes invisible when it leaves the window */
@@ -2842,7 +2938,7 @@ public class View implements Drawable.Callback {
 		if (Looper.myLooper() == Looper.getMainLooper()) {
 			requestLayout();
 		} else {
-			new Handler(Looper.getMainLooper()).post(new Runnable() {
+			getHandler().post(new Runnable() {
 				@Override
 				public void run() {
 					requestLayout();
@@ -2858,6 +2954,7 @@ public class View implements Drawable.Callback {
 		}
 	}
 
+	@Export
 	public boolean onInterceptTouchEvent(MotionEvent event) { return false; }
 
 	/**
@@ -2866,6 +2963,7 @@ public class View implements Drawable.Callback {
 	 * side records whether the event is synthetic so the click is performed here rather than by the
 	 * GTK click gesture.
 	 */
+	@Export
 	public boolean dispatchTouchEvent(MotionEvent event) {
 		return onTouchEventInternal(event, tlNativeDispatchSynthetic);
 	}
@@ -3023,7 +3121,29 @@ public class View implements Drawable.Callback {
 		return tlLayoutDepth > 0;
 	}
 
-	public void setTextDirection(int textDirection) {}
+	/** AOSP: the raw text direction (TEXT_DIRECTION_INHERIT unless set) */
+	private int tlTextDirection = TEXT_DIRECTION_INHERIT;
+
+	/** AOSP: sets the text direction; a change resolves again and lays the view out */
+	public void setTextDirection(int textDirection) {
+		if (tlTextDirection != textDirection) {
+			tlTextDirection = textDirection;
+			requestLayout();
+			invalidate();
+		}
+	}
+
+	/**
+	 * AOSP: the resolved text direction. INHERIT takes the parent's resolved direction; at the root
+	 * it resolves to TEXT_DIRECTION_FIRST_STRONG (AOSP TEXT_DIRECTION_RESOLVED_DEFAULT).
+	 */
+	public int getTextDirection() {
+		if (tlTextDirection != TEXT_DIRECTION_INHERIT)
+			return tlTextDirection;
+		if (parent instanceof View)
+			return ((View) parent).getTextDirection();
+		return TEXT_DIRECTION_FIRST_STRONG;
+	}
 
 	public Drawable getForeground() { return null; }
 
@@ -3064,7 +3184,11 @@ public class View implements Drawable.Callback {
 		return new ViewOverlay();
 	}
 
-	public void cancelLongPress() {}
+	/** AOSP: cancels a pending long press (and the delayed pressed state that leads to it) */
+	public void cancelLongPress() {
+		removeLongPressCallback();
+		removeTapCallback();
+	}
 
 	public int getTextAlignment() { return 0; }
 
@@ -3098,7 +3222,9 @@ public class View implements Drawable.Callback {
 	}
 
 	public Handler getHandler() {
-		return new Handler(Looper.getMainLooper());
+		if (handler == null)
+			handler = new Handler(Looper.getMainLooper());
+		return handler;
 	}
 
 	/** AOSP: true for a view attached to a hardware-accelerated window; every ATL window renders through GSK. */
@@ -3176,10 +3302,12 @@ public class View implements Drawable.Callback {
 		return requestRectangleOnScreen(rectangle, false);
 	}
 
+	@Export
 	public boolean onKeyDown(int keyCode, KeyEvent event) {
 		return false;
 	}
 
+	@Export
 	public boolean dispatchKeyEvent(KeyEvent event) {
 		if (mOnKeyListener != null && mOnKeyListener.onKey(this, event.getKeyCode(), event))
 			return true;
@@ -3375,6 +3503,7 @@ public class View implements Drawable.Callback {
 		scrollTo(scrollX, value);
 	}
 
+	@Export
 	protected boolean dispatchHoverEvent(MotionEvent event) { return false; }
 
 	public ActionMode startActionMode(ActionMode.Callback callback, int type) { return null; }
@@ -4681,6 +4810,7 @@ public class View implements Drawable.Callback {
 	 * AOSP ViewRootImpl.checkForLeavingTouchModeAndConsume, called by the main window's key controller
 	 * before any view sees the key; true when the key only served to leave touch mode (consumed).
 	 */
+	@Export
 	static boolean tlCheckForLeavingTouchModeAndConsume(KeyEvent event) {
 		if (!tlTouchModeState())
 			return false;
@@ -4702,6 +4832,7 @@ public class View implements Drawable.Callback {
 	 * A pointer DOWN or SCROLL from any device at (x, y) in the main window, before it reaches a view
 	 * (AOSP processPointerEvent). App windows that watch outside touches get theirs (ACTION_OUTSIDE).
 	 */
+	@Export
 	static void tlPointerDown(float x, float y) {
 		tlEnsureTouchMode(true);
 		WindowManagerImpl.tlDispatchOutsideTouch(x, y);
@@ -6037,5 +6168,35 @@ public class View implements Drawable.Callback {
 	private void tlZChanged() {
 		if (parent instanceof ViewGroup)
 			((ViewGroup) parent).tlRestackChildren();
+	}
+
+	/** AOSP: the focus change listener set with setOnFocusChangeListener, or null */
+	public OnFocusChangeListener getOnFocusChangeListener() {
+		return mOnFocusChangeListener;
+	}
+
+	/** AOSP: the id of the view an accessibility service visits after this one (View.NO_ID: none) */
+	private int tlAccessibilityTraversalBeforeId = NO_ID;
+	private int tlAccessibilityTraversalAfterId = NO_ID;
+
+	/**
+	 * AOSP: this view is visited before the view with the given id in accessibility traversal. The
+	 * value is kept for the node info; no accessibility service runs here to be notified.
+	 */
+	public void setAccessibilityTraversalBefore(int beforeId) {
+		tlAccessibilityTraversalBeforeId = beforeId;
+	}
+
+	public int getAccessibilityTraversalBefore() {
+		return tlAccessibilityTraversalBeforeId;
+	}
+
+	/** AOSP: this view is visited after the view with the given id in accessibility traversal */
+	public void setAccessibilityTraversalAfter(int afterId) {
+		tlAccessibilityTraversalAfterId = afterId;
+	}
+
+	public int getAccessibilityTraversalAfter() {
+		return tlAccessibilityTraversalAfterId;
 	}
 }

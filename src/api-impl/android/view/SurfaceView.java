@@ -1,6 +1,7 @@
 package android.view;
 
 import android.atl.GskCanvas;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
@@ -29,6 +30,13 @@ public class SurfaceView extends View {
 		mSurface.widget = this.widget;
 	}
 
+	public SurfaceView(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
+		super(context, attrs, defStyleAttr, defStyleRes);
+
+		mSurface.widget = this.widget;
+	}
+
+	@Export
 	private void surfaceChanged(int format, int width, int height) {
 		android.util.Log.i("SurfaceView", "surfaceChanged " + this + " " + width + "x" + height + " callbacks=" + mCallbacks.size());
 		tlSurfaceWidth = width;
@@ -40,6 +48,7 @@ public class SurfaceView extends View {
 		}
 	}
 
+	@Export
 	private void surfaceCreated() {
 		android.util.Log.i("SurfaceView", "surfaceCreated " + this + " callbacks=" + mCallbacks.size());
 		tlSurfaceCreated = true;

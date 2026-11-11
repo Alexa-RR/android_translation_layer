@@ -41,6 +41,7 @@ public class RenderNode {
 	private native long nativeClip(long node, float left, float top, float right, float bottom);
 	private native void nativeUnref(long node);
 	private native long nativeAddStubNode(long snapshot);
+	private native long nativeCreateEmpyNode();
 
 	public static RenderNode create(String name, View view) {
 		return new RenderNode();

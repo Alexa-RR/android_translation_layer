@@ -1,6 +1,7 @@
 #include <sys/resource.h>
 #include <errno.h>
 #include <stdio.h>
+#include <time.h>
 #include <unistd.h>
 #include <sys/syscall.h>
 
@@ -69,4 +70,12 @@ JNIEXPORT void JNICALL Java_android_os_Process_setThreadPriority__II(JNIEnv *env
 JNIEXPORT void JNICALL Java_android_os_Process_setThreadPriority__I(JNIEnv *env, jclass clazz, jint pri)
 {
 	tl_set_thread_priority(env, (jint)syscall(SYS_gettid), pri);
+}
+
+JNIEXPORT jlong JNICALL Java_android_os_Process_getElapsedCpuTime(JNIEnv *env, jclass this)
+{
+	struct timespec now;
+	if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now) != 0)
+		return 0;
+	return now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }

@@ -1,5 +1,6 @@
 package android.graphics;
 
+import android.atl.annotation.Export;
 import java.util.Locale;
 
 public class Paint {
@@ -46,6 +47,7 @@ public class Paint {
 		setColor(Color.argb(a, r, g, b));
 	}
 
+	@Export
 	public int getColor() {
 		return native_get_color(paint);
 	}
@@ -646,6 +648,10 @@ public class Paint {
 	/** AOSP: whether FAKE_BOLD_TEXT_FLAG is set (text drawn bolder than its font when the font has no bold face). */
 	public boolean isFakeBoldText() {
 		return (mFlags & FAKE_BOLD_TEXT_FLAG) != 0;
+	}
+
+	public boolean getFillPath(Path src, Path dst) {
+		return false;
 	}
 
 	public void reset() {

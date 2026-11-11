@@ -19,6 +19,7 @@ package android.media.session;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
+import android.atl.annotation.Export;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -693,6 +694,7 @@ public final class MediaSession {
         public void onPrepareFromUri(Uri uri, Bundle extras) {
         }
 
+        @Export
         public void onPlay() {
         }
 
@@ -708,6 +710,7 @@ public final class MediaSession {
         public void onSkipToQueueItem(long id) {
         }
 
+        @Export
         public void onPause() {
         }
 
@@ -726,6 +729,7 @@ public final class MediaSession {
         public void onStop() {
         }
 
+        @Export
         public void onSeekTo(long pos) {
         }
 

@@ -53,7 +53,9 @@ jboolean tl_dialog_dispatch_key(JNIEnv *env, jobject key_event)
 	return JNI_TRUE;
 }
 
-JNIEXPORT jlong JNICALL Java_android_app_Dialog_nativeInit(JNIEnv *env, jobject this)
+/* decor_view_ptr: the decor joins the layer when the window's content is set
+ * (Window.set_widget_as_root -> tl_dialog_set_content), as the AOSP decor is added on show() */
+JNIEXPORT jlong JNICALL Java_android_app_Dialog_nativeInit(JNIEnv *env, jobject this, jlong decor_view_ptr)
 {
 	GtkWidget *layer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
 	gtk_widget_add_css_class(layer, "tl-dialog-dim");

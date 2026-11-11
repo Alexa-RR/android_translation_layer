@@ -369,6 +369,11 @@ public class Binder implements IBinder {
         return mDescriptor;
     }
 
+    /** ATL: the interface attached with attachInterface, null when none. */
+    public @Nullable IInterface getOwner() {
+        return mOwner;
+    }
+
     /**
      * Default implementation always returns true -- if you got here,
      * the object is alive.

@@ -1,5 +1,8 @@
 package android.os;
 
+import android.atl.annotation.Export;
+
+@Export
 public interface Parcelable {
 	public static interface Creator<T> {
 		public T createFromParcel(Parcel parcel);
@@ -12,13 +15,13 @@ public interface Parcelable {
 		public T createFromParcel(Parcel source, ClassLoader loader);
 	}
 
+	// unlike AOSP, we have a default implementations, so we don't need to stub it in every individual class
 	public default int describeContents() {
-		System.out.println("Parcelable.describeContents()");
 		return 0;
 	}
 
+	// unlike AOSP, we have a default implementations, so we don't need to stub it in every individual class
 	public default void writeToParcel(Parcel dest, int flags) {
-		System.out.println("Parcelable.writeToParcel(" + this + ", " + dest + ", " + flags + ")");
 	}
 
 	/** AOSP: flag for writeToParcel when the object is a return value of a remote call. */

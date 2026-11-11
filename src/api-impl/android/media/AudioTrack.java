@@ -15,6 +15,7 @@
  */
 package android.media;
 
+import android.atl.annotation.Export;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.media.metrics.LogSessionId;
@@ -77,6 +78,7 @@ public class AudioTrack implements AudioRouting {
 
     public interface OnPlaybackPositionUpdateListener {
         void onMarkerReached(AudioTrack track);
+        @Export
         void onPeriodicNotification(AudioTrack track);
     }
 

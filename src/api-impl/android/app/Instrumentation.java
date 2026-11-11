@@ -1,6 +1,7 @@
 package android.app;
 
 import android.atl.ATLLoadedApp;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
@@ -30,6 +31,7 @@ public class Instrumentation {
 	public static final String REPORT_KEY_IDENTIFIER = "id";
 	public static final String REPORT_KEY_STREAMRESULT = "stream";
 
+	@Export
 	private static Instrumentation create(String className, Intent arguments) throws Exception {
 		Thread.setUncaughtExceptionPreHandler(new ExceptionHandler());
 		try {
@@ -43,18 +45,20 @@ public class Instrumentation {
 
 			System.out.println("targetPackage: " + target_package);
 
-			String target_path = android.os.Environment.getExternalStorageDirectory() + "/../_installed_apks_/" + target_package + ".apk";
+			if (target_package != null) {
+				String target_path = android.os.Environment.getExternalStorageDirectory() + "/../_installed_apks_/" + target_package + ".apk";
 
-			ATLLoadedApp.getPrimaryApplication().default_resources.getAssets().addAssetPath(target_path);
+				ATLLoadedApp.getPrimaryApplication().default_resources.getAssets().addAssetPath(target_path);
 
-			patchClassLoader(ATLLoadedApp.getPrimaryApplication().class_loader, new File(target_path));
+				patchClassLoader(ATLLoadedApp.getPrimaryApplication().class_loader, new File(target_path));
+			}
 
 			Class<? extends Instrumentation> cls = ATLLoadedApp.getPrimaryApplication()
 			                                           .loadClass(className)
 			                                           .asSubclass(Instrumentation.class);
 			Constructor<? extends Instrumentation> constructor = cls.getConstructor();
 			Instrumentation i = constructor.newInstance();
-			i.onCreate(arguments.getExtras());
+			i.onCreate(arguments != null ? arguments.getExtras() : null);
 
 			return i;
 		} catch (Exception e) {

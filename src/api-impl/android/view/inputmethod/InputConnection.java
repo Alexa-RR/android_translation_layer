@@ -22,6 +22,7 @@ import android.annotation.IntDef;
 import android.annotation.IntRange;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
+import android.atl.annotation.Export;
 import android.graphics.RectF;
 import android.os.Bundle;
 import android.os.CancellationSignal;
@@ -256,6 +257,7 @@ public interface InputConnection {
      * @throws IllegalArgumentException if {@code n} is negative.
      */
     @Nullable
+    @Export
     CharSequence getTextBeforeCursor(@IntRange(from = 0) int n, int flags);
 
     /**
@@ -301,6 +303,7 @@ public interface InputConnection {
      * @throws IllegalArgumentException if {@code n} is negative.
      */
     @Nullable
+    @Export
     CharSequence getTextAfterCursor(@IntRange(from = 0) int n, int flags);
 
     /**
@@ -515,6 +518,7 @@ public interface InputConnection {
      *        that range.
      * @return true on success, false if the input connection is no longer valid.
      */
+    @Export
     boolean deleteSurroundingText(int beforeLength, int afterLength);
 
     /**
@@ -734,6 +738,7 @@ public interface InputConnection {
      * @return true on success, false if the input connection is no longer
      * valid.
      */
+    @Export
     boolean commitText(CharSequence text, int newCursorPosition);
 
     /**

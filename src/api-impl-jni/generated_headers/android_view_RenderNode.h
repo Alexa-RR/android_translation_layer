@@ -65,6 +65,14 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeAddStubNode
 
 /*
  * Class:     android_view_RenderNode
+ * Method:    nativeCreateEmpyNode
+ * Signature: ()J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeCreateEmpyNode
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     android_view_RenderNode
  * Method:    nativeClipKeep
  * Signature: (JFFFF)J
  */

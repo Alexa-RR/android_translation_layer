@@ -448,6 +448,8 @@ public class NotificationManager {
 				iconPath = null;
 			}
 		}
+		if (iconPath != null && iconPath.endsWith(".xml"))
+			iconPath = null; /* a vector or other XML drawable is no image file the notification daemon can load */
 		CharSequence title = notification.extras.getCharSequence(Notification.EXTRA_TITLE);
 		CharSequence text = notification.extras.getCharSequence(Notification.EXTRA_TEXT);
 		nativeShowNotification(builder, id, title != null ? title.toString() : null, text != null ? text.toString() : null,

@@ -29,7 +29,7 @@
 static WebKitNetworkSession *tl_session;
 static jclass tl_wv_class;
 static struct {
-	jmethodID loadChanged, loadFailed, tlsError, decideNavigation, decideResponse, createWindow, closeWindow,
+	jmethodID loadFailed, tlsError, decideNavigation, decideResponse, createWindow, closeWindow,
 	    titleChanged, progressChanged, scriptDialog, permissionRequest, fileChooser, authenticate,
 	    processTerminated, responsiveChanged, evalResult, serveContent, uriChanged;
 } tl_m;
@@ -40,7 +40,6 @@ static void tl_wv_ids(JNIEnv *env)
 		return;
 	tl_wv_class = _REF((*env)->FindClass(env, "android/webkit/WebView"));
 	jclass c = tl_wv_class;
-	tl_m.loadChanged = _METHOD(c, "internalLoadChanged", "(ILjava/lang/String;)V");
 	tl_m.loadFailed = _METHOD(c, "internalLoadFailed", "(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;)V");
 	tl_m.tlsError = _METHOD(c, "internalTlsError", "(Ljava/lang/String;I)V");
 	tl_m.decideNavigation = _METHOD(c, "internalDecideNavigation", "(Ljava/lang/String;Ljava/lang/String;ZZIZ)Z");
@@ -135,7 +134,7 @@ static void asset_uri_scheme_request_cb(WebKitURISchemeRequest *request, gpointe
 	jobject jobj = tl_jobj(webkit_uri_scheme_request_get_web_view(request));
 	struct Asset *asset = NULL;
 	if (path && path[0] == '/' && jobj) {
-		jobject asset_manager_obj = (*env)->CallObjectMethod(env, jobj, handle_cache.webview.internalGetAssetManager);
+		jobject asset_manager_obj = J__WebView__internalGetAssetManager(env, jobj);
 		tl_check(env);
 		if (asset_manager_obj) {
 			struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(asset_manager_obj, "mObject"));
@@ -219,7 +218,7 @@ static void on_load_changed(WebKitWebView *wv, WebKitLoadEvent load_event, gpoin
 		return;
 	(*env)->PushLocalFrame(env, 32);
 	jstring uri = tl_jstr(env, webkit_web_view_get_uri(wv));
-	(*env)->CallVoidMethod(env, jobj, tl_m.loadChanged, (jint)load_event, uri);
+	J__WebView__internalLoadChanged(env, jobj, (jint)load_event, uri);
 	tl_check(env);
 	(*env)->PopLocalFrame(env, NULL);
 }
@@ -537,6 +536,7 @@ JNIEXPORT jlong JNICALL Java_android_webkit_WebView_native_1constructor(JNIEnv *
 	gtk_widget_set_name(holder, "android.webkit.WebView");
 	wrapper_widget_set_child(WRAPPER_WIDGET(wrapper), holder);
 	wrapper_widget_set_jobject(WRAPPER_WIDGET(wrapper), env, this);
+	wrapper_widget_register_invalidation_listener(WRAPPER_WIDGET(wrapper));
 	return _INTPTR(holder);
 }
 

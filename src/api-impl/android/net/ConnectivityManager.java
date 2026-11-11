@@ -18,6 +18,7 @@ package android.net;
 import android.annotation.NonNull;
 import android.annotation.Nullable;
 import android.app.PendingIntent;
+import android.atl.annotation.Export;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
@@ -150,10 +151,12 @@ public class ConnectivityManager {
             onBlockedStatusChanged(network, blocked);
         }
 
+        @Export
         public void onAvailable(@NonNull Network network) {}
 
         public void onLosing(@NonNull Network network, int maxMsToLive) {}
 
+        @Export
         public void onLost(@NonNull Network network) {}
 
         public void onUnavailable() {}
@@ -452,6 +455,7 @@ public class ConnectivityManager {
     }
 
     /** Called from the GNetworkMonitor "network-changed" signal (main thread). */
+    @Export
     static void tlOnNetworkChanged(boolean available) {
         List<Runnable> deliveries = new ArrayList<>();
         State old, now;

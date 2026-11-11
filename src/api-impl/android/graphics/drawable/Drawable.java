@@ -1,6 +1,7 @@
 package android.graphics.drawable;
 
 import android.atl.GskCanvas;
+import android.atl.annotation.Export;
 import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.content.res.Resources.Theme;
@@ -132,6 +133,7 @@ public class Drawable {
 		}
 }
 
+	@Export
 	public void setBounds(int left, int top, int right, int bottom) {
 		boolean changed = left != mBounds.left || top != mBounds.top || right != mBounds.right || bottom != mBounds.bottom;
 		mBounds.set(left, top, right, bottom);
@@ -151,6 +153,7 @@ public class Drawable {
 	 * Draws the paintable behind this drawable; the colour filter (or the tint filter derived from
 	 * the tint list and the current state, AOSP) is applied as a GSK colour matrix around it.
 	 */
+	@Export
 	public void draw(Canvas canvas) {
 		final GskCanvas gsk = canvas.tlGskCanvas(); /* a Canvas(Bitmap) draws through its GSK canvas too */
 		if (gsk != null) {
@@ -279,7 +282,10 @@ public class Drawable {
 		return this;
 	}
 
+	@Export
 	public int getIntrinsicWidth() { return -1; }
+
+	@Export
 	public int getIntrinsicHeight() { return -1; }
 
 	/** AOSP: tint colour list, resolved against the drawable state into a PorterDuff filter. */
@@ -623,6 +629,10 @@ public class Drawable {
 	public void setFilterBitmap(boolean filter) {}
 
 	public void setHotspotBounds(int left, int top, int right, int bottom) {}
+
+	public Rect copyBounds() {
+		return new Rect(mBounds);
+	}
 
 	@SuppressWarnings("removal")
 	protected void finalize() throws Throwable {

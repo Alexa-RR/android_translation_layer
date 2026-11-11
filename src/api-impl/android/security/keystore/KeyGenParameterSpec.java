@@ -1,5 +1,9 @@
 package android.security.keystore;
 
+import java.math.BigInteger;
+import java.util.Date;
+import javax.security.auth.x500.X500Principal;
+
 public class KeyGenParameterSpec {
 
 	private String keystoreAlias;

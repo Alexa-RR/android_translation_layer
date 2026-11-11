@@ -107,6 +107,9 @@ public final class WindowInsets {
     /** API 35: per type, the bounding rectangles of the inset sources (null: none) */
     private Rect[][] mTypeBoundingRectsMap;
     private Rect[][] mTypeMaxBoundingRectsMap;
+    /** API 35: the size of the frame the insets are relative to (Builder.setFrame), 0 when unknown */
+    private int mFrameWidth;
+    private int mFrameHeight;
 
     /**
      * A {@link WindowInsets} instance for which {@link #isConsumed()} returns {@code true}.
@@ -207,6 +210,8 @@ public final class WindowInsets {
                 displayShape, compatInsetsTypes, compatIgnoreVisibility);
         mTypeBoundingRectsMap = src.mSystemWindowInsetsConsumed ? null : src.mTypeBoundingRectsMap;
         mTypeMaxBoundingRectsMap = src.mStableInsetsConsumed ? null : src.mTypeMaxBoundingRectsMap;
+        mFrameWidth = src.mFrameWidth;
+        mFrameHeight = src.mFrameHeight;
     }
 
     /**
@@ -1123,6 +1128,8 @@ public final class WindowInsets {
                 : insetBoundingRects(mTypeBoundingRectsMap, left, top);
         result.mTypeMaxBoundingRectsMap = mStableInsetsConsumed ? null
                 : insetBoundingRects(mTypeMaxBoundingRectsMap, left, top);
+        result.mFrameWidth = mFrameWidth - left - right;
+        result.mFrameHeight = mFrameHeight - top - bottom;
         return result;
     }
 
@@ -1223,6 +1230,8 @@ public final class WindowInsets {
         private PrivacyIndicatorBounds mPrivacyIndicatorBounds = new PrivacyIndicatorBounds();
         private final Rect[][] mTypeBoundingRectsMap = new Rect[SIZE][];
         private final Rect[][] mTypeMaxBoundingRectsMap = new Rect[SIZE][];
+        private int mFrameWidth;
+        private int mFrameHeight;
 
         /**
          * Creates a builder where all insets are initially consumed.
@@ -1257,6 +1266,8 @@ public final class WindowInsets {
             if (insets.mTypeMaxBoundingRectsMap != null) {
                 System.arraycopy(insets.mTypeMaxBoundingRectsMap, 0, mTypeMaxBoundingRectsMap, 0, SIZE);
             }
+            mFrameWidth = insets.mFrameWidth;
+            mFrameHeight = insets.mFrameHeight;
         }
 
         /** API 35: the bounding rectangles of the sources of the given types */
@@ -1567,6 +1578,30 @@ public final class WindowInsets {
         }
 
         /**
+         * @hide AOSP 15: the insets types that are consumed whatever the app does. Of those, the
+         * system bars are the ones this WindowInsets knows how to force (shouldAlwaysConsumeSystemBars).
+         */
+        @NonNull
+        public Builder setForceConsumingTypes(@InsetsType int forceConsumingTypes) {
+            mAlwaysConsumeSystemBars = (forceConsumingTypes & systemBars()) != 0;
+            return this;
+        }
+
+        /**
+         * API 35: the size of the frame the insets and bounding rects are relative to.
+         *
+         * @param width the width of the frame.
+         * @param height the height of the frame.
+         * @return itself.
+         */
+        @NonNull
+        public Builder setFrame(int width, int height) {
+            mFrameWidth = width;
+            mFrameHeight = height;
+            return this;
+        }
+
+        /**
          * Builds a {@link WindowInsets} instance.
          *
          * @return the {@link WindowInsets} instance.
@@ -1580,6 +1615,8 @@ public final class WindowInsets {
                     false /* compatIgnoreVisibility */);
             insets.mTypeBoundingRectsMap = mSystemInsetsConsumed ? null : mTypeBoundingRectsMap.clone();
             insets.mTypeMaxBoundingRectsMap = mStableInsetsConsumed ? null : mTypeMaxBoundingRectsMap.clone();
+            insets.mFrameWidth = mFrameWidth;
+            insets.mFrameHeight = mFrameHeight;
             return insets;
         }
     }

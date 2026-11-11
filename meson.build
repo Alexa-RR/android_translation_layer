@@ -18,6 +18,8 @@ libc_bio_dep = [
 ]
 bootclasspath_dir = libart_dep.get_variable(pkgconfig: 'libdir') / 'java'
 
+art_incdir_dep = declare_dependency(include_directories: libart_dep.get_variable(pkgconfig: 'includedir'))
+
 bootclasspath = bootclasspath_dir / 'core-all_classes.jar' + ':' + bootclasspath_dir / 'core-junit_classes.jar' + ':' + bootclasspath_dir / 'junit-runner_classes.jar'
 
 marshal_files = gnome.genmarshal('marshal',
@@ -52,6 +54,68 @@ if layer_shell_dep.found()
   add_project_arguments('-DATL_HAS_OSK', language: 'c')
 endif
 
+# dexer: dx by default; D8 from r8.jar when -Dr8_jar is given (dx emits invoke-custom for lambdas,
+# which ART cannot bootstrap here; D8 desugars them and keeps default/static interface methods)
+r8_jar = get_option('r8_jar')
+if r8_jar != ''
+	dexer = [find_program('sh'), files('build-aux/d8.sh'), r8_jar, '@OUTPUT@', '@INPUT@']
+else
+	dexer = ['dx', '--dex', '--incremental', '--output=@OUTPUT@', '@INPUT@']
+endif
+
+# hax.jar
+subdir('src/api-impl')
+
+# api-impl.jar
+custom_target('api-impl.jar', build_by_default: true, input: [hax_jar], output: ['api-impl.jar'],
+              install: true,
+              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
+              command: dexer)
+
+# gstub.jar
+subdir('src/gstub')
+
+custom_target('gstub.jar', build_by_default: true, input: [gstub_jar], output: ['gstub.jar'],
+              install: true,
+              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
+              command: dexer)
+
+# ghax.jar
+subdir('src/ghax')
+
+custom_target('ghax.jar', build_by_default: true, input: [ghax_jar], output: ['ghax.jar'],
+              install: true,
+              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
+              command: dexer)
+
+# test-runner.jar
+subdir('src/test-runner')
+
+custom_target('test_runner.jar', build_by_default: false, input: [test_runner_jar], output: ['test_runner.jar'],
+              install: true,
+              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
+              command: dexer)
+
+#framework-res.apk
+subdir('res/framework-res')
+
+install_data([
+             	'res/fonts.xml'
+             ],
+             install_dir: join_paths(get_option('prefix'), get_option('datadir')) + '/atl/system/etc')
+
+#tools
+subdir('tools/jni_upcall_gen')
+
+upcalls_header_tgt = custom_target('upcalls.h', input: [hax_jar, 'extern_upcalls.txt'], output: ['upcalls.h'],
+                                   command: [jni_upcall_gen[0], '--jar-file', '@INPUT0@', '-d', meson.current_build_dir()+'/upcalls.h',
+                                             '--classpath', bootclasspath, '--short-class-names', '@INPUT1@'])
+
+upcalls_header = declare_dependency(sources: upcalls_header_tgt)
+
+# TODO: switch everything over from relative paths and move this to src/shared_includes
+shared_includes_dir = include_directories('src/api-impl-jni/')
+
 # libandroid
 libandroid_so = shared_library('android', [
                                           	'src/libandroid/asset_manager.c',
@@ -65,10 +129,12 @@ libandroid_so = shared_library('android', [
                                           	'src/libandroid/sensor.c',
                                           	'src/libandroid/trace.c',
                                           ],
+                                          include_directories: shared_includes_dir,
                                           install: true,
                                           soversion: 0,
                                           dependencies: [
-                                          	dependency('gtk4'), dependency('jni'), dependency('vulkan'), dependency('openxr').partial_dependency(includes: true)
+                                          	dependency('gtk4'), dependency('jni'), dependency('vulkan'), dependency('openxr').partial_dependency(includes: true),
+                                          	art_incdir_dep, upcalls_header
                                           ],
                                           c_args: [
                                           	'-D_LARGEFILE64_SOURCE',
@@ -88,11 +154,13 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/android_opengl_GLES20.c',
                                                                   	'src/api-impl-jni/android_opengl_GLUtils.c',
                                                                   	'src/api-impl-jni/android_os_Environment.c',
+                                                                  	'src/api-impl-jni/android_os_MemoryFile.c',
                                                                   	'src/api-impl-jni/android_os_MessageQueue.c',
                                                                   	'src/api-impl-jni/android_os_SystemClock.c',
                                                                   	'src/api-impl-jni/android_os_Vibrator.c',
                                                                   	'src/api-impl-jni/android_util_Log.c',
                                                                   	'src/api-impl-jni/android_view_Window.c',
+                                                                  	'src/api-impl-jni/accounts/android_accounts_AccountManager.c',
                                                                   	'src/api-impl-jni/app/android_app_Activity.c',
                                                                   	'src/api-impl-jni/app/android_app_AlertDialog.c',
                                                                   	'src/api-impl-jni/app/android_app_Dialog.c',
@@ -116,7 +184,6 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/database/android_database_SQLiteGlobal.c',
                                                                   	'src/api-impl-jni/egl/com_google_android_gles_jni_EGLImpl.c',
 	'src/api-impl-jni/debug/atl_viewdump.c',
-	'src/api-impl-jni/graphics/atl_region.c',
 	'src/api-impl-jni/graphics/atl_pathops.c',
 	'src/api-impl-jni/os/android_os_FileObserver.c',
 	'src/api-impl-jni/graphics/atl_gfx_path.c',
@@ -131,6 +198,7 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/graphics/android_graphics_Matrix.c',
                                                                   	'src/api-impl-jni/graphics/android_graphics_Paint.c',
                                                                   	'src/api-impl-jni/graphics/android_graphics_Path.c',
+                                                                  	'src/api-impl-jni/graphics/android_graphics_Region.c',
                                                                   	'src/api-impl-jni/graphics/android_view_RenderNode.c',
                                                                   	'src/api-impl-jni/graphics/android_graphics_drawable_Drawable.c',
                                                                   	'src/api-impl-jni/graphics/android_graphics_drawable_DrawableContainer.c',
@@ -143,6 +211,7 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/os/android_atl_GVariantBuilderParcel.c',
                                                                   	'src/api-impl-jni/os/android_atl_GVariantIterParcel.c',
                                                                   	'src/api-impl-jni/os/android_os_Process.c',
+                                                                  	'src/api-impl-jni/security/android_security_keystore_AndroidKeyStore.c',
                                                                   	'src/api-impl-jni/sensors/android_hardware_SensorManager.c',
                                                                   	'src/api-impl-jni/text/android_text_Layout.c',
                                                                   	'src/api-impl-jni/util.c',
@@ -181,6 +250,7 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                         wl_proto_sources,
                                                                         extra_jni_srcs,
                                                                   ] + marshal_files,
+                                                                  include_directories: shared_includes_dir,
                                                                   install: true,
                                                                   install_dir : get_option('libdir') / 'java/dex/android_translation_layer/natives',
                                                                   install_rpath: '$ORIGIN/:' + get_option('prefix') / get_option('libdir') / 'art',
@@ -188,8 +258,8 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                         extra_deps,
                                                                   	dependency('gtk4', version: '>=4.14'), dependency('gl'), dependency('egl'), dependency('wayland-client'), dependency('jni'),
                                                                   	dependency('libportal'), dependency('sqlite3'), dependency('libavcodec', version: '>=59'), dependency('libdrm'),
-                                                                  	dependency('gudev-1.0'), dependency('libswscale'), dependency('webkitgtk-6.0'),
-                                                                        libart_dep, wayland_protos_dep
+                                                                  	dependency('gudev-1.0'), dependency('libswscale'), dependency('webkitgtk-6.0'), dependency('libsecret-1'),
+                                                                        libart_dep, wayland_protos_dep, upcalls_header
                                                                   ],
                                                                   link_with: [ libandroid_so ],
                                                                   link_args: [
@@ -210,9 +280,10 @@ executable('android-translation-layer', [
                                         	'src/main-executable/libc_bio_path_overrides.c',
                                         	resources
                                         ],
+                                        include_directories: shared_includes_dir,
                                         install: true,
                                         dependencies: [
-                                        	dependency('gtk4'), dependency('jni'), declare_dependency(link_with: libtranslationlayer_so), libart_dep, dependency('dl'), libdl_bio_dep, libc_bio_dep, dependency('libportal'), dependency('fontconfig'),
+                                        	dependency('gtk4'), dependency('jni'), declare_dependency(link_with: libtranslationlayer_so), libart_dep, dependency('dl'), libdl_bio_dep, libc_bio_dep, dependency('libportal'), dependency('fontconfig'), upcalls_header
                                         ],
                                         link_args: [
                                         	'-rdynamic'
@@ -222,45 +293,3 @@ executable('android-translation-layer', [
                                         c_args: [
 						'-DINSTALL_DATADIR="'+join_paths(get_option('prefix'), get_option('datadir'))+'"'
                                         ])
-
-# dexer: dx by default; D8 from r8.jar when -Dr8_jar is given (dx emits invoke-custom for lambdas,
-# which ART cannot bootstrap here; D8 desugars them and keeps default/static interface methods)
-r8_jar = get_option('r8_jar')
-if r8_jar != ''
-	dexer = [find_program('sh'), files('build-aux/d8.sh'), r8_jar, '@OUTPUT@', '@INPUT@']
-else
-	dexer = ['dx', '--dex', '--incremental', '--output=@OUTPUT@', '@INPUT@']
-endif
-
-# hax.jar
-subdir('src/api-impl')
-
-# api-impl.jar
-custom_target('api-impl.jar', build_by_default: true, input: [hax_jar], output: ['api-impl.jar'],
-              install: true,
-              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
-              command: dexer)
-
-# gstub.jar
-subdir('src/gstub')
-
-custom_target('gstub.jar', build_by_default: true, input: [gstub_jar], output: ['gstub.jar'],
-              install: true,
-              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
-              command: dexer)
-
-# test-runner.jar
-subdir('src/test-runner')
-
-custom_target('test_runner.jar', build_by_default: false, input: [test_runner_jar], output: ['test_runner.jar'],
-              install: true,
-              install_dir : get_option('libdir') / 'java/dex/android_translation_layer',
-              command: dexer)
-
-#framework-res.apk
-subdir('res/framework-res')
-
-install_data([
-             	'res/fonts.xml'
-             ],
-             install_dir: join_paths(get_option('prefix'), get_option('datadir')) + '/atl/system/etc')
