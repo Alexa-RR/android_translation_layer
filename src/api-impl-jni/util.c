@@ -161,11 +161,16 @@ int get_nio_buffer_size(JNIEnv *env, jobject buffer)
  * Update phase. */
 
 /* callbacks */
-static gboolean queue_set_text(GtkWidget *label, GdkFrameClock *frame_clock, gpointer str)
+/* the text a label was given while a snapshot was in progress; only the newest one is kept, and a
+ * text set later outside a snapshot drops it, so a postponed text never replaces a newer one */
+#define PENDING_TEXT "atl-pending-text"
+static gboolean queue_set_text(GtkWidget *label, GdkFrameClock *frame_clock, gpointer user_data)
 {
-	gtk_label_set_text(GTK_LABEL(label), str);
-	/* we always call strdup so we always want to free */
-	free(str);
+	char *str = g_object_steal_data(G_OBJECT(label), PENDING_TEXT);
+	if (str) {
+		gtk_label_set_text(GTK_LABEL(label), str);
+		g_free(str);
+	}
 	return G_SOURCE_REMOVE;
 }
 
@@ -206,13 +211,20 @@ void atl_ensure_widget_snapshotability(GtkWidget *widget)
 	}
 }
 
+/* A label that is not in a window is not part of any snapshot GTK is taking, and a tick callback
+ * would only run once it is realized: such a label (a view inflated while the window draws, as
+ * Compose does for an AndroidView) takes its text at once, so it measures with it too. */
 void atl_safe_gtk_label_set_text(GtkLabel *label, const char *str)
 {
-	if (!snapshot_in_progress) {
+	GObject *obj = G_OBJECT(label);
+	if (!snapshot_in_progress || !gtk_widget_get_root(GTK_WIDGET(label))) {
+		g_object_set_data(obj, PENDING_TEXT, NULL); /* a postponed older text must not follow */
 		gtk_label_set_text(label, str);
 	} else {
-		/* strdup since the string may not exist by the time the callback runs */
-		gtk_widget_add_tick_callback(GTK_WIDGET(label), queue_set_text, (gpointer)strdup(str), NULL);
+		const gboolean scheduled = g_object_get_data(obj, PENDING_TEXT) != NULL;
+		g_object_set_data_full(obj, PENDING_TEXT, g_strdup(str), g_free);
+		if (!scheduled)
+			gtk_widget_add_tick_callback(GTK_WIDGET(label), queue_set_text, NULL, NULL);
 	}
 }
 
