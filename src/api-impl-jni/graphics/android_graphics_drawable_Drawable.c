@@ -87,17 +87,69 @@ JNIEXPORT jlong JNICALL Java_android_graphics_drawable_Drawable_native_1construc
 	return _INTPTR(paintable);
 }
 
-static guint queue_invalidate_contents(GdkPaintable *paintable)
+struct postponed_invalidate {
+	GdkPaintable *paintable;
+	jweak drawable;
+};
+
+/* the postponed half of Drawable.invalidateSelf(): the paintable's contents change now, so the view
+ * showing it is told again (its invalidateDrawable), in AOSP's order: a parent that recorded the view
+ * in between (Compose's AndroidViewHolder) records it again with the new contents */
+static gboolean queue_invalidate_contents(struct postponed_invalidate *p)
 {
-	gdk_paintable_invalidate_contents(paintable);
-	g_object_unref(paintable);
+	gdk_paintable_invalidate_contents(p->paintable);
+	JNIEnv *env = get_jni_env();
+	jobject drawable = (*env)->NewLocalRef(env, p->drawable); /* NULL once the drawable is gone */
+	if (drawable) {
+		static jmethodID get_callback = NULL;
+		if (!get_callback)
+			get_callback = _METHOD(_CLASS(drawable), "getCallback", "()Landroid/graphics/drawable/Drawable$Callback;");
+		jobject callback = (*env)->CallObjectMethod(env, drawable, get_callback);
+		if ((*env)->ExceptionCheck(env)) {
+			(*env)->ExceptionDescribe(env);
+			(*env)->ExceptionClear(env);
+			callback = NULL;
+		}
+		if (callback) {
+			jmethodID invalidate_drawable = _METHOD(_CLASS(callback), "invalidateDrawable", "(Landroid/graphics/drawable/Drawable;)V");
+			if (invalidate_drawable)
+				(*env)->CallVoidMethod(env, callback, invalidate_drawable, drawable);
+			if ((*env)->ExceptionCheck(env)) {
+				(*env)->ExceptionDescribe(env);
+				(*env)->ExceptionClear(env);
+			}
+			(*env)->DeleteLocalRef(env, callback);
+		}
+		(*env)->DeleteLocalRef(env, drawable);
+	}
+	_WEAK_UNREF(p->drawable);
+	g_object_unref(p->paintable);
+	g_free(p);
 	return G_SOURCE_REMOVE;
 }
 
+/*
+ * GTK doesn't allow invalidating a paintable while it's being drawn, so inside a snapshot it is
+ * queued up. Outside one it happens at once: Drawable.invalidateSelf() goes on to invalidate the
+ * view (invalidateDrawable), and a parent that records its children (Compose's AndroidViewHolder)
+ * records the view again on the next frame. Postponed, the widget still had its old render node
+ * then and the recording kept the old image; the later invalidation only redrew the widget, which
+ * the recording does not follow (Waze's compass stayed an empty circle after navigation started).
+ */
+extern int snapshot_in_progress;
 JNIEXPORT void JNICALL Java_android_graphics_drawable_Drawable_native_1invalidate(JNIEnv *env, jobject this, jlong paintable_ptr)
 {
-	// GTK doesn't allow invalidating a paintable while it's being drawn, so we need to queue it up
-	g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, G_SOURCE_FUNC(queue_invalidate_contents), g_object_ref(GDK_PAINTABLE(_PTR(paintable_ptr))), NULL);
+	GdkPaintable *paintable = _PTR(paintable_ptr);
+	if (!paintable)
+		return;
+	if (!snapshot_in_progress) {
+		gdk_paintable_invalidate_contents(paintable);
+		return;
+	}
+	struct postponed_invalidate *p = g_new(struct postponed_invalidate, 1);
+	p->paintable = g_object_ref(paintable);
+	p->drawable = _WEAK_REF(this);
+	g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, G_SOURCE_FUNC(queue_invalidate_contents), p, NULL);
 }
 
 JNIEXPORT void JNICALL Java_android_graphics_drawable_Drawable_native_1draw(JNIEnv *env, jobject this, jlong paintable_ptr, jlong snapshot_ptr, jint width, jint height)
