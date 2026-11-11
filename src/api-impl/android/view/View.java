@@ -2099,6 +2099,13 @@ public class View implements Drawable.Callback {
 		}
 		oldWidth = width;
 		oldHeight = height;
+		/* AOSP setFrame: a view whose size changed is invalidated. Here the size reaches the view in
+		 * GTK's allocation, which can be a frame after a parent recorded its drawing: Compose lays
+		 * out its AndroidViews inside the snapshot, where allocations wait for the next frame, so
+		 * AndroidViewHolder recorded the view before it had its size (Waze's compass: an empty
+		 * circle) and nothing told it to record again. */
+		if (changed)
+			invalidate();
 		tlDispatchLayoutChange();
 	}
 
