@@ -131,3 +131,122 @@ bool apply_path_overrides(char **path)
 
 	return free_path;
 }
+
+/*
+ * Android's font fallback for fontconfig.
+ *
+ * On Android a character the requested typeface lacks comes from the system fallback chain:
+ * fonts.xml's families without a name, in file order (Noto Sans Hebrew, Noto Naskh Arabic, the CJK
+ * families, emoji, ...), tried right after the requested family, for system and app typefaces alike.
+ * Pango asks fontconfig instead, whose default order puts DejaVu Sans before any Noto script family:
+ * Hebrew text set in Roboto came out in DejaVu Sans.
+ *
+ * The fallback families of fonts.xml are read here, each font file is mapped to the family name
+ * fontconfig knows it by, and one rule appends them, in fonts.xml's order and strongly bound, right
+ * after the first family of every pattern. It runs before GTK creates its font map. Files fontconfig
+ * does not have are skipped.
+ */
+struct fallback_parse {
+	gboolean in_fallback_family; /* inside a <family> without a name attribute */
+	gboolean in_font;
+	GPtrArray *files; /* font file names, in order */
+};
+
+static void fallback_start(GMarkupParseContext *context, const gchar *element, const gchar **names, const gchar **values,
+                           gpointer user_data, GError **error)
+{
+	struct fallback_parse *p = user_data;
+	if (!strcmp(element, "family")) {
+		p->in_fallback_family = TRUE;
+		for (int i = 0; names[i]; i++)
+			if (!strcmp(names[i], "name"))
+				p->in_fallback_family = FALSE;
+	} else if (!strcmp(element, "font")) {
+		p->in_font = p->in_fallback_family;
+	}
+}
+
+static void fallback_end(GMarkupParseContext *context, const gchar *element, gpointer user_data, GError **error)
+{
+	struct fallback_parse *p = user_data;
+	if (!strcmp(element, "family"))
+		p->in_fallback_family = FALSE;
+	else if (!strcmp(element, "font"))
+		p->in_font = FALSE;
+}
+
+static void fallback_text(GMarkupParseContext *context, const gchar *text, gsize len, gpointer user_data, GError **error)
+{
+	struct fallback_parse *p = user_data;
+	if (!p->in_font)
+		return;
+	char *name = g_strstrip(g_strndup(text, len));
+	if (*name)
+		g_ptr_array_add(p->files, name);
+	else
+		g_free(name);
+}
+
+void install_android_font_fallback(void)
+{
+	char *path = "/system/etc/fonts.xml";
+	apply_path_overrides(&path);
+	char *xml = NULL;
+	gsize xml_len = 0;
+	if (!g_file_get_contents(path, &xml, &xml_len, NULL)) {
+		fprintf(stderr, "%s: no fonts.xml at %s, fontconfig's own fallback order is used\n", __func__, path);
+		return;
+	}
+	struct fallback_parse p = {.files = g_ptr_array_new_with_free_func(g_free)};
+	static const GMarkupParser parser = {.start_element = fallback_start, .end_element = fallback_end, .text = fallback_text};
+	GMarkupParseContext *context = g_markup_parse_context_new(&parser, 0, &p, NULL);
+	GError *error = NULL;
+	if (!g_markup_parse_context_parse(context, xml, xml_len, &error) || !g_markup_parse_context_end_parse(context, &error)) {
+		fprintf(stderr, "%s: %s: %s\n", __func__, path, error->message);
+		g_error_free(error);
+	}
+	g_markup_parse_context_free(context);
+	g_free(xml);
+
+	/* the families, each once, in the order their first file appears */
+	GPtrArray *families = g_ptr_array_new_with_free_func(g_free);
+	for (guint i = 0; i < p.files->len; i++) {
+		char *suffix = g_strdup_printf("/%s", (char *)p.files->pdata[i]);
+		char *file = get_font_path(suffix);
+		g_free(suffix);
+		if (!file)
+			continue;
+		int count = 0;
+		FcPattern *query = FcFreeTypeQuery((const FcChar8 *)file, 0, NULL, &count);
+		FcChar8 *family = NULL;
+		if (query && FcPatternGetString(query, FC_FAMILY, 0, &family) == FcResultMatch) {
+			gboolean seen = FALSE;
+			for (guint j = 0; j < families->len && !seen; j++)
+				seen = !strcmp(families->pdata[j], (char *)family);
+			if (!seen)
+				g_ptr_array_add(families, g_strdup((char *)family));
+		}
+		if (query)
+			FcPatternDestroy(query);
+	}
+	g_ptr_array_free(p.files, TRUE);
+	if (!families->len) {
+		g_ptr_array_free(families, TRUE);
+		return;
+	}
+
+	GString *rule = g_string_new("<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n<fontconfig>\n"
+	                             "<match target=\"pattern\">\n"
+	                             "<test qual=\"first\" name=\"family\" compare=\"not_eq\"><string></string></test>\n"
+	                             "<edit name=\"family\" mode=\"append\" binding=\"strong\">\n");
+	for (guint i = 0; i < families->len; i++) {
+		char *escaped = g_markup_escape_text(families->pdata[i], -1);
+		g_string_append_printf(rule, "<string>%s</string>\n", escaped);
+		g_free(escaped);
+	}
+	g_string_append(rule, "</edit>\n</match>\n</fontconfig>\n");
+	if (!FcConfigParseAndLoadFromMemory(FcConfigGetCurrent(), (const FcChar8 *)rule->str, FcTrue))
+		fprintf(stderr, "%s: fontconfig did not take the fallback rule\n", __func__);
+	g_string_free(rule, TRUE);
+	g_ptr_array_free(families, TRUE);
+}

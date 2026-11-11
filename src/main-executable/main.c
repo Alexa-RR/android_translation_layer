@@ -1018,6 +1018,10 @@ int main(int argc, char **argv)
 
 	libc_bio_set_apply_path_overrides_func(apply_path_overrides);
 
+	/* before GTK creates its font map: characters a typeface lacks come from fonts.xml's fallback
+	 * families, in Android's order */
+	install_android_font_fallback();
+
 	struct jni_callback_data *callback_data = malloc(sizeof(struct jni_callback_data));
 	callback_data->apk_main_activity_class = NULL;
 	callback_data->apk_instrumentation_class = NULL;
