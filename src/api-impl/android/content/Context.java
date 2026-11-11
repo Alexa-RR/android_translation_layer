@@ -558,7 +558,39 @@ public abstract class Context {
 
 	public abstract boolean stopService(Intent intent);
 
-	public void unbindService(ServiceConnection serviceConnection) {}
+	/**
+	 * AOSP: disconnects from a bound service. The connection gets no further callbacks; when it was
+	 * the last binding of its intent the service's onUnbind runs, and a service that is neither
+	 * started nor bound with BIND_AUTO_CREATE any more is destroyed (android.atl.ATLActiveServices).
+	 *
+	 * @throws IllegalArgumentException when the connection is not bound ("Service not registered")
+	 */
+	public void unbindService(ServiceConnection serviceConnection) {
+		if (serviceConnection == null)
+			throw new IllegalArgumentException("connection is null");
+		ServiceConnection registered;
+		synchronized (tlExecutorConnections) {
+			registered = tlExecutorConnections.remove(serviceConnection);
+		}
+		android.atl.ATLActiveServices.unbindService(registered != null ? registered : serviceConnection);
+	}
+
+	/* the executor variant of bindService binds a wrapper; unbindService gets the app's connection */
+	private static final java.util.IdentityHashMap<ServiceConnection, ServiceConnection> tlExecutorConnections = new java.util.IdentityHashMap<>();
+
+	/* AOSP bindService flags */
+	public static final int BIND_AUTO_CREATE = 0x0001;
+	public static final int BIND_DEBUG_UNBIND = 0x0002;
+	public static final int BIND_NOT_FOREGROUND = 0x0004;
+	public static final int BIND_ABOVE_CLIENT = 0x0008;
+	public static final int BIND_ALLOW_OOM_MANAGEMENT = 0x0010;
+	public static final int BIND_WAIVE_PRIORITY = 0x0020;
+	public static final int BIND_IMPORTANT = 0x0040;
+	public static final int BIND_ADJUST_WITH_ACTIVITY = 0x0080;
+	public static final int BIND_NOT_PERCEPTIBLE = 0x0100;
+	public static final int BIND_INCLUDE_CAPABILITIES = 0x1000;
+	public static final int BIND_SHARED_ISOLATED_PROCESS = 0x2000;
+	public static final int BIND_EXTERNAL_SERVICE = 0x80000000;
 
 	public void unregisterReceiver(BroadcastReceiver receiver) {
 		while (receiverMap.values().remove(receiver))
@@ -756,8 +788,22 @@ public abstract class Context {
 		ServiceConnection onExecutor = new ServiceConnection() {
 			public void onServiceConnected(final ComponentName name, final android.os.IBinder binder) { executor.execute(new Runnable() { public void run() { conn.onServiceConnected(name, binder); } }); }
 			public void onServiceDisconnected(final ComponentName name) { executor.execute(new Runnable() { public void run() { conn.onServiceDisconnected(name); } }); }
+			public void onBindingDied(final ComponentName name) { executor.execute(new Runnable() { public void run() { conn.onBindingDied(name); } }); }
+			public void onNullBinding(final ComponentName name) { executor.execute(new Runnable() { public void run() { conn.onNullBinding(name); } }); }
 		};
-		return bindService(service, onExecutor, flags);
+		/* AOSP (LoadedApk): one dispatcher per connection; binding the same connection again reuses it */
+		synchronized (tlExecutorConnections) {
+			ServiceConnection existing = tlExecutorConnections.get(conn);
+			if (existing != null)
+				onExecutor = existing;
+		}
+		boolean bound = bindService(service, onExecutor, flags);
+		if (bound) {
+			synchronized (tlExecutorConnections) {
+				tlExecutorConnections.put(conn, onExecutor);
+			}
+		}
+		return bound;
 	}
 	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, int flags) { return registerReceiver(receiver, filter); }
 	public Intent registerReceiver(BroadcastReceiver receiver, IntentFilter filter, String broadcastPermission, android.os.Handler scheduler, int flags) { return registerReceiver(receiver, filter, broadcastPermission, scheduler); }

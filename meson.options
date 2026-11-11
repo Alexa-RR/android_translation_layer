@@ -5,3 +5,5 @@ option('asm_tree_jar_path', type : 'string')
 option('getopt_jar_path', type : 'string')
 option('r8_jar', type: 'string', value: '',
        description: 'Path to r8.jar. When set, the Java code is dexed with D8 (--min-api 24, lambdas desugared) instead of dx; required for code that uses lambdas, which dx turns into invoke-custom')
+option('platform_keystore', type: 'string', value: '',
+       description: 'PKCS12 keystore (alias "platform") to sign framework-res.apk with. Empty: a key generated once in the build directory')

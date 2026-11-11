@@ -71,3 +71,16 @@ The following environment variables are recognized by the main executable:
 ---
 
 `ATL_VALIDATE_CERTS` - if set, the signing certificate of the APK file will be validated on startup. This adds a few extra seconds to the startup time for large APKs.
+
+---
+
+`ATL_CAR_HOST=1` - runs a Car App Library host (androidx.car.app) inside the runtime: once the app's first activity is resumed,
+                   the host binds the app's `androidx.car.app.CarAppService` as the platform (system uid, package `android`,
+                   signed with ATL's platform key, so the app's host validator accepts it as a system binding), performs the
+                   handshake and the session lifecycle, and publishes the car connection state (`androidx.car.app.connection`,
+                   projection). It does not render the templates yet: every call the app makes to the host and every template
+                   it returns is logged with the tag `ATLCarHost` (info level, e.g. `ANDROID_LOG_TAGS='*:w ATLCarHost:i'`).
+
+---
+
+`ATL_CAR_HOST_DELAY_MS=<ms>` - with `ATL_CAR_HOST=1`, how long the host waits after the first resumed activity before it binds the app's car service (default 0)

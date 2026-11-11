@@ -12,8 +12,6 @@ import android.content.res.AssetManager;
 import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.util.Slog;
 import dalvik.system.BaseDexClassLoader;
@@ -22,7 +20,6 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.HashSet;
 import org.xmlpull.v1.XmlPullParserException;
 
@@ -40,7 +37,6 @@ public final class ATLLoadedApp {
 	public final PackageParser.Package pkg;
 	public final int effective_sdk_compat;
 	private final Object init_lock;
-	private final HashMap<String, Service> running_services;
 	private Application application;
 	private Resources.Theme default_theme;
 
@@ -51,15 +47,15 @@ public final class ATLLoadedApp {
 		this.pkg = pkg;
 		this.effective_sdk_compat = Math.min(pkg.applicationInfo.targetSdkVersion, Build.VERSION.SDK_INT);
 		this.init_lock = new Object();
-		this.running_services = new HashMap<>();
 	}
 
 	@NonNull
-	public static ATLLoadedApp getSystemApplication() {
+	public static synchronized ATLLoadedApp getSystemApplication() {
 		if (system_application != null) {
 			return system_application;
 		}
-		PackageParser packageParser = new PackageParser(null);
+		File frameworkRes = ATLPaths.framework_res_apk;
+		PackageParser packageParser = new PackageParser(frameworkRes != null ? frameworkRes.getPath() : null);
 		Resources resources = Resources.getSystem();
 		String[] outError = new String[1];
 		PackageParser.Package pkg;
@@ -70,7 +66,19 @@ public final class ATLLoadedApp {
 		} catch (XmlPullParserException | IOException e) {
 			throw new RuntimeException(outError[0], e);
 		}
-		packageParser.collectCertificates(pkg, PackageParser.PARSE_IS_SYSTEM);
+		/* AOSP: the framework package ("android", shared user android.uid.system) runs as the system
+		 * uid, is a persistent system package and is signed with the platform key; ATL's build signs
+		 * framework-res.apk with a platform key of its own (build-aux/sign-framework-res.sh) */
+		pkg.applicationInfo.uid = android.os.Process.SYSTEM_UID;
+		pkg.applicationInfo.flags |= android.content.pm.ApplicationInfo.FLAG_SYSTEM | android.content.pm.ApplicationInfo.FLAG_PERSISTENT;
+		if (frameworkRes != null) {
+			pkg.applicationInfo.sourceDir = frameworkRes.getPath();
+			pkg.applicationInfo.publicSourceDir = frameworkRes.getPath();
+			if (!packageParser.collectCertificates(pkg, PackageParser.PARSE_IS_SYSTEM))
+				Slog.w(TAG, "framework package " + frameworkRes + " has no platform signature (error " + packageParser.getParseError() + ")");
+		} else {
+			Slog.w(TAG, "framework-res.apk is not on the class path: the framework package has no signature");
+		}
 		return system_application = new ATLLoadedApp(resources,
 		                                             ATLLoadedApp.class.getClassLoader(), pkg);
 	}
@@ -239,68 +247,53 @@ public final class ATLLoadedApp {
 		return activity;
 	}
 
-	public ComponentName startOrBindService(final Intent intent, final ServiceConnection serviceConnection) {
+	/**
+	 * The service of this app an intent addresses (PackageManager.resolveService): its explicit
+	 * component when the app declares that service, else the declared service whose intent filter
+	 * matches with the highest priority; null when there is none.
+	 */
+	public ComponentName resolveService(Intent intent) {
 		ComponentName component = intent.getComponent();
-		if (component == null) {
-			int priority = Integer.MIN_VALUE;
+		if (component != null) {
 			for (PackageParser.Service service : pkg.services) {
-				if (service.intents == null)
-					continue;
-				for (PackageParser.IntentInfo intentInfo : service.intents) {
-					if (intentInfo.matchAction(intent.getAction()) && intentInfo.priority > priority) {
-						component = new ComponentName(pkg.packageName, service.className);
-						priority = intentInfo.priority;
-						break;
-					}
-				}
+				if (service.className.equals(component.getClassName()))
+					return new ComponentName(pkg.packageName, service.className);
 			}
-		}
-		if (component == null) {
-			Slog.w(TAG, "startService: no matching service found for intent: " + intent);
 			return null;
 		}
-		final String className = component.getClassName();
-		final ComponentName resolved = component;
-
-		new Handler(Looper.getMainLooper()).post(new Runnable() {
-			@Override
-			public void run() {
-				try {
-					Service service = running_services.get(className);
-					if (service == null) {
-						Class<? extends Service> cls = ATLLoadedApp.this.loadClass(className).asSubclass(Service.class);
-						service = cls.getConstructor().newInstance();
-						service.attachBaseContext(new ContextImpl(
-						    ATLLoadedApp.this.createDefaultResources(), ATLLoadedApp.this,
-						    pkg.applicationInfo.theme));
-						service.onCreate();
-						running_services.put(className, service);
-					}
-
-					if (serviceConnection != null) {
-						serviceConnection.onServiceConnected(resolved, service.onBind(intent));
-					} else {
-						service.onStartCommand(intent, 0, 0);
-					}
-				} catch (ReflectiveOperationException e) {
-					Slog.e(TAG, "startService: failed to start service " + className, e);
+		int priority = Integer.MIN_VALUE;
+		for (PackageParser.Service service : pkg.services) {
+			if (service.intents == null)
+				continue;
+			for (PackageParser.IntentInfo intentInfo : service.intents) {
+				if (intentInfo.matchAction(intent.getAction()) && tlMatchesCategories(intentInfo, intent) && intentInfo.priority > priority) {
+					component = new ComponentName(pkg.packageName, service.className);
+					priority = intentInfo.priority;
+					break;
 				}
 			}
-		});
-
+		}
 		return component;
 	}
 
-	public boolean stopService(Intent intent) {
-		if (intent.getComponent() == null)
-			return false;
-		String className = intent.getComponent().getClassName();
-		Service service = running_services.get(className);
-		if (service == null)
-			return false;
-		service.onDestroy();
-		running_services.remove(className);
+	/* IntentFilter.matchCategories: every category of the intent must be in the filter */
+	private static boolean tlMatchesCategories(PackageParser.IntentInfo filter, Intent intent) {
+		java.util.Set<String> categories = intent.getCategories();
+		if (categories == null)
+			return true;
+		for (String category : categories) {
+			if (!filter.hasCategory(category))
+				return false;
+		}
 		return true;
+	}
+
+	/** A new instance of one of this app's services, attached to a context of this app (not yet created). */
+	public Service instantiateService(String className) throws ReflectiveOperationException {
+		Class<? extends Service> cls = this.loadClass(className).asSubclass(Service.class);
+		Service service = cls.getConstructor().newInstance();
+		service.attachBaseContext(new ContextImpl(this.createDefaultResources(), this, pkg.applicationInfo.theme));
+		return service;
 	}
 
 	public void receiveBroadcast(Context context, Intent intent) {

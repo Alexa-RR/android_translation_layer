@@ -1201,4 +1201,37 @@ public class Intent implements Parcelable {
 		}
 		return type;
 	}
+
+	/**
+	 * AOSP: wraps an Intent so that equals() and hashCode() compare only what
+	 * {@link #filterEquals} compares, for use as a map key (a service keeps one binder per key).
+	 */
+	public static final class FilterComparison {
+		private final Intent mIntent;
+		private final int mHashCode;
+
+		public FilterComparison(Intent intent) {
+			mIntent = intent;
+			mHashCode = intent.filterHashCode();
+		}
+
+		/** Return the Intent that this FilterComparison represents. */
+		public Intent getIntent() {
+			return mIntent;
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (obj instanceof FilterComparison) {
+				Intent other = ((FilterComparison)obj).mIntent;
+				return mIntent.filterEquals(other);
+			}
+			return false;
+		}
+
+		@Override
+		public int hashCode() {
+			return mHashCode;
+		}
+	}
 }

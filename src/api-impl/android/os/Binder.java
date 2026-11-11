@@ -32,8 +32,17 @@ import java.io.PrintWriter;
  * the parcels and calls {@link #onTransact} directly, AIDL's Stub.asInterface finds the local
  * object through {@link #queryLocalInterface}, and a parcelled binder comes back as the very same
  * object. The per-thread calling identity, strict-mode policy and work source that libbinder's
- * IPCThreadState keeps are kept here in Java with the same token encodings; with no incoming
- * transactions the calling identity is always this process.
+ * IPCThreadState keeps are kept here in Java with the same token encodings.
+ *
+ * <p>Calling identity: the process holds two parties, the app (this process's uid) and ATL's
+ * framework services acting for the platform (the system server on Android, {@link
+ * Process#SYSTEM_UID}). Every Binder belongs to the party whose code created it, and a thread
+ * acts for the app unless a framework service runs it as the platform ({@link
+ * #setThreadActingUid}). A transaction from one party to a binder of the other is an incoming IPC
+ * for the callee: for its duration {@link #getCallingUid} is the sender's uid, {@link
+ * #getCallingPid} this process, and the thread acts for the binder's owner. A transaction within
+ * one party is a local call, which on Android leaves the calling identity alone. Outside any
+ * incoming transaction the calling identity is the thread's own party.
  */
 public class Binder implements IBinder {
     static final String TAG = "Binder";
@@ -70,6 +79,10 @@ public class Binder implements IBinder {
         int strictModePolicy;
         int workSource = UNSET_WORKSOURCE;
         boolean propagateWorkSource;
+        /** the party this thread runs code for: the app (this process's uid) or the platform */
+        int actingUid = Process.myUid();
+        /** nesting depth of incoming (cross-party) transactions being handled */
+        int incoming;
     }
 
     private static final ThreadLocal<ThreadState> sThreadState = new ThreadLocal<ThreadState>() {
@@ -108,13 +121,45 @@ public class Binder implements IBinder {
     }
 
     /**
-     * Returns {@code true} if the current thread is currently executing an incoming transaction.
-     * Local calls never are (there is no binder thread pool receiving transactions in ATL).
+     * Returns {@code true} if the current thread is currently executing an incoming transaction:
+     * one sent by the other party of this process (see the class comment). Local calls are not.
      *
      * @hide
      */
     public static final boolean isDirectlyHandlingTransaction() {
-        return false;
+        return sThreadState.get().incoming > 0;
+    }
+
+    /**
+     * teslalinux: makes the current thread run code for {@code uid}: the app ({@link
+     * Process#myUid()}) or the platform ({@link Process#SYSTEM_UID}), for ATL's framework services
+     * that act as the system server would. Binders created on the thread belong to that party, and
+     * transactions it sends to the other party's binders carry that uid as the calling identity.
+     * The calling identity outside a transaction becomes that party too. Returns the previous uid,
+     * to be passed back when the platform code is done.
+     *
+     * @hide
+     */
+    public static final int setThreadActingUid(int uid) {
+        if (uid != Process.myUid() && uid != Process.SYSTEM_UID)
+            throw new IllegalArgumentException("a thread acts for the app (" + Process.myUid() + ") or the platform (" + Process.SYSTEM_UID + "), not " + uid);
+        ThreadState s = sThreadState.get();
+        int previous = s.actingUid;
+        if (s.incoming == 0 && !s.hasExplicitIdentity && s.callingUid == previous) {
+            s.callingUid = uid;
+            s.callingPid = Process.myPid();
+        }
+        s.actingUid = uid;
+        return previous;
+    }
+
+    /**
+     * teslalinux: the party the current thread runs code for (see {@link #setThreadActingUid}).
+     *
+     * @hide
+     */
+    public static final int getThreadActingUid() {
+        return sThreadState.get().actingUid;
     }
 
     private static boolean hasExplicitIdentity() {
@@ -170,7 +215,8 @@ public class Binder implements IBinder {
         ThreadState s = sThreadState.get();
         long token = ((long) s.callingUid << 32) | (s.hasExplicitIdentity ? EXPLICIT_IDENTITY_BIT : 0)
                 | (s.callingPid & (EXPLICIT_IDENTITY_BIT - 1));
-        s.callingUid = Process.myUid();
+        /* AOSP: the identity of the process running the code; here, of the party the thread acts for */
+        s.callingUid = s.actingUid;
         s.callingPid = Process.myPid();
         s.hasExplicitIdentity = true;
         return token;
@@ -349,7 +395,11 @@ public class Binder implements IBinder {
      */
     public Binder(@Nullable String descriptor) {
         mDescriptor = descriptor;
+        mOwnerUid = sThreadState.get().actingUid;
     }
+
+    /** the party (app or platform) whose code created this binder: see the class comment */
+    private final int mOwnerUid;
 
     /**
      * Convenience method for associating a specific interface with the Binder.
@@ -556,7 +606,33 @@ public class Binder implements IBinder {
         if (data != null) {
             data.setDataPosition(0);
         }
-        boolean r = onTransact(code, data, reply, flags);
+        ThreadState s = sThreadState.get();
+        boolean r;
+        if (s.actingUid == mOwnerUid) {
+            /* a local call: the callee sees the caller's calling identity, as on Android */
+            r = onTransact(code, data, reply, flags);
+        } else {
+            /* from the other party: an incoming IPC for the callee (libbinder's executeCommand
+             * BR_TRANSACTION sets the sender's identity and restores the previous one after) */
+            int savedUid = s.callingUid;
+            int savedPid = s.callingPid;
+            boolean savedExplicit = s.hasExplicitIdentity;
+            int savedActing = s.actingUid;
+            s.callingUid = savedActing;
+            s.callingPid = Process.myPid();
+            s.hasExplicitIdentity = false;
+            s.actingUid = mOwnerUid;
+            s.incoming++;
+            try {
+                r = onTransact(code, data, reply, flags);
+            } finally {
+                s.incoming--;
+                s.actingUid = savedActing;
+                s.hasExplicitIdentity = savedExplicit;
+                s.callingPid = savedPid;
+                s.callingUid = savedUid;
+            }
+        }
         if (reply != null) {
             reply.setDataPosition(0);
         }

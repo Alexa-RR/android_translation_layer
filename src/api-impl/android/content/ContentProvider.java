@@ -25,6 +25,10 @@ public abstract class ContentProvider {
 	@Export
 	static void createContentProviders() {
 		atl_providers.put("media", new ATLProvider(new ATLMediaContentProvider()));
+		/* the car host's connection state, published only when the car host runs */
+		if (android.atl.carhost.ATLCarHost.isEnabled())
+			atl_providers.put(android.atl.carhost.ATLCarConnectionProvider.AUTHORITY,
+			                  new ATLProvider(new android.atl.carhost.ATLCarConnectionProvider()));
 		ATLLoadedApp primary = ATLLoadedApp.getPrimaryApplication();
 		for (PackageParser.Provider provider_parsed : primary.pkg.providers) {
 			String process_name = provider_parsed.info.processName;
@@ -83,7 +87,10 @@ public abstract class ContentProvider {
 
 	public abstract String getType(Uri uri);
 
-	public abstract ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException;
+	/** AOSP: providers that serve files override this; by default there are none. */
+	public ParcelFileDescriptor openFile(Uri uri, String mode) throws FileNotFoundException {
+		throw new FileNotFoundException("No files supported by provider at " + uri);
+	}
 
 	public AssetFileDescriptor openAssetFile(Uri uri, String mode) throws FileNotFoundException {
 		ParcelFileDescriptor fd = openFile(uri, mode);

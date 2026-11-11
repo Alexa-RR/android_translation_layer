@@ -1080,8 +1080,11 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	public final void performResume() {
 		tlDispatchPendingResults(); /* AOSP: results of finished activities arrive right before onResume */
 		dispatchActivityPreResumed(); onResume(); dispatchActivityPostResumed();
-		if (tlResumeUptime == 0)
+		if (tlResumeUptime == 0) {
 			tlResumeUptime = android.os.SystemClock.uptimeMillis();
+			/* the car host (ATL_CAR_HOST=1) connects once the app has a resumed activity */
+			android.atl.carhost.ATLCarHost.onActivityResumed();
+		}
 	}
 	@Export
 	public final void performPause() { dispatchActivityPrePaused(); onPause(); dispatchActivityPostPaused(); }

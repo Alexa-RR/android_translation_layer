@@ -32,7 +32,7 @@ import java.util.Locale;
  * with {@link android.app.Activity#getResources}:</p>
  * <pre>Configuration config = getResources().getConfiguration();</pre>
  */
-public final class Configuration implements Comparable<Configuration> {
+public final class Configuration implements Comparable<Configuration>, android.os.Parcelable {
 	/**
 	 * @hide
 	 */
@@ -1605,6 +1605,85 @@ public final class Configuration implements Comparable<Configuration> {
 
 	/** AOSP (API 31): no font weight adjustment has been set. */
 	public static final int FONT_WEIGHT_ADJUSTMENT_UNDEFINED = Integer.MAX_VALUE;
+
+	/* ---- Parcelable (AOSP android14 writeToParcel/readFromParcel, same order). AOSP also writes
+	 * windowConfiguration, assetsSeq and the grammatical gender between compatSmallestScreenWidthDp
+	 * and the end; this runtime has no window manager configuration, asset sequence or grammatical
+	 * gender in Configuration, so those fields are not part of its parcel. ---- */
+
+	@Override
+	public void writeToParcel(android.os.Parcel dest, int flags) {
+		dest.writeFloat(fontScale);
+		dest.writeInt(mcc);
+		dest.writeInt(mnc);
+
+		tlFixUpLocaleList();
+		dest.writeTypedObject(tlLocaleList, flags);
+
+		dest.writeInt(userSetLocale ? 1 : 0);
+		dest.writeInt(touchscreen);
+		dest.writeInt(keyboard);
+		dest.writeInt(keyboardHidden);
+		dest.writeInt(hardKeyboardHidden);
+		dest.writeInt(navigation);
+		dest.writeInt(navigationHidden);
+		dest.writeInt(orientation);
+		dest.writeInt(screenLayout);
+		dest.writeInt(colorMode);
+		dest.writeInt(uiMode);
+		dest.writeInt(screenWidthDp);
+		dest.writeInt(screenHeightDp);
+		dest.writeInt(smallestScreenWidthDp);
+		dest.writeInt(densityDpi);
+		dest.writeInt(compatScreenWidthDp);
+		dest.writeInt(compatScreenHeightDp);
+		dest.writeInt(compatSmallestScreenWidthDp);
+		dest.writeInt(seq);
+		dest.writeInt(fontWeightAdjustment);
+	}
+
+	public void readFromParcel(android.os.Parcel source) {
+		fontScale = source.readFloat();
+		mcc = source.readInt();
+		mnc = source.readInt();
+
+		LocaleList locales = source.readTypedObject(LocaleList.CREATOR);
+		tlLocaleList = locales != null ? locales : LocaleList.getEmptyLocaleList();
+		locale = tlLocaleList.get(0);
+
+		userSetLocale = (source.readInt() == 1);
+		touchscreen = source.readInt();
+		keyboard = source.readInt();
+		keyboardHidden = source.readInt();
+		hardKeyboardHidden = source.readInt();
+		navigation = source.readInt();
+		navigationHidden = source.readInt();
+		orientation = source.readInt();
+		screenLayout = source.readInt();
+		colorMode = source.readInt();
+		uiMode = source.readInt();
+		screenWidthDp = source.readInt();
+		screenHeightDp = source.readInt();
+		smallestScreenWidthDp = source.readInt();
+		densityDpi = source.readInt();
+		compatScreenWidthDp = source.readInt();
+		compatScreenHeightDp = source.readInt();
+		compatSmallestScreenWidthDp = source.readInt();
+		seq = source.readInt();
+		fontWeightAdjustment = source.readInt();
+	}
+
+	public static final android.os.Parcelable.Creator<Configuration> CREATOR = new android.os.Parcelable.Creator<Configuration>() {
+		public Configuration createFromParcel(android.os.Parcel source) {
+			Configuration config = new Configuration();
+			config.readFromParcel(source);
+			return config;
+		}
+
+		public Configuration[] newArray(int size) {
+			return new Configuration[size];
+		}
+	};
 
 	/* teslalinux: AOSP's locale list (Configuration.mLocaleList); the public locale field stays its first
 	 * entry: a direct write to locale replaces the list on the next read (AOSP fixUpLocaleList) */

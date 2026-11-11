@@ -47,6 +47,12 @@ meson setup builddir -Dr8_jar=/path/to/r8.jar
 ninja -C builddir
 ```
 
+The build signs `framework-res.apk` (the framework package `android`) with a platform key, as
+Android signs its framework: `keytool` and `jarsigner` from the JDK are needed. Without
+`-Dplatform_keystore=PATH` (a PKCS12 keystore with the alias `platform`), a key is generated once
+in the build directory (`res/framework-res/platform-key.p12`); only its consistency within one
+installation matters. Never commit a keystore.
+
 ---
 
 ## Upstream README

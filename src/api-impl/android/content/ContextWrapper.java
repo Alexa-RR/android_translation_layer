@@ -106,6 +106,12 @@ public class ContextWrapper extends Context {
 		return this.baseContext.createDisplayContext(display);
 	}
 
+	/** AOSP: the base context's display (a display context's own display) */
+	@Override
+	public Display getDisplay() {
+		return this.baseContext != null ? this.baseContext.getDisplay() : super.getDisplay();
+	}
+
 	@Override
 	public boolean isDeviceProtectedStorage() {
 		return this.baseContext.isDeviceProtectedStorage();

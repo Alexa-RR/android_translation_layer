@@ -28,6 +28,7 @@ import android.net.wifi.WifiManager;
 import android.os.*;
 import android.os.storage.StorageManager;
 import android.telephony.TelephonyManager;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.Slog;
 import android.view.Display;
@@ -63,6 +64,10 @@ public final class ContextImpl extends Context {
 	private final JobScheduler job_scheduler = new JobScheduler(this);
 
 	private final int atl_flags;
+
+	/* the display of a context made by createDisplayContext (AOSP ContextImpl.mDisplay), else null:
+	 * the window's display */
+	private Display tlDisplay;
 
 	public ContextImpl(Resources resources, ATLLoadedApp loadedApp, Resources.Theme theme) {
 		this(resources, loadedApp, 0, 0);
@@ -125,7 +130,7 @@ public final class ContextImpl extends Context {
 		if (targetApp == null) {
 			return false;
 		}
-		return targetApp.stopService(intent);
+		return android.atl.ATLActiveServices.stopService(targetApp, intent);
 	}
 
 	@Override
@@ -327,7 +332,7 @@ public final class ContextImpl extends Context {
 				nativeStartExternalService(intent);
 			return null;
 		}
-		return targetApp.startOrBindService(intent, null);
+		return android.atl.ATLActiveServices.startService(targetApp, intent);
 	}
 
 	@Override
@@ -362,6 +367,8 @@ public final class ContextImpl extends Context {
 					nativeStartExternalService(requestIntent);
 				}
 			});
+			/* the connection is to a service outside this process; unbindService must accept it */
+			android.atl.ATLActiveServices.registerExternalConnection(serviceConnection);
 			serviceConnection.onServiceConnected(intent.getComponent(), requestMessenger.getBinder());
 			return true;
 		}
@@ -369,9 +376,8 @@ public final class ContextImpl extends Context {
 		if (targetApp == null) {
 			return false;
 		}
-		/* teslalinux: ATL started the service but never delivered the connection; bound services
-		 * (Waze's navigation service, Play Core) need onServiceConnected with the service's binder. */
-		return targetApp.startOrBindService(intent, serviceConnection) != null;
+		/* AOSP service lifecycle: one binder per intent, onUnbind/onRebind, BIND_AUTO_CREATE */
+		return android.atl.ATLActiveServices.bindService(targetApp, intent, serviceConnection, flags);
 	}
 
 	@Override
@@ -514,12 +520,46 @@ public final class ContextImpl extends Context {
 		config.setTo(getResources().getConfiguration());
 		if (config_override != null)
 			config.updateFrom(config_override);
-		return this.atl_loaded_app.createContext(null, config, getTheme());
+		/* AOSP: the new context stays on this context's display */
+		DisplayMetrics metrics = null;
+		if (tlDisplay != null) {
+			metrics = new DisplayMetrics();
+			tlDisplay.getMetrics(metrics);
+		}
+		ContextImpl context = this.atl_loaded_app.createContext(metrics, config, getTheme());
+		context.tlDisplay = tlDisplay;
+		return context;
 	}
 
+	/**
+	 * AOSP: a context whose resources describe the display: its size and density in the
+	 * DisplayMetrics, and the configuration's screen size, smallest width, orientation and density
+	 * computed from them (ResourcesManager applies the display's metrics to the configuration).
+	 */
 	@Override
 	public Context createDisplayContext(Display display) {
-		return new ContextImpl(getResources(), this.atl_loaded_app, getTheme(), this.atl_flags);
+		if (display == null)
+			throw new IllegalArgumentException("display must not be null");
+		DisplayMetrics metrics = new DisplayMetrics();
+		display.getMetrics(metrics);
+		Configuration config = new Configuration();
+		config.setTo(getResources().getConfiguration());
+		config.densityDpi = metrics.densityDpi;
+		config.screenWidthDp = (int)(metrics.widthPixels / metrics.density + 0.5f);
+		config.screenHeightDp = (int)(metrics.heightPixels / metrics.density + 0.5f);
+		config.smallestScreenWidthDp = Math.min(config.screenWidthDp, config.screenHeightDp);
+		config.orientation = metrics.widthPixels > metrics.heightPixels ? Configuration.ORIENTATION_LANDSCAPE
+		                     : metrics.widthPixels < metrics.heightPixels ? Configuration.ORIENTATION_PORTRAIT
+		                     : Configuration.ORIENTATION_SQUARE;
+		ContextImpl context = this.atl_loaded_app.createContext(metrics, config, getTheme());
+		context.tlDisplay = display;
+		return context;
+	}
+
+	/** AOSP: the display this context is associated with */
+	@Override
+	public Display getDisplay() {
+		return tlDisplay != null ? tlDisplay : super.getDisplay();
 	}
 
 	@Override

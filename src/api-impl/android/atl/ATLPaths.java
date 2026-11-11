@@ -8,6 +8,8 @@ public final class ATLPaths {
 	public static final File api_impl_jar;
 	public static final File gstub_jar;
 	public static final File ghax_jar;
+	/** the framework package's APK, or null when the runtime was started without it */
+	public static final File framework_res_apk;
 
 	static {
 		// The main executable set api-impl.jar as the first element of "java.class.path"
@@ -17,6 +19,15 @@ public final class ATLPaths {
 		File extraJarsDirectory = ATLPaths.api_impl_jar.getParentFile();
 		gstub_jar = new File(extraJarsDirectory, "gstub.jar");
 		ghax_jar = new File(extraJarsDirectory, "ghax.jar");
+		// main.c puts framework-res.apk (the "android" package) on the class path after api-impl.jar
+		File frameworkRes = null;
+		for (String element : cp.split(":")) {
+			if (element.endsWith("/framework-res.apk") || element.equals("framework-res.apk")) {
+				frameworkRes = new File(element).getAbsoluteFile();
+				break;
+			}
+		}
+		framework_res_apk = frameworkRes;
 		// Mirror how main.c calculates app_data_dir_base
 		String ANDROID_APP_DATA_DIR = System.getenv("ANDROID_APP_DATA_DIR");
 		if (ANDROID_APP_DATA_DIR != null && !ANDROID_APP_DATA_DIR.isEmpty()) {

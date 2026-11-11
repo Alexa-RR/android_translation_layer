@@ -1,6 +1,7 @@
 package android.content;
 
 import android.accounts.Account;
+import android.atl.ATLActiveServices;
 import android.atl.ATLLoadedApp;
 import android.content.res.AssetFileDescriptor;
 import android.database.ContentObserver;
@@ -185,11 +186,13 @@ public class ContentResolver {
 		ATLLoadedApp app = ATLLoadedApp.getPrimaryApplication();
 		Intent intent = new Intent("android.content.SyncAdapter");
 		intent.setPackage(app.pkg.packageName);
-		ComponentName component = app.startOrBindService(intent, new ServiceConnection() {
+		ServiceConnection connection = new ServiceConnection() {
 			@Override
 			public void onServiceConnected(ComponentName name, IBinder service) {
+				final ServiceConnection self = this;
 				if (!(service instanceof AbstractThreadedSyncAdapter.SyncAdapterBinder)) {
 					Log.w("ContentResolver", "requestSync: sync adapter service returned " + service);
+					ATLActiveServices.unbindService(self);
 					return;
 				}
 				final AbstractThreadedSyncAdapter adapter = ((AbstractThreadedSyncAdapter.SyncAdapterBinder)service).getSyncAdapter();
@@ -205,6 +208,8 @@ public class ContentResolver {
 						} catch (Throwable t) {
 							Log.e("ContentResolver", "requestSync: sync for " + authority + " failed", t);
 						}
+						// the SyncManager unbinds the adapter service when the sync is over
+						ATLActiveServices.unbindService(self);
 					}
 				}, "SyncAdapterThread").start();
 			}
@@ -214,8 +219,8 @@ public class ContentResolver {
 				// the SyncManager counts a sync whose adapter service went away as failed
 				Log.w("ContentResolver", "requestSync: sync adapter service " + name + " disconnected during the sync for " + authority);
 			}
-		});
-		if (component == null)
+		};
+		if (!ATLActiveServices.bindService(app, intent, connection, Context.BIND_AUTO_CREATE))
 			Log.w("ContentResolver", "requestSync: no sync adapter service found in " + app.pkg.packageName);
 	}
 

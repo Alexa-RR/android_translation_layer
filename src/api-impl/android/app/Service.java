@@ -5,7 +5,8 @@ import android.content.ContextWrapper;
 import android.content.Intent;
 import android.os.IBinder;
 
-public abstract class Service extends ContextWrapper {
+/* AOSP: a Service is a ComponentCallbacks2 (configuration, low memory, trim memory) */
+public abstract class Service extends ContextWrapper implements android.content.ComponentCallbacks2 {
 
 	private int notification_id;
 
@@ -76,17 +77,23 @@ public abstract class Service extends ContextWrapper {
 		return this.get_atl_loaded_app().getApplication();
 	}
 
-	public void stopSelf(int startId) {
-		System.out.println("Service.stopSelf(" + startId + ") called");
+	/** AOSP: stops the service if startId is its most recent start (see stopSelfResult). */
+	public final void stopSelf(int startId) {
+		android.atl.ATLActiveServices.stopSelf(this, startId);
 	}
 
-	public void stopSelf() {
-		System.out.println("Service.stopSelf() called");
+	/** AOSP: stopSelf(-1): stops the service whatever start came last. */
+	public final void stopSelf() {
+		stopSelf(-1);
 	}
 
-	public boolean stopSelfResult(int startId) {
-		System.out.println("Service.stopSelfResult(" + startId + ") called");
-		return true;
+	/**
+	 * AOSP: stops the service if startId is the id of its most recent start, so a start that arrived
+	 * meanwhile keeps it running; a service still bound with BIND_AUTO_CREATE is destroyed only after
+	 * its last such client unbinds. Returns whether the stop request was taken.
+	 */
+	public final boolean stopSelfResult(int startId) {
+		return android.atl.ATLActiveServices.stopSelf(this, startId);
 	}
 
 	public void attachBaseContext(Context newBase) {

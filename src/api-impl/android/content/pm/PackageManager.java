@@ -1398,9 +1398,11 @@ public class PackageManager {
 			return PackageParser.generatePackageInfo(primary.pkg, new int[0], flags, 0, 0, new HashSet<>(), new PackageUserState());
 		}
 		if (packageName.equals("atl") || packageName.equals("android")) {
-			PackageInfo info = new PackageInfo();
+			/* the framework package (framework-res.apk): system uid, FLAG_SYSTEM, the platform
+			 * signature; "atl" is ATL's own name for it */
+			PackageInfo info = PackageParser.generatePackageInfo(ATLLoadedApp.getSystemApplication().pkg, new int[0],
+			                                                     flags, 0, 0, new HashSet<>(), new PackageUserState());
 			info.packageName = packageName;
-			info.signatures = new Signature[] {new Signature(new byte[0])};
 			return info;
 		}
 		PackageParser.Package pkg = ATLLoadedAppManager.getPackageFromPackageName(packageName);
@@ -1501,7 +1503,22 @@ public class PackageManager {
 	 */
 	public int getPackageUid(String packageName, int userHandle)
 	    throws NameNotFoundException {
-		return -1;
+		PackageParser.Package pkg = tlKnownPackage(packageName);
+		if (pkg == null)
+			throw new NameNotFoundException(packageName);
+		return pkg.applicationInfo.uid;
+	}
+
+	/** the parsed package of the app ATL runs or of the framework ("android"), else null */
+	private static PackageParser.Package tlKnownPackage(String packageName) {
+		if (packageName == null)
+			return null;
+		PackageParser.Package pkg = ATLLoadedApp.getPrimaryApplication().pkg;
+		if (pkg.packageName.equals(packageName))
+			return pkg;
+		if ("android".equals(packageName))
+			return ATLLoadedApp.getSystemApplication().pkg;
+		return null;
 	}
 
 	/**
@@ -2042,7 +2059,24 @@ public class PackageManager {
 	 * @see #SIGNATURE_UNKNOWN_PACKAGE
 	 */
 	public int checkSignatures(String pkg1, String pkg2) {
-		return -1;
+		PackageParser.Package p1 = pkg1 != null ? ATLLoadedAppManager.getPackageFromPackageName(pkg1) : null;
+		PackageParser.Package p2 = pkg2 != null ? ATLLoadedAppManager.getPackageFromPackageName(pkg2) : null;
+		if (p1 == null || p2 == null)
+			return SIGNATURE_UNKNOWN_PACKAGE;
+		return tlCompareSignatures(p1.mSignatures, p2.mSignatures);
+	}
+
+	/** AOSP PackageManagerServiceUtils.compareSignatures: the same set of signers matches */
+	private static int tlCompareSignatures(Signature[] s1, Signature[] s2) {
+		if (s1 == null)
+			return s2 == null ? SIGNATURE_NEITHER_SIGNED : SIGNATURE_FIRST_NOT_SIGNED;
+		if (s2 == null)
+			return SIGNATURE_SECOND_NOT_SIGNED;
+		if (s1.length != s2.length)
+			return SIGNATURE_NO_MATCH;
+		java.util.HashSet<Signature> set1 = new java.util.HashSet<>(java.util.Arrays.asList(s1));
+		java.util.HashSet<Signature> set2 = new java.util.HashSet<>(java.util.Arrays.asList(s2));
+		return set1.equals(set2) ? SIGNATURE_MATCH : SIGNATURE_NO_MATCH;
 	}
 
 	/**
@@ -2066,7 +2100,11 @@ public class PackageManager {
 	 * @see #SIGNATURE_UNKNOWN_PACKAGE
 	 */
 	public int checkSignatures(int uid1, int uid2) {
-		return -1;
+		String[] pkgs1 = getPackagesForUid(uid1);
+		String[] pkgs2 = getPackagesForUid(uid2);
+		if (pkgs1 == null || pkgs2 == null)
+			return SIGNATURE_UNKNOWN_PACKAGE;
+		return checkSignatures(pkgs1[0], pkgs2[0]);
 	}
 
 	/**
@@ -2082,10 +2120,18 @@ public class PackageManager {
 	 * @return Returns an array of one or more packages assigned to the user
 	 * id, or null if there are no known packages with the given id.
 	 */
-	/** AOSP: the packages running as uid (this app's for its uid), or null. */
+	/**
+	 * AOSP: the packages running as uid, or null: the app's for its uid, and the framework package
+	 * "android" for the system uid (the uid ATL's framework services act as, see Binder).
+	 */
 	public String[] getPackagesForUid(int uid) {
 		PackageParser.Package pkg = ATLLoadedApp.getPrimaryApplication().pkg;
-		return uid == pkg.applicationInfo.uid ? new String[] {pkg.packageName} : null;
+		java.util.ArrayList<String> pkgs = new java.util.ArrayList<>(2);
+		if (uid == pkg.applicationInfo.uid)
+			pkgs.add(pkg.packageName);
+		if (uid == android.os.Process.SYSTEM_UID && !pkgs.contains("android"))
+			pkgs.add("android");
+		return pkgs.isEmpty() ? null : pkgs.toArray(new String[0]);
 	}
 
 	/**
@@ -2099,10 +2145,18 @@ public class PackageManager {
 	 * @return Returns a unique name for the given user id, or null if the
 	 * user id is not currently assigned.
 	 */
-	/** AOSP: the package name of an app uid, or null for an unknown uid. */
+	/**
+	 * AOSP: the package name of an app uid, "sharedUserName:uid" for a uid of a shared user (the
+	 * system uid is "android.uid.system:1000"), or null for an unknown uid.
+	 */
 	public String getNameForUid(int uid) {
 		String[] pkgs = getPackagesForUid(uid);
-		return pkgs != null ? pkgs[0] : null;
+		if (pkgs == null)
+			return null;
+		PackageParser.Package pkg = tlKnownPackage(pkgs[0]);
+		if (pkg != null && pkg.mSharedUserId != null)
+			return pkg.mSharedUserId + ":" + uid;
+		return pkgs[0];
 	}
 
 	/**
@@ -3812,10 +3866,9 @@ public class PackageManager {
 	/** AOSP: hasSigningCertificate input is the SHA-256 digest of the certificate. */
 	public static final int CERT_INPUT_SHA256 = 1;
 
-	/** the parsed package of packageName when it is the app ATL runs, else null */
+	/** the parsed package of packageName when it is the app ATL runs or the framework, else null */
 	private static PackageParser.Package tlPackage(String packageName) {
-		PackageParser.Package pkg = ATLLoadedApp.getPrimaryApplication().pkg;
-		return pkg.packageName.equals(packageName) ? pkg : null;
+		return tlKnownPackage(packageName);
 	}
 
 	/** every feature name the device could report: the FEATURE_ constants and the extra names hasSystemFeature knows */
