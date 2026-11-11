@@ -30,6 +30,8 @@ static void dump_widget(JNIEnv *env, GtkWidget *w, int depth, FILE *out)
 	        gtk_widget_get_width(w), gtk_widget_get_height(w));
 	if (have_bounds)
 		fprintf(out, " at %.0f,%.0f %.0fx%.0f", bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height);
+	if (GTK_IS_LABEL(w)) /* what the label really shows, next to the Java text in the view dump */
+		fprintf(out, " label=\"%.80s\"", gtk_label_get_text(GTK_LABEL(w)));
 	fputc(10, out);
 	for (GtkWidget *c = gtk_widget_get_first_child(w); c; c = gtk_widget_get_next_sibling(c))
 		dump_widget(env, c, depth + 1, out);
