@@ -7,6 +7,58 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_media_MediaPlayer_MEDIA_ERROR_UNKNOWN
+#define android_media_MediaPlayer_MEDIA_ERROR_UNKNOWN 1L
+#undef android_media_MediaPlayer_MEDIA_ERROR_SERVER_DIED
+#define android_media_MediaPlayer_MEDIA_ERROR_SERVER_DIED 100L
+#undef android_media_MediaPlayer_MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK
+#define android_media_MediaPlayer_MEDIA_ERROR_NOT_VALID_FOR_PROGRESSIVE_PLAYBACK 200L
+#undef android_media_MediaPlayer_MEDIA_ERROR_IO
+#define android_media_MediaPlayer_MEDIA_ERROR_IO -1004L
+#undef android_media_MediaPlayer_MEDIA_ERROR_MALFORMED
+#define android_media_MediaPlayer_MEDIA_ERROR_MALFORMED -1007L
+#undef android_media_MediaPlayer_MEDIA_ERROR_UNSUPPORTED
+#define android_media_MediaPlayer_MEDIA_ERROR_UNSUPPORTED -1010L
+#undef android_media_MediaPlayer_MEDIA_ERROR_TIMED_OUT
+#define android_media_MediaPlayer_MEDIA_ERROR_TIMED_OUT -110L
+#undef android_media_MediaPlayer_MEDIA_INFO_UNKNOWN
+#define android_media_MediaPlayer_MEDIA_INFO_UNKNOWN 1L
+#undef android_media_MediaPlayer_MEDIA_INFO_VIDEO_RENDERING_START
+#define android_media_MediaPlayer_MEDIA_INFO_VIDEO_RENDERING_START 3L
+#undef android_media_MediaPlayer_MEDIA_INFO_BUFFERING_START
+#define android_media_MediaPlayer_MEDIA_INFO_BUFFERING_START 701L
+#undef android_media_MediaPlayer_MEDIA_INFO_BUFFERING_END
+#define android_media_MediaPlayer_MEDIA_INFO_BUFFERING_END 702L
+#undef android_media_MediaPlayer_MEDIA_INFO_NOT_SEEKABLE
+#define android_media_MediaPlayer_MEDIA_INFO_NOT_SEEKABLE 801L
+#undef android_media_MediaPlayer_SEEK_PREVIOUS_SYNC
+#define android_media_MediaPlayer_SEEK_PREVIOUS_SYNC 0L
+#undef android_media_MediaPlayer_SEEK_NEXT_SYNC
+#define android_media_MediaPlayer_SEEK_NEXT_SYNC 1L
+#undef android_media_MediaPlayer_SEEK_CLOSEST_SYNC
+#define android_media_MediaPlayer_SEEK_CLOSEST_SYNC 2L
+#undef android_media_MediaPlayer_SEEK_CLOSEST
+#define android_media_MediaPlayer_SEEK_CLOSEST 3L
+#undef android_media_MediaPlayer_STATE_ERROR
+#define android_media_MediaPlayer_STATE_ERROR 0L
+#undef android_media_MediaPlayer_STATE_IDLE
+#define android_media_MediaPlayer_STATE_IDLE 1L
+#undef android_media_MediaPlayer_STATE_INITIALIZED
+#define android_media_MediaPlayer_STATE_INITIALIZED 2L
+#undef android_media_MediaPlayer_STATE_PREPARING
+#define android_media_MediaPlayer_STATE_PREPARING 4L
+#undef android_media_MediaPlayer_STATE_PREPARED
+#define android_media_MediaPlayer_STATE_PREPARED 8L
+#undef android_media_MediaPlayer_STATE_STARTED
+#define android_media_MediaPlayer_STATE_STARTED 16L
+#undef android_media_MediaPlayer_STATE_PAUSED
+#define android_media_MediaPlayer_STATE_PAUSED 32L
+#undef android_media_MediaPlayer_STATE_STOPPED
+#define android_media_MediaPlayer_STATE_STOPPED 64L
+#undef android_media_MediaPlayer_STATE_PLAYBACK_COMPLETE
+#define android_media_MediaPlayer_STATE_PLAYBACK_COMPLETE 128L
+#undef android_media_MediaPlayer_STATE_END
+#define android_media_MediaPlayer_STATE_END 256L
 /*
  * Class:     android_media_MediaPlayer
  * Method:    native_prepare
@@ -53,6 +105,54 @@ JNIEXPORT jint JNICALL Java_android_media_MediaPlayer_native_1getDuration
  * Signature: (J)I
  */
 JNIEXPORT jint JNICALL Java_android_media_MediaPlayer_native_1getCurrentPosition
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_media_MediaPlayer
+ * Method:    native_pause
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaPlayer_native_1pause
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_media_MediaPlayer
+ * Method:    native_seekTo
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaPlayer_native_1seekTo
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_media_MediaPlayer
+ * Method:    native_setVolume
+ * Signature: (JF)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaPlayer_native_1setVolume
+  (JNIEnv *, jclass, jlong, jfloat);
+
+/*
+ * Class:     android_media_MediaPlayer
+ * Method:    native_setLooping
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaPlayer_native_1setLooping
+  (JNIEnv *, jclass, jlong, jboolean);
+
+/*
+ * Class:     android_media_MediaPlayer
+ * Method:    native_isPlaying
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_media_MediaPlayer_native_1isPlaying
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_media_MediaPlayer
+ * Method:    native_release
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaPlayer_native_1release
   (JNIEnv *, jclass, jlong);
 
 #ifdef __cplusplus

@@ -13,6 +13,8 @@ extern "C" {
 #define android_view_ViewGroup_NOT_FOCUSABLE 0L
 #undef android_view_ViewGroup_FOCUSABLE
 #define android_view_ViewGroup_FOCUSABLE 1L
+#undef android_view_ViewGroup_FOCUSABLE_AUTO
+#define android_view_ViewGroup_FOCUSABLE_AUTO 16L
 #undef android_view_ViewGroup_FOCUSABLE_MASK
 #define android_view_ViewGroup_FOCUSABLE_MASK 1L
 #undef android_view_ViewGroup_FITS_SYSTEM_WINDOWS
@@ -211,6 +213,84 @@ extern "C" {
 #define android_view_ViewGroup_TEXT_DIRECTION_LTR 3L
 #undef android_view_ViewGroup_TEXT_DIRECTION_RTL
 #define android_view_ViewGroup_TEXT_DIRECTION_RTL 4L
+#undef android_view_ViewGroup_LAYER_TYPE_NONE
+#define android_view_ViewGroup_LAYER_TYPE_NONE 0L
+#undef android_view_ViewGroup_LAYER_TYPE_SOFTWARE
+#define android_view_ViewGroup_LAYER_TYPE_SOFTWARE 1L
+#undef android_view_ViewGroup_LAYER_TYPE_HARDWARE
+#define android_view_ViewGroup_LAYER_TYPE_HARDWARE 2L
+#undef android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT
+#define android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT NaNf
+#undef android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE
+#define android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE -1.0f
+#undef android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_LOW
+#define android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_LOW -2.0f
+#undef android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_NORMAL
+#define android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_NORMAL -3.0f
+#undef android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_HIGH
+#define android_view_ViewGroup_REQUESTED_FRAME_RATE_CATEGORY_HIGH -4.0f
+#undef android_view_ViewGroup_AUTOFILL_TYPE_NONE
+#define android_view_ViewGroup_AUTOFILL_TYPE_NONE 0L
+#undef android_view_ViewGroup_AUTOFILL_TYPE_TEXT
+#define android_view_ViewGroup_AUTOFILL_TYPE_TEXT 1L
+#undef android_view_ViewGroup_AUTOFILL_TYPE_TOGGLE
+#define android_view_ViewGroup_AUTOFILL_TYPE_TOGGLE 2L
+#undef android_view_ViewGroup_AUTOFILL_TYPE_LIST
+#define android_view_ViewGroup_AUTOFILL_TYPE_LIST 3L
+#undef android_view_ViewGroup_AUTOFILL_TYPE_DATE
+#define android_view_ViewGroup_AUTOFILL_TYPE_DATE 4L
+#undef android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_AUTO
+#define android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_AUTO 0L
+#undef android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_YES
+#define android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_YES 1L
+#undef android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_NO
+#define android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_NO 2L
+#undef android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS
+#define android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS 4L
+#undef android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+#define android_view_ViewGroup_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS 8L
+#undef android_view_ViewGroup_LAST_APP_AUTOFILL_ID
+#define android_view_ViewGroup_LAST_APP_AUTOFILL_ID 1073741823L
+#undef android_view_ViewGroup_CONTENT_SENSITIVITY_AUTO
+#define android_view_ViewGroup_CONTENT_SENSITIVITY_AUTO 0L
+#undef android_view_ViewGroup_CONTENT_SENSITIVITY_SENSITIVE
+#define android_view_ViewGroup_CONTENT_SENSITIVITY_SENSITIVE 1L
+#undef android_view_ViewGroup_CONTENT_SENSITIVITY_NOT_SENSITIVE
+#define android_view_ViewGroup_CONTENT_SENSITIVITY_NOT_SENSITIVE 2L
+#undef android_view_ViewGroup_ACCESSIBILITY_LIVE_REGION_NONE
+#define android_view_ViewGroup_ACCESSIBILITY_LIVE_REGION_NONE 0L
+#undef android_view_ViewGroup_ACCESSIBILITY_LIVE_REGION_POLITE
+#define android_view_ViewGroup_ACCESSIBILITY_LIVE_REGION_POLITE 1L
+#undef android_view_ViewGroup_ACCESSIBILITY_LIVE_REGION_ASSERTIVE
+#define android_view_ViewGroup_ACCESSIBILITY_LIVE_REGION_ASSERTIVE 2L
+#undef android_view_ViewGroup_ACCESSIBILITY_DATA_SENSITIVE_AUTO
+#define android_view_ViewGroup_ACCESSIBILITY_DATA_SENSITIVE_AUTO 0L
+#undef android_view_ViewGroup_ACCESSIBILITY_DATA_SENSITIVE_YES
+#define android_view_ViewGroup_ACCESSIBILITY_DATA_SENSITIVE_YES 1L
+#undef android_view_ViewGroup_ACCESSIBILITY_DATA_SENSITIVE_NO
+#define android_view_ViewGroup_ACCESSIBILITY_DATA_SENSITIVE_NO 2L
+#undef android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_AUTO
+#define android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_AUTO 0L
+#undef android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_YES
+#define android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_YES 1L
+#undef android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_NO
+#define android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_NO 2L
+#undef android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+#define android_view_ViewGroup_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS 4L
+#undef android_view_ViewGroup_SCROLL_INDICATOR_TOP
+#define android_view_ViewGroup_SCROLL_INDICATOR_TOP 1L
+#undef android_view_ViewGroup_SCROLL_INDICATOR_BOTTOM
+#define android_view_ViewGroup_SCROLL_INDICATOR_BOTTOM 2L
+#undef android_view_ViewGroup_SCROLL_INDICATOR_LEFT
+#define android_view_ViewGroup_SCROLL_INDICATOR_LEFT 4L
+#undef android_view_ViewGroup_SCROLL_INDICATOR_RIGHT
+#define android_view_ViewGroup_SCROLL_INDICATOR_RIGHT 8L
+#undef android_view_ViewGroup_SCROLL_INDICATOR_START
+#define android_view_ViewGroup_SCROLL_INDICATOR_START 16L
+#undef android_view_ViewGroup_SCROLL_INDICATOR_END
+#define android_view_ViewGroup_SCROLL_INDICATOR_END 32L
+#undef android_view_ViewGroup_SCROLL_INDICATORS_ALL
+#define android_view_ViewGroup_SCROLL_INDICATORS_ALL 63L
 #undef android_view_ViewGroup_FLAG_CLIP_CHILDREN
 #define android_view_ViewGroup_FLAG_CLIP_CHILDREN 1L
 #undef android_view_ViewGroup_FLAG_INVALIDATE_REQUIRED
@@ -241,6 +321,22 @@ extern "C" {
 #define android_view_ViewGroup_FLAG_IS_TRANSITION_GROUP_SET 33554432L
 #undef android_view_ViewGroup_FLAG_TOUCHSCREEN_BLOCKS_FOCUS
 #define android_view_ViewGroup_FLAG_TOUCHSCREEN_BLOCKS_FOCUS 67108864L
+#undef android_view_ViewGroup_PERSISTENT_NO_CACHE
+#define android_view_ViewGroup_PERSISTENT_NO_CACHE 0L
+#undef android_view_ViewGroup_PERSISTENT_ANIMATION_CACHE
+#define android_view_ViewGroup_PERSISTENT_ANIMATION_CACHE 1L
+#undef android_view_ViewGroup_PERSISTENT_SCROLLING_CACHE
+#define android_view_ViewGroup_PERSISTENT_SCROLLING_CACHE 2L
+#undef android_view_ViewGroup_PERSISTENT_ALL_CACHES
+#define android_view_ViewGroup_PERSISTENT_ALL_CACHES 3L
+#undef android_view_ViewGroup_LAYOUT_MODE_UNDEFINED
+#define android_view_ViewGroup_LAYOUT_MODE_UNDEFINED -1L
+#undef android_view_ViewGroup_LAYOUT_MODE_CLIP_BOUNDS
+#define android_view_ViewGroup_LAYOUT_MODE_CLIP_BOUNDS 0L
+#undef android_view_ViewGroup_LAYOUT_MODE_OPTICAL_BOUNDS
+#define android_view_ViewGroup_LAYOUT_MODE_OPTICAL_BOUNDS 1L
+#undef android_view_ViewGroup_LAYOUT_MODE_DEFAULT
+#define android_view_ViewGroup_LAYOUT_MODE_DEFAULT 0L
 /*
  * Class:     android_view_ViewGroup
  * Method:    native_addView
@@ -280,6 +376,30 @@ JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1drawChild
  */
 JNIEXPORT jboolean JNICALL Java_android_view_ViewGroup_native_1dispatchTouchEvent
   (JNIEnv *, jobject, jlong, jobject, jdouble, jdouble);
+
+/*
+ * Class:     android_view_ViewGroup
+ * Method:    native_setChildClipsToBounds
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1setChildClipsToBounds
+  (JNIEnv *, jclass, jlong, jboolean);
+
+/*
+ * Class:     android_view_ViewGroup
+ * Method:    native_setPaddingClip
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1setPaddingClip
+  (JNIEnv *, jclass, jlong, jboolean);
+
+/*
+ * Class:     android_view_ViewGroup
+ * Method:    native_restackChild
+ * Signature: (JJJ)V
+ */
+JNIEXPORT void JNICALL Java_android_view_ViewGroup_native_1restackChild
+  (JNIEnv *, jobject, jlong, jlong, jlong);
 
 #ifdef __cplusplus
 }

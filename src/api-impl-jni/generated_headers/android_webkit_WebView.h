@@ -13,6 +13,8 @@ extern "C" {
 #define android_webkit_WebView_NOT_FOCUSABLE 0L
 #undef android_webkit_WebView_FOCUSABLE
 #define android_webkit_WebView_FOCUSABLE 1L
+#undef android_webkit_WebView_FOCUSABLE_AUTO
+#define android_webkit_WebView_FOCUSABLE_AUTO 16L
 #undef android_webkit_WebView_FOCUSABLE_MASK
 #define android_webkit_WebView_FOCUSABLE_MASK 1L
 #undef android_webkit_WebView_FITS_SYSTEM_WINDOWS
@@ -211,6 +213,84 @@ extern "C" {
 #define android_webkit_WebView_TEXT_DIRECTION_LTR 3L
 #undef android_webkit_WebView_TEXT_DIRECTION_RTL
 #define android_webkit_WebView_TEXT_DIRECTION_RTL 4L
+#undef android_webkit_WebView_LAYER_TYPE_NONE
+#define android_webkit_WebView_LAYER_TYPE_NONE 0L
+#undef android_webkit_WebView_LAYER_TYPE_SOFTWARE
+#define android_webkit_WebView_LAYER_TYPE_SOFTWARE 1L
+#undef android_webkit_WebView_LAYER_TYPE_HARDWARE
+#define android_webkit_WebView_LAYER_TYPE_HARDWARE 2L
+#undef android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT
+#define android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT NaNf
+#undef android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE
+#define android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE -1.0f
+#undef android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_LOW
+#define android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_LOW -2.0f
+#undef android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_NORMAL
+#define android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_NORMAL -3.0f
+#undef android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_HIGH
+#define android_webkit_WebView_REQUESTED_FRAME_RATE_CATEGORY_HIGH -4.0f
+#undef android_webkit_WebView_AUTOFILL_TYPE_NONE
+#define android_webkit_WebView_AUTOFILL_TYPE_NONE 0L
+#undef android_webkit_WebView_AUTOFILL_TYPE_TEXT
+#define android_webkit_WebView_AUTOFILL_TYPE_TEXT 1L
+#undef android_webkit_WebView_AUTOFILL_TYPE_TOGGLE
+#define android_webkit_WebView_AUTOFILL_TYPE_TOGGLE 2L
+#undef android_webkit_WebView_AUTOFILL_TYPE_LIST
+#define android_webkit_WebView_AUTOFILL_TYPE_LIST 3L
+#undef android_webkit_WebView_AUTOFILL_TYPE_DATE
+#define android_webkit_WebView_AUTOFILL_TYPE_DATE 4L
+#undef android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_AUTO
+#define android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_AUTO 0L
+#undef android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_YES
+#define android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_YES 1L
+#undef android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_NO
+#define android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_NO 2L
+#undef android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS
+#define android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS 4L
+#undef android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+#define android_webkit_WebView_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS 8L
+#undef android_webkit_WebView_LAST_APP_AUTOFILL_ID
+#define android_webkit_WebView_LAST_APP_AUTOFILL_ID 1073741823L
+#undef android_webkit_WebView_CONTENT_SENSITIVITY_AUTO
+#define android_webkit_WebView_CONTENT_SENSITIVITY_AUTO 0L
+#undef android_webkit_WebView_CONTENT_SENSITIVITY_SENSITIVE
+#define android_webkit_WebView_CONTENT_SENSITIVITY_SENSITIVE 1L
+#undef android_webkit_WebView_CONTENT_SENSITIVITY_NOT_SENSITIVE
+#define android_webkit_WebView_CONTENT_SENSITIVITY_NOT_SENSITIVE 2L
+#undef android_webkit_WebView_ACCESSIBILITY_LIVE_REGION_NONE
+#define android_webkit_WebView_ACCESSIBILITY_LIVE_REGION_NONE 0L
+#undef android_webkit_WebView_ACCESSIBILITY_LIVE_REGION_POLITE
+#define android_webkit_WebView_ACCESSIBILITY_LIVE_REGION_POLITE 1L
+#undef android_webkit_WebView_ACCESSIBILITY_LIVE_REGION_ASSERTIVE
+#define android_webkit_WebView_ACCESSIBILITY_LIVE_REGION_ASSERTIVE 2L
+#undef android_webkit_WebView_ACCESSIBILITY_DATA_SENSITIVE_AUTO
+#define android_webkit_WebView_ACCESSIBILITY_DATA_SENSITIVE_AUTO 0L
+#undef android_webkit_WebView_ACCESSIBILITY_DATA_SENSITIVE_YES
+#define android_webkit_WebView_ACCESSIBILITY_DATA_SENSITIVE_YES 1L
+#undef android_webkit_WebView_ACCESSIBILITY_DATA_SENSITIVE_NO
+#define android_webkit_WebView_ACCESSIBILITY_DATA_SENSITIVE_NO 2L
+#undef android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_AUTO
+#define android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_AUTO 0L
+#undef android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_YES
+#define android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_YES 1L
+#undef android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_NO
+#define android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_NO 2L
+#undef android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+#define android_webkit_WebView_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS 4L
+#undef android_webkit_WebView_SCROLL_INDICATOR_TOP
+#define android_webkit_WebView_SCROLL_INDICATOR_TOP 1L
+#undef android_webkit_WebView_SCROLL_INDICATOR_BOTTOM
+#define android_webkit_WebView_SCROLL_INDICATOR_BOTTOM 2L
+#undef android_webkit_WebView_SCROLL_INDICATOR_LEFT
+#define android_webkit_WebView_SCROLL_INDICATOR_LEFT 4L
+#undef android_webkit_WebView_SCROLL_INDICATOR_RIGHT
+#define android_webkit_WebView_SCROLL_INDICATOR_RIGHT 8L
+#undef android_webkit_WebView_SCROLL_INDICATOR_START
+#define android_webkit_WebView_SCROLL_INDICATOR_START 16L
+#undef android_webkit_WebView_SCROLL_INDICATOR_END
+#define android_webkit_WebView_SCROLL_INDICATOR_END 32L
+#undef android_webkit_WebView_SCROLL_INDICATORS_ALL
+#define android_webkit_WebView_SCROLL_INDICATORS_ALL 63L
 #undef android_webkit_WebView_FLAG_CLIP_CHILDREN
 #define android_webkit_WebView_FLAG_CLIP_CHILDREN 1L
 #undef android_webkit_WebView_FLAG_INVALIDATE_REQUIRED
@@ -241,6 +321,64 @@ extern "C" {
 #define android_webkit_WebView_FLAG_IS_TRANSITION_GROUP_SET 33554432L
 #undef android_webkit_WebView_FLAG_TOUCHSCREEN_BLOCKS_FOCUS
 #define android_webkit_WebView_FLAG_TOUCHSCREEN_BLOCKS_FOCUS 67108864L
+#undef android_webkit_WebView_PERSISTENT_NO_CACHE
+#define android_webkit_WebView_PERSISTENT_NO_CACHE 0L
+#undef android_webkit_WebView_PERSISTENT_ANIMATION_CACHE
+#define android_webkit_WebView_PERSISTENT_ANIMATION_CACHE 1L
+#undef android_webkit_WebView_PERSISTENT_SCROLLING_CACHE
+#define android_webkit_WebView_PERSISTENT_SCROLLING_CACHE 2L
+#undef android_webkit_WebView_PERSISTENT_ALL_CACHES
+#define android_webkit_WebView_PERSISTENT_ALL_CACHES 3L
+#undef android_webkit_WebView_LAYOUT_MODE_UNDEFINED
+#define android_webkit_WebView_LAYOUT_MODE_UNDEFINED -1L
+#undef android_webkit_WebView_LAYOUT_MODE_CLIP_BOUNDS
+#define android_webkit_WebView_LAYOUT_MODE_CLIP_BOUNDS 0L
+#undef android_webkit_WebView_LAYOUT_MODE_OPTICAL_BOUNDS
+#define android_webkit_WebView_LAYOUT_MODE_OPTICAL_BOUNDS 1L
+#undef android_webkit_WebView_LAYOUT_MODE_DEFAULT
+#define android_webkit_WebView_LAYOUT_MODE_DEFAULT 0L
+#undef android_webkit_WebView_RENDERER_PRIORITY_WAIVED
+#define android_webkit_WebView_RENDERER_PRIORITY_WAIVED 0L
+#undef android_webkit_WebView_RENDERER_PRIORITY_BOUND
+#define android_webkit_WebView_RENDERER_PRIORITY_BOUND 1L
+#undef android_webkit_WebView_RENDERER_PRIORITY_IMPORTANT
+#define android_webkit_WebView_RENDERER_PRIORITY_IMPORTANT 2L
+#undef android_webkit_WebView_LOAD_STARTED
+#define android_webkit_WebView_LOAD_STARTED 0L
+#undef android_webkit_WebView_LOAD_REDIRECTED
+#define android_webkit_WebView_LOAD_REDIRECTED 1L
+#undef android_webkit_WebView_LOAD_COMMITTED
+#define android_webkit_WebView_LOAD_COMMITTED 2L
+#undef android_webkit_WebView_LOAD_FINISHED
+#define android_webkit_WebView_LOAD_FINISHED 3L
+#undef android_webkit_WebView_NAV_LINK_CLICKED
+#define android_webkit_WebView_NAV_LINK_CLICKED 0L
+#undef android_webkit_WebView_NAV_FORM_SUBMITTED
+#define android_webkit_WebView_NAV_FORM_SUBMITTED 1L
+#undef android_webkit_WebView_NAV_BACK_FORWARD
+#define android_webkit_WebView_NAV_BACK_FORWARD 2L
+#undef android_webkit_WebView_NAV_RELOAD
+#define android_webkit_WebView_NAV_RELOAD 3L
+#undef android_webkit_WebView_NAV_FORM_RESUBMITTED
+#define android_webkit_WebView_NAV_FORM_RESUBMITTED 4L
+#undef android_webkit_WebView_NAV_OTHER
+#define android_webkit_WebView_NAV_OTHER 5L
+#undef android_webkit_WebView_DIALOG_ALERT
+#define android_webkit_WebView_DIALOG_ALERT 0L
+#undef android_webkit_WebView_DIALOG_CONFIRM
+#define android_webkit_WebView_DIALOG_CONFIRM 1L
+#undef android_webkit_WebView_DIALOG_PROMPT
+#define android_webkit_WebView_DIALOG_PROMPT 2L
+#undef android_webkit_WebView_DIALOG_BEFORE_UNLOAD
+#define android_webkit_WebView_DIALOG_BEFORE_UNLOAD 3L
+#undef android_webkit_WebView_PROCESS_CRASHED
+#define android_webkit_WebView_PROCESS_CRASHED 0L
+#undef android_webkit_WebView_PROCESS_EXCEEDED_MEMORY_LIMIT
+#define android_webkit_WebView_PROCESS_EXCEEDED_MEMORY_LIMIT 1L
+#undef android_webkit_WebView_PROCESS_TERMINATED_BY_API
+#define android_webkit_WebView_PROCESS_TERMINATED_BY_API 2L
+#undef android_webkit_WebView_CHROMIUM_UNKNOWN
+#define android_webkit_WebView_CHROMIUM_UNKNOWN -1L
 /*
  * Class:     android_webkit_WebView
  * Method:    native_constructor
@@ -251,19 +389,235 @@ JNIEXPORT jlong JNICALL Java_android_webkit_WebView_native_1constructor
 
 /*
  * Class:     android_webkit_WebView
- * Method:    native_loadDataWithBaseURL
- * Signature: (JLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+ * Method:    nativeCreateEngine
+ * Signature: (JJ)J
  */
-JNIEXPORT void JNICALL Java_android_webkit_WebView_native_1loadDataWithBaseURL
-  (JNIEnv *, jobject, jlong, jstring, jstring, jstring, jstring);
+JNIEXPORT jlong JNICALL Java_android_webkit_WebView_nativeCreateEngine
+  (JNIEnv *, jobject, jlong, jlong);
 
 /*
  * Class:     android_webkit_WebView
- * Method:    native_loadUrl
+ * Method:    nativeEvaluateJavascript
+ * Signature: (JLjava/lang/String;IZ)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeEvaluateJavascript
+  (JNIEnv *, jobject, jlong, jstring, jint, jboolean);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeInitSession
+ * Signature: (Ljava/lang/String;Ljava/lang/String;I)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeInitSession
+  (JNIEnv *, jclass, jstring, jstring, jint);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeDestroy
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeDestroy
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeLoadUri
+ * Signature: (JLjava/lang/String;[Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeLoadUri
+  (JNIEnv *, jclass, jlong, jstring, jobjectArray);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeLoadData
+ * Signature: (J[BLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeLoadData
+  (JNIEnv *, jclass, jlong, jbyteArray, jstring, jstring, jstring);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeStopLoading
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeStopLoading
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeReload
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeReload
+  (JNIEnv *, jclass, jlong, jboolean);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeGetUri
+ * Signature: (J)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_android_webkit_WebView_nativeGetUri
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeGetTitle
+ * Signature: (J)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_android_webkit_WebView_nativeGetTitle
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeGetProgress
+ * Signature: (J)I
+ */
+JNIEXPORT jint JNICALL Java_android_webkit_WebView_nativeGetProgress
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeHistoryItems
+ * Signature: (J)[J
+ */
+JNIEXPORT jlongArray JNICALL Java_android_webkit_WebView_nativeHistoryItems
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeItemString
+ * Signature: (JI)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_android_webkit_WebView_nativeItemString
+  (JNIEnv *, jclass, jlong, jint);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeItemRef
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeItemRef
+  (JNIEnv *, jclass, jlong, jboolean);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeGoToItem
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeGoToItem
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSaveState
+ * Signature: (J)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_android_webkit_WebView_nativeSaveState
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeRestoreState
+ * Signature: (J[B)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_webkit_WebView_nativeRestoreState
+  (JNIEnv *, jclass, jlong, jbyteArray);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSetUserScript
  * Signature: (JLjava/lang/String;)V
  */
-JNIEXPORT void JNICALL Java_android_webkit_WebView_native_1loadUrl
-  (JNIEnv *, jobject, jlong, jstring);
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeSetUserScript
+  (JNIEnv *, jclass, jlong, jstring);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSetBoolSetting
+ * Signature: (JLjava/lang/String;Z)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_webkit_WebView_nativeSetBoolSetting
+  (JNIEnv *, jclass, jlong, jstring, jboolean);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSetIntSetting
+ * Signature: (JLjava/lang/String;I)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_webkit_WebView_nativeSetIntSetting
+  (JNIEnv *, jclass, jlong, jstring, jint);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSetStringSetting
+ * Signature: (JLjava/lang/String;Ljava/lang/String;)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_webkit_WebView_nativeSetStringSetting
+  (JNIEnv *, jclass, jlong, jstring, jstring);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSetZoom
+ * Signature: (JD)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeSetZoom
+  (JNIEnv *, jclass, jlong, jdouble);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeSetBackgroundColor
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeSetBackgroundColor
+  (JNIEnv *, jclass, jlong, jint);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeTerminateWebProcess
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeTerminateWebProcess
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeClearWebsiteData
+ * Signature: (II)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeClearWebsiteData
+  (JNIEnv *, jclass, jint, jint);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeScriptDialogClose
+ * Signature: (JZLjava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeScriptDialogClose
+  (JNIEnv *, jclass, jlong, jboolean, jstring);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativePermissionFinish
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativePermissionFinish
+  (JNIEnv *, jclass, jlong, jboolean);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeFileChooserFinish
+ * Signature: (J[Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeFileChooserFinish
+  (JNIEnv *, jclass, jlong, jobjectArray);
+
+/*
+ * Class:     android_webkit_WebView
+ * Method:    nativeAuthFinish
+ * Signature: (JLjava/lang/String;Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_webkit_WebView_nativeAuthFinish
+  (JNIEnv *, jclass, jlong, jstring, jstring);
 
 #ifdef __cplusplus
 }

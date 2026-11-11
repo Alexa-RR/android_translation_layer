@@ -19,6 +19,10 @@ extern "C" {
 #define android_content_Context_MODE_ENABLE_WRITE_AHEAD_LOGGING 8L
 #undef android_content_Context_MODE_NO_LOCALIZED_COLLATORS
 #define android_content_Context_MODE_NO_LOCALIZED_COLLATORS 16L
+#undef android_content_Context_DEVICE_ID_DEFAULT
+#define android_content_Context_DEVICE_ID_DEFAULT 0L
+#undef android_content_Context_DEVICE_ID_INVALID
+#define android_content_Context_DEVICE_ID_INVALID -1L
 /*
  * Class:     android_content_Context
  * Method:    native_get_apk_path

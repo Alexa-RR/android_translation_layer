@@ -13,6 +13,8 @@ extern "C" {
 #define android_widget_TextView_NOT_FOCUSABLE 0L
 #undef android_widget_TextView_FOCUSABLE
 #define android_widget_TextView_FOCUSABLE 1L
+#undef android_widget_TextView_FOCUSABLE_AUTO
+#define android_widget_TextView_FOCUSABLE_AUTO 16L
 #undef android_widget_TextView_FOCUSABLE_MASK
 #define android_widget_TextView_FOCUSABLE_MASK 1L
 #undef android_widget_TextView_FITS_SYSTEM_WINDOWS
@@ -211,6 +213,118 @@ extern "C" {
 #define android_widget_TextView_TEXT_DIRECTION_LTR 3L
 #undef android_widget_TextView_TEXT_DIRECTION_RTL
 #define android_widget_TextView_TEXT_DIRECTION_RTL 4L
+#undef android_widget_TextView_LAYER_TYPE_NONE
+#define android_widget_TextView_LAYER_TYPE_NONE 0L
+#undef android_widget_TextView_LAYER_TYPE_SOFTWARE
+#define android_widget_TextView_LAYER_TYPE_SOFTWARE 1L
+#undef android_widget_TextView_LAYER_TYPE_HARDWARE
+#define android_widget_TextView_LAYER_TYPE_HARDWARE 2L
+#undef android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT
+#define android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT NaNf
+#undef android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE
+#define android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE -1.0f
+#undef android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_LOW
+#define android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_LOW -2.0f
+#undef android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_NORMAL
+#define android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_NORMAL -3.0f
+#undef android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_HIGH
+#define android_widget_TextView_REQUESTED_FRAME_RATE_CATEGORY_HIGH -4.0f
+#undef android_widget_TextView_AUTOFILL_TYPE_NONE
+#define android_widget_TextView_AUTOFILL_TYPE_NONE 0L
+#undef android_widget_TextView_AUTOFILL_TYPE_TEXT
+#define android_widget_TextView_AUTOFILL_TYPE_TEXT 1L
+#undef android_widget_TextView_AUTOFILL_TYPE_TOGGLE
+#define android_widget_TextView_AUTOFILL_TYPE_TOGGLE 2L
+#undef android_widget_TextView_AUTOFILL_TYPE_LIST
+#define android_widget_TextView_AUTOFILL_TYPE_LIST 3L
+#undef android_widget_TextView_AUTOFILL_TYPE_DATE
+#define android_widget_TextView_AUTOFILL_TYPE_DATE 4L
+#undef android_widget_TextView_IMPORTANT_FOR_AUTOFILL_AUTO
+#define android_widget_TextView_IMPORTANT_FOR_AUTOFILL_AUTO 0L
+#undef android_widget_TextView_IMPORTANT_FOR_AUTOFILL_YES
+#define android_widget_TextView_IMPORTANT_FOR_AUTOFILL_YES 1L
+#undef android_widget_TextView_IMPORTANT_FOR_AUTOFILL_NO
+#define android_widget_TextView_IMPORTANT_FOR_AUTOFILL_NO 2L
+#undef android_widget_TextView_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS
+#define android_widget_TextView_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS 4L
+#undef android_widget_TextView_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+#define android_widget_TextView_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS 8L
+#undef android_widget_TextView_LAST_APP_AUTOFILL_ID
+#define android_widget_TextView_LAST_APP_AUTOFILL_ID 1073741823L
+#undef android_widget_TextView_CONTENT_SENSITIVITY_AUTO
+#define android_widget_TextView_CONTENT_SENSITIVITY_AUTO 0L
+#undef android_widget_TextView_CONTENT_SENSITIVITY_SENSITIVE
+#define android_widget_TextView_CONTENT_SENSITIVITY_SENSITIVE 1L
+#undef android_widget_TextView_CONTENT_SENSITIVITY_NOT_SENSITIVE
+#define android_widget_TextView_CONTENT_SENSITIVITY_NOT_SENSITIVE 2L
+#undef android_widget_TextView_ACCESSIBILITY_LIVE_REGION_NONE
+#define android_widget_TextView_ACCESSIBILITY_LIVE_REGION_NONE 0L
+#undef android_widget_TextView_ACCESSIBILITY_LIVE_REGION_POLITE
+#define android_widget_TextView_ACCESSIBILITY_LIVE_REGION_POLITE 1L
+#undef android_widget_TextView_ACCESSIBILITY_LIVE_REGION_ASSERTIVE
+#define android_widget_TextView_ACCESSIBILITY_LIVE_REGION_ASSERTIVE 2L
+#undef android_widget_TextView_ACCESSIBILITY_DATA_SENSITIVE_AUTO
+#define android_widget_TextView_ACCESSIBILITY_DATA_SENSITIVE_AUTO 0L
+#undef android_widget_TextView_ACCESSIBILITY_DATA_SENSITIVE_YES
+#define android_widget_TextView_ACCESSIBILITY_DATA_SENSITIVE_YES 1L
+#undef android_widget_TextView_ACCESSIBILITY_DATA_SENSITIVE_NO
+#define android_widget_TextView_ACCESSIBILITY_DATA_SENSITIVE_NO 2L
+#undef android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_AUTO
+#define android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_AUTO 0L
+#undef android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_YES
+#define android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_YES 1L
+#undef android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_NO
+#define android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_NO 2L
+#undef android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+#define android_widget_TextView_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS 4L
+#undef android_widget_TextView_SCROLL_INDICATOR_TOP
+#define android_widget_TextView_SCROLL_INDICATOR_TOP 1L
+#undef android_widget_TextView_SCROLL_INDICATOR_BOTTOM
+#define android_widget_TextView_SCROLL_INDICATOR_BOTTOM 2L
+#undef android_widget_TextView_SCROLL_INDICATOR_LEFT
+#define android_widget_TextView_SCROLL_INDICATOR_LEFT 4L
+#undef android_widget_TextView_SCROLL_INDICATOR_RIGHT
+#define android_widget_TextView_SCROLL_INDICATOR_RIGHT 8L
+#undef android_widget_TextView_SCROLL_INDICATOR_START
+#define android_widget_TextView_SCROLL_INDICATOR_START 16L
+#undef android_widget_TextView_SCROLL_INDICATOR_END
+#define android_widget_TextView_SCROLL_INDICATOR_END 32L
+#undef android_widget_TextView_SCROLL_INDICATORS_ALL
+#define android_widget_TextView_SCROLL_INDICATORS_ALL 63L
+#undef android_widget_TextView_AUTO_SIZE_TEXT_TYPE_NONE
+#define android_widget_TextView_AUTO_SIZE_TEXT_TYPE_NONE 0L
+#undef android_widget_TextView_AUTO_SIZE_TEXT_TYPE_UNIFORM
+#define android_widget_TextView_AUTO_SIZE_TEXT_TYPE_UNIFORM 1L
+#undef android_widget_TextView_DEFAULT_AUTO_SIZE_MIN_TEXT_SIZE_IN_SP
+#define android_widget_TextView_DEFAULT_AUTO_SIZE_MIN_TEXT_SIZE_IN_SP 12L
+#undef android_widget_TextView_DEFAULT_AUTO_SIZE_MAX_TEXT_SIZE_IN_SP
+#define android_widget_TextView_DEFAULT_AUTO_SIZE_MAX_TEXT_SIZE_IN_SP 112L
+#undef android_widget_TextView_DEFAULT_AUTO_SIZE_GRANULARITY_IN_PX
+#define android_widget_TextView_DEFAULT_AUTO_SIZE_GRANULARITY_IN_PX 1L
+#undef android_widget_TextView_UNSET_AUTO_SIZE_UNIFORM_CONFIGURATION_VALUE
+#define android_widget_TextView_UNSET_AUTO_SIZE_UNIFORM_CONFIGURATION_VALUE -1.0f
+#undef android_widget_TextView_LINES
+#define android_widget_TextView_LINES 1L
+#undef android_widget_TextView_EMS
+#define android_widget_TextView_EMS 1L
+#undef android_widget_TextView_PIXELS
+#define android_widget_TextView_PIXELS 2L
+#undef android_widget_TextView_SANS
+#define android_widget_TextView_SANS 1L
+#undef android_widget_TextView_SERIF
+#define android_widget_TextView_SERIF 2L
+#undef android_widget_TextView_MONOSPACE
+#define android_widget_TextView_MONOSPACE 3L
+#undef android_widget_TextView_DR_LEFT
+#define android_widget_TextView_DR_LEFT 0L
+#undef android_widget_TextView_DR_TOP
+#define android_widget_TextView_DR_TOP 1L
+#undef android_widget_TextView_DR_RIGHT
+#define android_widget_TextView_DR_RIGHT 2L
+#undef android_widget_TextView_DR_BOTTOM
+#define android_widget_TextView_DR_BOTTOM 3L
+#undef android_widget_TextView_EditorInfo_TYPE_NULL
+#define android_widget_TextView_EditorInfo_TYPE_NULL 0L
 /*
  * Class:     android_widget_TextView
  * Method:    native_constructor
@@ -237,14 +351,6 @@ JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setText
 
 /*
  * Class:     android_widget_TextView
- * Method:    setTextSize
- * Signature: (F)V
- */
-JNIEXPORT void JNICALL Java_android_widget_TextView_setTextSize
-  (JNIEnv *, jobject, jfloat);
-
-/*
- * Class:     android_widget_TextView
  * Method:    native_setTextColor
  * Signature: (I)V
  */
@@ -253,11 +359,107 @@ JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setTextColor
 
 /*
  * Class:     android_widget_TextView
- * Method:    native_setCompoundDrawables
- * Signature: (JJJJJ)V
+ * Method:    native_setGravity
+ * Signature: (JI)V
  */
-JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCompoundDrawables
-  (JNIEnv *, jobject, jlong, jlong, jlong, jlong, jlong);
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setGravity
+  (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setCompoundPadding
+ * Signature: (JII)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCompoundPadding
+  (JNIEnv *, jobject, jlong, jint, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setStyledText
+ * Signature: (JLjava/lang/String;[I[Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setStyledText
+  (JNIEnv *, jobject, jlong, jstring, jintArray, jobjectArray);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setLineConfig
+ * Signature: (JIIZ)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setLineConfig
+  (JNIEnv *, jobject, jlong, jint, jint, jboolean);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_getLinesHeight
+ * Signature: (JII)I
+ */
+JNIEXPORT jint JNICALL Java_android_widget_TextView_native_1getLinesHeight
+  (JNIEnv *, jobject, jlong, jint, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_getLayout
+ * Signature: (J)J
+ */
+JNIEXPORT jlong JNICALL Java_android_widget_TextView_native_1getLayout
+  (JNIEnv *, jobject, jlong);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setCompoundPadding4
+ * Signature: (JIIII)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCompoundPadding4
+  (JNIEnv *, jobject, jlong, jint, jint, jint, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setJavaDraw
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setJavaDraw
+  (JNIEnv *, jobject, jlong, jboolean);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setShadow
+ * Signature: (JFFFI)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setShadow
+  (JNIEnv *, jobject, jlong, jfloat, jfloat, jfloat, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setHintColor
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setHintColor
+  (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setCursorVisible
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCursorVisible
+  (JNIEnv *, jobject, jlong, jboolean);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setMaxLength
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setMaxLength
+  (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     android_widget_TextView
+ * Method:    native_setTextVisibility
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setTextVisibility
+  (JNIEnv *, jobject, jlong, jboolean);
 
 #ifdef __cplusplus
 }

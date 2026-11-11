@@ -33,6 +33,10 @@ extern "C" {
 #define android_graphics_Paint_AUTO_HINTING_TEXT_FLAG 2048L
 #undef android_graphics_Paint_VERTICAL_TEXT_FLAG
 #define android_graphics_Paint_VERTICAL_TEXT_FLAG 4096L
+#undef android_graphics_Paint_HINTING_OFF
+#define android_graphics_Paint_HINTING_OFF 0L
+#undef android_graphics_Paint_HINTING_ON
+#define android_graphics_Paint_HINTING_ON 1L
 /*
  * Class:     android_graphics_Paint
  * Method:    native_create
@@ -192,6 +196,102 @@ JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1get_1text_1bounds
  */
 JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1text_1align
   (JNIEnv *, jclass, jlong, jint);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_get_font_metrics
+ * Signature: (J[F)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1get_1font_1metrics
+  (JNIEnv *, jclass, jlong, jfloatArray);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_measure_text
+ * Signature: (J[CII)F
+ */
+JNIEXPORT jfloat JNICALL Java_android_graphics_Paint_native_1measure_1text
+  (JNIEnv *, jclass, jlong, jcharArray, jint, jint);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_get_text_advances
+ * Signature: (J[CII[FI)F
+ */
+JNIEXPORT jfloat JNICALL Java_android_graphics_Paint_native_1get_1text_1advances
+  (JNIEnv *, jclass, jlong, jcharArray, jint, jint, jfloatArray, jint);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_has_glyph
+ * Signature: (JLjava/lang/String;)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Paint_native_1has_1glyph
+  (JNIEnv *, jclass, jlong, jstring);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_letter_spacing
+ * Signature: (JF)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1letter_1spacing
+  (JNIEnv *, jclass, jlong, jfloat);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_color_filter_mode
+ * Signature: (JII)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1color_1filter_1mode
+  (JNIEnv *, jclass, jlong, jint, jint);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_face
+ * Signature: (JLjava/lang/String;IZI)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1face
+  (JNIEnv *, jclass, jlong, jstring, jint, jboolean, jint);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_font_variations
+ * Signature: (JLjava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1font_1variations
+  (JNIEnv *, jclass, jlong, jstring);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_stroke_miter
+ * Signature: (JF)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1stroke_1miter
+  (JNIEnv *, jclass, jlong, jfloat);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_get_stroke_miter
+ * Signature: (J)F
+ */
+JNIEXPORT jfloat JNICALL Java_android_graphics_Paint_native_1get_1stroke_1miter
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_dash
+ * Signature: (J[FF)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1dash
+  (JNIEnv *, jclass, jlong, jfloatArray, jfloat);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_set_color_matrix
+ * Signature: (J[F)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1color_1matrix
+  (JNIEnv *, jclass, jlong, jfloatArray);
 
 #ifdef __cplusplus
 }

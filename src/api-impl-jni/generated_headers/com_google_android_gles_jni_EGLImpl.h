@@ -25,6 +25,14 @@ JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1egl
 
 /*
  * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglGetConfigs
+ * Signature: (J[JI[I)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGetConfigs
+  (JNIEnv *, jobject, jlong, jlongArray, jint, jintArray);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
  * Method:    native_eglCreateWindowSurface
  * Signature: (JJLandroid/view/Surface;[I)J
  */
@@ -94,6 +102,86 @@ JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1egl
  */
 JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglCreatePbufferSurface
   (JNIEnv *, jobject, jlong, jlong, jintArray);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglGetCurrentContext
+ * Signature: ()J
+ */
+JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGetCurrentContext
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglGetCurrentDisplay
+ * Signature: ()J
+ */
+JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGetCurrentDisplay
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglGetCurrentSurface
+ * Signature: (I)J
+ */
+JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGetCurrentSurface
+  (JNIEnv *, jobject, jint);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglGetError
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGetError
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglQueryString
+ * Signature: (JI)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglQueryString
+  (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglQueryContext
+ * Signature: (JJI[I)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglQueryContext
+  (JNIEnv *, jobject, jlong, jlong, jint, jintArray);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglQuerySurface
+ * Signature: (JJI[I)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglQuerySurface
+  (JNIEnv *, jobject, jlong, jlong, jint, jintArray);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglReleaseThread
+ * Signature: ()Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglReleaseThread
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglWaitGL
+ * Signature: ()Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglWaitGL
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     com_google_android_gles_jni_EGLImpl
+ * Method:    native_eglWaitNative
+ * Signature: (I)Z
+ */
+JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglWaitNative
+  (JNIEnv *, jobject, jint);
 
 #ifdef __cplusplus
 }

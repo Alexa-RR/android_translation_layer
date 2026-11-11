@@ -387,6 +387,22 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_init
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAssets
   (JNIEnv *, jobject, jobjectArray, jint);
 
+/*
+ * Class:     android_content_res_AssetManager
+ * Method:    openXmlAssetFromBufferNative
+ * Signature: ([B)J
+ */
+JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_openXmlAssetFromBufferNative
+  (JNIEnv *, jobject, jbyteArray);
+
+/*
+ * Class:     android_content_res_AssetManager
+ * Method:    native_shareApkAssets
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1shareApkAssets
+  (JNIEnv *, jobject, jlong, jint);
+
 #ifdef __cplusplus
 }
 #endif

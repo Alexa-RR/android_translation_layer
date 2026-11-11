@@ -13,6 +13,8 @@ extern "C" {
 #define android_widget_ImageView_NOT_FOCUSABLE 0L
 #undef android_widget_ImageView_FOCUSABLE
 #define android_widget_ImageView_FOCUSABLE 1L
+#undef android_widget_ImageView_FOCUSABLE_AUTO
+#define android_widget_ImageView_FOCUSABLE_AUTO 16L
 #undef android_widget_ImageView_FOCUSABLE_MASK
 #define android_widget_ImageView_FOCUSABLE_MASK 1L
 #undef android_widget_ImageView_FITS_SYSTEM_WINDOWS
@@ -211,6 +213,84 @@ extern "C" {
 #define android_widget_ImageView_TEXT_DIRECTION_LTR 3L
 #undef android_widget_ImageView_TEXT_DIRECTION_RTL
 #define android_widget_ImageView_TEXT_DIRECTION_RTL 4L
+#undef android_widget_ImageView_LAYER_TYPE_NONE
+#define android_widget_ImageView_LAYER_TYPE_NONE 0L
+#undef android_widget_ImageView_LAYER_TYPE_SOFTWARE
+#define android_widget_ImageView_LAYER_TYPE_SOFTWARE 1L
+#undef android_widget_ImageView_LAYER_TYPE_HARDWARE
+#define android_widget_ImageView_LAYER_TYPE_HARDWARE 2L
+#undef android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT
+#define android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_DEFAULT NaNf
+#undef android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE
+#define android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_NO_PREFERENCE -1.0f
+#undef android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_LOW
+#define android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_LOW -2.0f
+#undef android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_NORMAL
+#define android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_NORMAL -3.0f
+#undef android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_HIGH
+#define android_widget_ImageView_REQUESTED_FRAME_RATE_CATEGORY_HIGH -4.0f
+#undef android_widget_ImageView_AUTOFILL_TYPE_NONE
+#define android_widget_ImageView_AUTOFILL_TYPE_NONE 0L
+#undef android_widget_ImageView_AUTOFILL_TYPE_TEXT
+#define android_widget_ImageView_AUTOFILL_TYPE_TEXT 1L
+#undef android_widget_ImageView_AUTOFILL_TYPE_TOGGLE
+#define android_widget_ImageView_AUTOFILL_TYPE_TOGGLE 2L
+#undef android_widget_ImageView_AUTOFILL_TYPE_LIST
+#define android_widget_ImageView_AUTOFILL_TYPE_LIST 3L
+#undef android_widget_ImageView_AUTOFILL_TYPE_DATE
+#define android_widget_ImageView_AUTOFILL_TYPE_DATE 4L
+#undef android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_AUTO
+#define android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_AUTO 0L
+#undef android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_YES
+#define android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_YES 1L
+#undef android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_NO
+#define android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_NO 2L
+#undef android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS
+#define android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_YES_EXCLUDE_DESCENDANTS 4L
+#undef android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS
+#define android_widget_ImageView_IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS 8L
+#undef android_widget_ImageView_LAST_APP_AUTOFILL_ID
+#define android_widget_ImageView_LAST_APP_AUTOFILL_ID 1073741823L
+#undef android_widget_ImageView_CONTENT_SENSITIVITY_AUTO
+#define android_widget_ImageView_CONTENT_SENSITIVITY_AUTO 0L
+#undef android_widget_ImageView_CONTENT_SENSITIVITY_SENSITIVE
+#define android_widget_ImageView_CONTENT_SENSITIVITY_SENSITIVE 1L
+#undef android_widget_ImageView_CONTENT_SENSITIVITY_NOT_SENSITIVE
+#define android_widget_ImageView_CONTENT_SENSITIVITY_NOT_SENSITIVE 2L
+#undef android_widget_ImageView_ACCESSIBILITY_LIVE_REGION_NONE
+#define android_widget_ImageView_ACCESSIBILITY_LIVE_REGION_NONE 0L
+#undef android_widget_ImageView_ACCESSIBILITY_LIVE_REGION_POLITE
+#define android_widget_ImageView_ACCESSIBILITY_LIVE_REGION_POLITE 1L
+#undef android_widget_ImageView_ACCESSIBILITY_LIVE_REGION_ASSERTIVE
+#define android_widget_ImageView_ACCESSIBILITY_LIVE_REGION_ASSERTIVE 2L
+#undef android_widget_ImageView_ACCESSIBILITY_DATA_SENSITIVE_AUTO
+#define android_widget_ImageView_ACCESSIBILITY_DATA_SENSITIVE_AUTO 0L
+#undef android_widget_ImageView_ACCESSIBILITY_DATA_SENSITIVE_YES
+#define android_widget_ImageView_ACCESSIBILITY_DATA_SENSITIVE_YES 1L
+#undef android_widget_ImageView_ACCESSIBILITY_DATA_SENSITIVE_NO
+#define android_widget_ImageView_ACCESSIBILITY_DATA_SENSITIVE_NO 2L
+#undef android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_AUTO
+#define android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_AUTO 0L
+#undef android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_YES
+#define android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_YES 1L
+#undef android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_NO
+#define android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_NO 2L
+#undef android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
+#define android_widget_ImageView_IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS 4L
+#undef android_widget_ImageView_SCROLL_INDICATOR_TOP
+#define android_widget_ImageView_SCROLL_INDICATOR_TOP 1L
+#undef android_widget_ImageView_SCROLL_INDICATOR_BOTTOM
+#define android_widget_ImageView_SCROLL_INDICATOR_BOTTOM 2L
+#undef android_widget_ImageView_SCROLL_INDICATOR_LEFT
+#define android_widget_ImageView_SCROLL_INDICATOR_LEFT 4L
+#undef android_widget_ImageView_SCROLL_INDICATOR_RIGHT
+#define android_widget_ImageView_SCROLL_INDICATOR_RIGHT 8L
+#undef android_widget_ImageView_SCROLL_INDICATOR_START
+#define android_widget_ImageView_SCROLL_INDICATOR_START 16L
+#undef android_widget_ImageView_SCROLL_INDICATOR_END
+#define android_widget_ImageView_SCROLL_INDICATOR_END 32L
+#undef android_widget_ImageView_SCROLL_INDICATORS_ALL
+#define android_widget_ImageView_SCROLL_INDICATORS_ALL 63L
 /*
  * Class:     android_widget_ImageView
  * Method:    native_constructor
@@ -234,6 +314,30 @@ JNIEXPORT void JNICALL Java_android_widget_ImageView_native_1setDrawable
  */
 JNIEXPORT void JNICALL Java_android_widget_ImageView_native_1setScaleType
   (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     android_widget_ImageView
+ * Method:    native_setImageMatrix
+ * Signature: (J[F)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_ImageView_native_1setImageMatrix
+  (JNIEnv *, jobject, jlong, jfloatArray);
+
+/*
+ * Class:     android_widget_ImageView
+ * Method:    native_setCropToPadding
+ * Signature: (JZ)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_ImageView_native_1setCropToPadding
+  (JNIEnv *, jobject, jlong, jboolean);
+
+/*
+ * Class:     android_widget_ImageView
+ * Method:    native_animateTransform
+ * Signature: (J[F)V
+ */
+JNIEXPORT void JNICALL Java_android_widget_ImageView_native_1animateTransform
+  (JNIEnv *, jobject, jlong, jfloatArray);
 
 #ifdef __cplusplus
 }

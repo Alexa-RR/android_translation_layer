@@ -63,6 +63,54 @@ JNIEXPORT void JNICALL Java_android_view_RenderNode_nativeUnref
 JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeAddStubNode
   (JNIEnv *, jobject, jlong);
 
+/*
+ * Class:     android_view_RenderNode
+ * Method:    nativeClipKeep
+ * Signature: (JFFFF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeClipKeep
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_view_RenderNode
+ * Method:    nativeRoundedClipKeep
+ * Signature: (JFFFFF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeRoundedClipKeep
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_view_RenderNode
+ * Method:    nativeLayerPaintKeep
+ * Signature: (JJF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeLayerPaintKeep
+  (JNIEnv *, jclass, jlong, jlong, jfloat);
+
+/*
+ * Class:     android_view_RenderNode
+ * Method:    nativeOpacityKeep
+ * Signature: (JF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeOpacityKeep
+  (JNIEnv *, jobject, jlong, jfloat);
+
+/*
+ * Class:     android_view_RenderNode
+ * Method:    nativeLayerTransformKeep
+ * Signature: (JFFFFFFFFFF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeLayerTransformKeep
+  (JNIEnv *, jobject, jlong, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_view_RenderNode
+ * Method:    nativePathClipKeep
+ * Signature: (JJZ)J
+ */
+JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativePathClipKeep
+  (JNIEnv *, jclass, jlong, jlong, jboolean);
+
 #ifdef __cplusplus
 }
 #endif

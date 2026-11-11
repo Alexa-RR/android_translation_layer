@@ -7,29 +7,103 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-/*
- * Class:     android_net_ConnectivityManager
- * Method:    registerNetworkCallback
- * Signature: (Landroid/net/NetworkRequest;Landroid/net/ConnectivityManager/NetworkCallback;)V
- */
-JNIEXPORT void JNICALL Java_android_net_ConnectivityManager_registerNetworkCallback
-  (JNIEnv *, jobject, jobject, jobject);
-
-/*
- * Class:     android_net_ConnectivityManager
- * Method:    isActiveNetworkMetered
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL Java_android_net_ConnectivityManager_isActiveNetworkMetered
-  (JNIEnv *, jobject);
-
+#undef android_net_ConnectivityManager_TYPE_NONE
+#define android_net_ConnectivityManager_TYPE_NONE -1L
+#undef android_net_ConnectivityManager_TYPE_MOBILE
+#define android_net_ConnectivityManager_TYPE_MOBILE 0L
+#undef android_net_ConnectivityManager_TYPE_WIFI
+#define android_net_ConnectivityManager_TYPE_WIFI 1L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_MMS
+#define android_net_ConnectivityManager_TYPE_MOBILE_MMS 2L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_SUPL
+#define android_net_ConnectivityManager_TYPE_MOBILE_SUPL 3L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_DUN
+#define android_net_ConnectivityManager_TYPE_MOBILE_DUN 4L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_HIPRI
+#define android_net_ConnectivityManager_TYPE_MOBILE_HIPRI 5L
+#undef android_net_ConnectivityManager_TYPE_WIMAX
+#define android_net_ConnectivityManager_TYPE_WIMAX 6L
+#undef android_net_ConnectivityManager_TYPE_BLUETOOTH
+#define android_net_ConnectivityManager_TYPE_BLUETOOTH 7L
+#undef android_net_ConnectivityManager_TYPE_DUMMY
+#define android_net_ConnectivityManager_TYPE_DUMMY 8L
+#undef android_net_ConnectivityManager_TYPE_ETHERNET
+#define android_net_ConnectivityManager_TYPE_ETHERNET 9L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_FOTA
+#define android_net_ConnectivityManager_TYPE_MOBILE_FOTA 10L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_IMS
+#define android_net_ConnectivityManager_TYPE_MOBILE_IMS 11L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_CBS
+#define android_net_ConnectivityManager_TYPE_MOBILE_CBS 12L
+#undef android_net_ConnectivityManager_TYPE_WIFI_P2P
+#define android_net_ConnectivityManager_TYPE_WIFI_P2P 13L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_IA
+#define android_net_ConnectivityManager_TYPE_MOBILE_IA 14L
+#undef android_net_ConnectivityManager_TYPE_MOBILE_EMERGENCY
+#define android_net_ConnectivityManager_TYPE_MOBILE_EMERGENCY 15L
+#undef android_net_ConnectivityManager_TYPE_PROXY
+#define android_net_ConnectivityManager_TYPE_PROXY 16L
+#undef android_net_ConnectivityManager_TYPE_VPN
+#define android_net_ConnectivityManager_TYPE_VPN 17L
+#undef android_net_ConnectivityManager_TYPE_TEST
+#define android_net_ConnectivityManager_TYPE_TEST 18L
+#undef android_net_ConnectivityManager_MAX_RADIO_TYPE
+#define android_net_ConnectivityManager_MAX_RADIO_TYPE 18L
+#undef android_net_ConnectivityManager_MAX_NETWORK_TYPE
+#define android_net_ConnectivityManager_MAX_NETWORK_TYPE 18L
+#undef android_net_ConnectivityManager_DEFAULT_NETWORK_PREFERENCE
+#define android_net_ConnectivityManager_DEFAULT_NETWORK_PREFERENCE 1L
+#undef android_net_ConnectivityManager_NETID_UNSET
+#define android_net_ConnectivityManager_NETID_UNSET 0L
+#undef android_net_ConnectivityManager_REQUEST_ID_UNSET
+#define android_net_ConnectivityManager_REQUEST_ID_UNSET 0L
+#undef android_net_ConnectivityManager_RESTRICT_BACKGROUND_STATUS_DISABLED
+#define android_net_ConnectivityManager_RESTRICT_BACKGROUND_STATUS_DISABLED 1L
+#undef android_net_ConnectivityManager_RESTRICT_BACKGROUND_STATUS_WHITELISTED
+#define android_net_ConnectivityManager_RESTRICT_BACKGROUND_STATUS_WHITELISTED 2L
+#undef android_net_ConnectivityManager_RESTRICT_BACKGROUND_STATUS_ENABLED
+#define android_net_ConnectivityManager_RESTRICT_BACKGROUND_STATUS_ENABLED 3L
+#undef android_net_ConnectivityManager_MULTIPATH_PREFERENCE_HANDOVER
+#define android_net_ConnectivityManager_MULTIPATH_PREFERENCE_HANDOVER 1L
+#undef android_net_ConnectivityManager_MULTIPATH_PREFERENCE_RELIABILITY
+#define android_net_ConnectivityManager_MULTIPATH_PREFERENCE_RELIABILITY 2L
+#undef android_net_ConnectivityManager_MULTIPATH_PREFERENCE_PERFORMANCE
+#define android_net_ConnectivityManager_MULTIPATH_PREFERENCE_PERFORMANCE 4L
+#undef android_net_ConnectivityManager_MULTIPATH_PREFERENCE_UNMETERED
+#define android_net_ConnectivityManager_MULTIPATH_PREFERENCE_UNMETERED 7L
+#undef android_net_ConnectivityManager_FIRST_NETID
+#define android_net_ConnectivityManager_FIRST_NETID 100L
 /*
  * Class:     android_net_ConnectivityManager
  * Method:    nativeGetNetworkAvailable
  * Signature: ()Z
  */
 JNIEXPORT jboolean JNICALL Java_android_net_ConnectivityManager_nativeGetNetworkAvailable
-  (JNIEnv *, jobject);
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     android_net_ConnectivityManager
+ * Method:    nativeIsMetered
+ * Signature: ()Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_net_ConnectivityManager_nativeIsMetered
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     android_net_ConnectivityManager
+ * Method:    nativeGetConnectivity
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_android_net_ConnectivityManager_nativeGetConnectivity
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     android_net_ConnectivityManager
+ * Method:    nativeStartMonitor
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_android_net_ConnectivityManager_nativeStartMonitor
+  (JNIEnv *, jclass);
 
 #ifdef __cplusplus
 }

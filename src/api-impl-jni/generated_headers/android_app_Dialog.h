@@ -7,6 +7,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_app_Dialog_DISMISS
+#define android_app_Dialog_DISMISS 67L
+#undef android_app_Dialog_CANCEL
+#define android_app_Dialog_CANCEL 68L
+#undef android_app_Dialog_SHOW
+#define android_app_Dialog_SHOW 69L
 /*
  * Class:     android_app_Dialog
  * Method:    nativeInit

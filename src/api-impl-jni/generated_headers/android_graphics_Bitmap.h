@@ -7,6 +7,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_graphics_Bitmap_DENSITY_NONE
+#define android_graphics_Bitmap_DENSITY_NONE 0L
 /*
  * Class:     android_graphics_Bitmap
  * Method:    native_create_snapshot
@@ -94,6 +96,14 @@ JNIEXPORT jbyteArray JNICALL Java_android_graphics_Bitmap_native_1save_1to_1png
  */
 JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1set_1pixels
   (JNIEnv *, jclass, jlong, jintArray, jint, jint, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Bitmap
+ * Method:    native_compress
+ * Signature: (JLjava/lang/String;IZ)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_android_graphics_Bitmap_native_1compress
+  (JNIEnv *, jclass, jlong, jstring, jint, jboolean);
 
 #ifdef __cplusplus
 }

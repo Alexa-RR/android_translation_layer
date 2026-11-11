@@ -7,8 +7,60 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_media_MediaCodec_BUFFER_FLAG_SYNC_FRAME
+#define android_media_MediaCodec_BUFFER_FLAG_SYNC_FRAME 1L
+#undef android_media_MediaCodec_BUFFER_FLAG_KEY_FRAME
+#define android_media_MediaCodec_BUFFER_FLAG_KEY_FRAME 1L
+#undef android_media_MediaCodec_BUFFER_FLAG_CODEC_CONFIG
+#define android_media_MediaCodec_BUFFER_FLAG_CODEC_CONFIG 2L
 #undef android_media_MediaCodec_BUFFER_FLAG_END_OF_STREAM
 #define android_media_MediaCodec_BUFFER_FLAG_END_OF_STREAM 4L
+#undef android_media_MediaCodec_BUFFER_FLAG_PARTIAL_FRAME
+#define android_media_MediaCodec_BUFFER_FLAG_PARTIAL_FRAME 8L
+#undef android_media_MediaCodec_BUFFER_FLAG_MUXER_DATA
+#define android_media_MediaCodec_BUFFER_FLAG_MUXER_DATA 16L
+#undef android_media_MediaCodec_BUFFER_FLAG_DECODE_ONLY
+#define android_media_MediaCodec_BUFFER_FLAG_DECODE_ONLY 32L
+#undef android_media_MediaCodec_CONFIGURE_FLAG_ENCODE
+#define android_media_MediaCodec_CONFIGURE_FLAG_ENCODE 1L
+#undef android_media_MediaCodec_CONFIGURE_FLAG_USE_BLOCK_MODEL
+#define android_media_MediaCodec_CONFIGURE_FLAG_USE_BLOCK_MODEL 2L
+#undef android_media_MediaCodec_CONFIGURE_FLAG_USE_CRYPTO_ASYNC
+#define android_media_MediaCodec_CONFIGURE_FLAG_USE_CRYPTO_ASYNC 4L
+#undef android_media_MediaCodec_CONFIGURE_FLAG_DETACHED_SURFACE
+#define android_media_MediaCodec_CONFIGURE_FLAG_DETACHED_SURFACE 8L
+#undef android_media_MediaCodec_INFO_TRY_AGAIN_LATER
+#define android_media_MediaCodec_INFO_TRY_AGAIN_LATER -1L
+#undef android_media_MediaCodec_INFO_OUTPUT_FORMAT_CHANGED
+#define android_media_MediaCodec_INFO_OUTPUT_FORMAT_CHANGED -2L
+#undef android_media_MediaCodec_INFO_OUTPUT_BUFFERS_CHANGED
+#define android_media_MediaCodec_INFO_OUTPUT_BUFFERS_CHANGED -3L
+#undef android_media_MediaCodec_VIDEO_SCALING_MODE_SCALE_TO_FIT
+#define android_media_MediaCodec_VIDEO_SCALING_MODE_SCALE_TO_FIT 1L
+#undef android_media_MediaCodec_VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
+#define android_media_MediaCodec_VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING 2L
+#undef android_media_MediaCodec_CRYPTO_MODE_UNENCRYPTED
+#define android_media_MediaCodec_CRYPTO_MODE_UNENCRYPTED 0L
+#undef android_media_MediaCodec_CRYPTO_MODE_AES_CTR
+#define android_media_MediaCodec_CRYPTO_MODE_AES_CTR 1L
+#undef android_media_MediaCodec_CRYPTO_MODE_AES_CBC
+#define android_media_MediaCodec_CRYPTO_MODE_AES_CBC 2L
+#undef android_media_MediaCodec_STATE_UNINITIALIZED
+#define android_media_MediaCodec_STATE_UNINITIALIZED 0L
+#undef android_media_MediaCodec_STATE_CONFIGURED
+#define android_media_MediaCodec_STATE_CONFIGURED 1L
+#undef android_media_MediaCodec_STATE_STARTED
+#define android_media_MediaCodec_STATE_STARTED 2L
+#undef android_media_MediaCodec_STATE_RELEASED
+#define android_media_MediaCodec_STATE_RELEASED 3L
+#undef android_media_MediaCodec_INPUT_BUFFER_COUNT
+#define android_media_MediaCodec_INPUT_BUFFER_COUNT 4L
+#undef android_media_MediaCodec_OUTPUT_BUFFER_COUNT
+#define android_media_MediaCodec_OUTPUT_BUFFER_COUNT 4L
+#undef android_media_MediaCodec_DEFAULT_MAX_INPUT_SIZE
+#define android_media_MediaCodec_DEFAULT_MAX_INPUT_SIZE 262144L
+#undef android_media_MediaCodec_AUDIO_OUTPUT_BUFFER_SIZE
+#define android_media_MediaCodec_AUDIO_OUTPUT_BUFFER_SIZE 196608L
 /*
  * Class:     android_media_MediaCodec
  * Method:    native_constructor
@@ -72,6 +124,22 @@ JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1releaseOutputBuffer
  */
 JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1release
   (JNIEnv *, jobject, jlong);
+
+/*
+ * Class:     android_media_MediaCodec
+ * Method:    native_flush
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1flush
+  (JNIEnv *, jobject, jlong);
+
+/*
+ * Class:     android_media_MediaCodec
+ * Method:    native_setOutputSurface
+ * Signature: (JLandroid/view/Surface;)V
+ */
+JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1setOutputSurface
+  (JNIEnv *, jobject, jlong, jobject);
 
 #ifdef __cplusplus
 }

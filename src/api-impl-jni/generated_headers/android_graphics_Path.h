@@ -7,6 +7,44 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_graphics_Path_OP_SIZE
+#define android_graphics_Path_OP_SIZE 10L
+#undef android_graphics_Path_OP_MOVE
+#define android_graphics_Path_OP_MOVE 0L
+#undef android_graphics_Path_OP_CLOSE
+#define android_graphics_Path_OP_CLOSE 1L
+#undef android_graphics_Path_OP_LINE
+#define android_graphics_Path_OP_LINE 2L
+#undef android_graphics_Path_OP_QUAD
+#define android_graphics_Path_OP_QUAD 3L
+#undef android_graphics_Path_OP_CUBIC
+#define android_graphics_Path_OP_CUBIC 4L
+#undef android_graphics_Path_OP_CONIC
+#define android_graphics_Path_OP_CONIC 5L
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_add_circle
+ * Signature: (JFFFZ)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Path_native_1add_1circle
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jboolean);
+
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_op
+ * Signature: (JJI)J
+ */
+JNIEXPORT jlong JNICALL Java_android_graphics_Path_native_1op
+  (JNIEnv *, jclass, jlong, jlong, jint);
+
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_is_empty
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1is_1empty
+  (JNIEnv *, jclass, jlong);
+
 /*
  * Class:     android_graphics_Path
  * Method:    native_create_builder
@@ -166,6 +204,30 @@ JNIEXPORT void JNICALL Java_android_graphics_Path_native_1get_1bounds
  */
 JNIEXPORT jlong JNICALL Java_android_graphics_Path_native_1transform
   (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_get_ops
+ * Signature: (J)[F
+ */
+JNIEXPORT jfloatArray JNICALL Java_android_graphics_Path_native_1get_1ops
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_add_reverse_path
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Path_native_1add_1reverse_1path
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_graphics_Path
+ * Method:    native_conic_to
+ * Signature: (JFFFFF)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Path_native_1conic_1to
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat);
 
 #ifdef __cplusplus
 }

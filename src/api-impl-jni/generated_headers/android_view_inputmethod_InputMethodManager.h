@@ -7,6 +7,22 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_view_inputmethod_InputMethodManager_SHOW_IMPLICIT
+#define android_view_inputmethod_InputMethodManager_SHOW_IMPLICIT 1L
+#undef android_view_inputmethod_InputMethodManager_SHOW_FORCED
+#define android_view_inputmethod_InputMethodManager_SHOW_FORCED 2L
+#undef android_view_inputmethod_InputMethodManager_RESULT_UNCHANGED_SHOWN
+#define android_view_inputmethod_InputMethodManager_RESULT_UNCHANGED_SHOWN 0L
+#undef android_view_inputmethod_InputMethodManager_RESULT_UNCHANGED_HIDDEN
+#define android_view_inputmethod_InputMethodManager_RESULT_UNCHANGED_HIDDEN 1L
+#undef android_view_inputmethod_InputMethodManager_RESULT_SHOWN
+#define android_view_inputmethod_InputMethodManager_RESULT_SHOWN 2L
+#undef android_view_inputmethod_InputMethodManager_RESULT_HIDDEN
+#define android_view_inputmethod_InputMethodManager_RESULT_HIDDEN 3L
+#undef android_view_inputmethod_InputMethodManager_HIDE_IMPLICIT_ONLY
+#define android_view_inputmethod_InputMethodManager_HIDE_IMPLICIT_ONLY 1L
+#undef android_view_inputmethod_InputMethodManager_HIDE_NOT_ALWAYS
+#define android_view_inputmethod_InputMethodManager_HIDE_NOT_ALWAYS 2L
 /*
  * Class:     android_view_inputmethod_InputMethodManager
  * Method:    nativeInit
@@ -17,19 +33,67 @@ JNIEXPORT jlong JNICALL Java_android_view_inputmethod_InputMethodManager_nativeI
 
 /*
  * Class:     android_view_inputmethod_InputMethodManager
- * Method:    nativeShowSoftInput
- * Signature: (JJLandroid/view/inputmethod/InputConnection;I)Z
+ * Method:    nativeStartInput
+ * Signature: (JJLandroid/view/inputmethod/InputConnection;I)V
  */
-JNIEXPORT jboolean JNICALL Java_android_view_inputmethod_InputMethodManager_nativeShowSoftInput
-  (JNIEnv *, jobject, jlong, jlong, jobject, jint);
+JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeStartInput
+  (JNIEnv *, jclass, jlong, jlong, jobject, jint);
 
 /*
  * Class:     android_view_inputmethod_InputMethodManager
- * Method:    nativeHideSoftInput
+ * Method:    nativeActivate
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_view_inputmethod_InputMethodManager_nativeActivate
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeDeactivate
  * Signature: (J)V
  */
-JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeHideSoftInput
-  (JNIEnv *, jobject, jlong);
+JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeDeactivate
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeSetCursorLocation
+ * Signature: (JIIII)V
+ */
+JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeSetCursorLocation
+  (JNIEnv *, jclass, jlong, jint, jint, jint, jint);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeUpdateSurrounding
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeUpdateSurrounding
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeOskShow
+ * Signature: (II)V
+ */
+JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOskShow
+  (JNIEnv *, jclass, jint, jint);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeOskHide
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOskHide
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeOskIsShown
+ * Signature: ()Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOskIsShown
+  (JNIEnv *, jclass);
 
 #ifdef __cplusplus
 }

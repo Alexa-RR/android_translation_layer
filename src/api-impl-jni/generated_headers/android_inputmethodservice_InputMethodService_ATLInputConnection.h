@@ -7,6 +7,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_inputmethodservice_InputMethodService_ATLInputConnection_DEBUG
+#define android_inputmethodservice_InputMethodService_ATLInputConnection_DEBUG 0L
 /*
  * Class:     android_inputmethodservice_InputMethodService_ATLInputConnection
  * Method:    nativeInit

@@ -113,6 +113,8 @@ extern "C" {
 #define android_os_Process_PROC_OUT_LONG 8192L
 #undef android_os_Process_PROC_OUT_FLOAT
 #define android_os_Process_PROC_OUT_FLOAT 16384L
+#undef android_os_Process_INVALID_UID
+#define android_os_Process_INVALID_UID -1L
 /*
  * Class:     android_os_Process
  * Method:    getElapsedCpuTime
@@ -136,6 +138,14 @@ JNIEXPORT jint JNICALL Java_android_os_Process_getUidForName
  */
 JNIEXPORT jint JNICALL Java_android_os_Process_getGidForName
   (JNIEnv *, jclass, jstring);
+
+/*
+ * Class:     android_os_Process
+ * Method:    setThreadPriority
+ * Signature: (II)V
+ */
+JNIEXPORT void JNICALL Java_android_os_Process_setThreadPriority__II
+  (JNIEnv *, jclass, jint, jint);
 
 /*
  * Class:     android_os_Process
@@ -167,6 +177,14 @@ JNIEXPORT void JNICALL Java_android_os_Process_setProcessGroup
  * Signature: (I)I
  */
 JNIEXPORT jint JNICALL Java_android_os_Process_getProcessGroup
+  (JNIEnv *, jclass, jint);
+
+/*
+ * Class:     android_os_Process
+ * Method:    setThreadPriority
+ * Signature: (I)V
+ */
+JNIEXPORT void JNICALL Java_android_os_Process_setThreadPriority__I
   (JNIEnv *, jclass, jint);
 
 /*

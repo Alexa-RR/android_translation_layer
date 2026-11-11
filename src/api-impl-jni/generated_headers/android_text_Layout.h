@@ -7,6 +7,30 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_text_Layout_BREAK_STRATEGY_SIMPLE
+#define android_text_Layout_BREAK_STRATEGY_SIMPLE 0L
+#undef android_text_Layout_BREAK_STRATEGY_HIGH_QUALITY
+#define android_text_Layout_BREAK_STRATEGY_HIGH_QUALITY 1L
+#undef android_text_Layout_BREAK_STRATEGY_BALANCED
+#define android_text_Layout_BREAK_STRATEGY_BALANCED 2L
+#undef android_text_Layout_HYPHENATION_FREQUENCY_NONE
+#define android_text_Layout_HYPHENATION_FREQUENCY_NONE 0L
+#undef android_text_Layout_HYPHENATION_FREQUENCY_NORMAL
+#define android_text_Layout_HYPHENATION_FREQUENCY_NORMAL 1L
+#undef android_text_Layout_HYPHENATION_FREQUENCY_FULL
+#define android_text_Layout_HYPHENATION_FREQUENCY_FULL 2L
+#undef android_text_Layout_HYPHENATION_FREQUENCY_NORMAL_FAST
+#define android_text_Layout_HYPHENATION_FREQUENCY_NORMAL_FAST 3L
+#undef android_text_Layout_HYPHENATION_FREQUENCY_FULL_FAST
+#define android_text_Layout_HYPHENATION_FREQUENCY_FULL_FAST 4L
+#undef android_text_Layout_JUSTIFICATION_MODE_NONE
+#define android_text_Layout_JUSTIFICATION_MODE_NONE 0L
+#undef android_text_Layout_JUSTIFICATION_MODE_INTER_WORD
+#define android_text_Layout_JUSTIFICATION_MODE_INTER_WORD 1L
+#undef android_text_Layout_DIR_LEFT_TO_RIGHT
+#define android_text_Layout_DIR_LEFT_TO_RIGHT 1L
+#undef android_text_Layout_DIR_RIGHT_TO_LEFT
+#define android_text_Layout_DIR_RIGHT_TO_LEFT -1L
 /*
  * Class:     android_text_Layout
  * Method:    native_constructor
@@ -214,6 +238,38 @@ JNIEXPORT jfloat JNICALL Java_android_text_Layout_native_1get_1desired_1width
  */
 JNIEXPORT void JNICALL Java_android_text_Layout_native_1free
   (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_text_Layout
+ * Method:    native_set_text_attrs
+ * Signature: (JLjava/lang/String;[I[Ljava/lang/String;)V
+ */
+JNIEXPORT void JNICALL Java_android_text_Layout_native_1set_1text_1attrs
+  (JNIEnv *, jobject, jlong, jstring, jintArray, jobjectArray);
+
+/*
+ * Class:     android_text_Layout
+ * Method:    native_set_max_lines
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_text_Layout_native_1set_1max_1lines
+  (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     android_text_Layout
+ * Method:    native_set_alignment
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_text_Layout_native_1set_1alignment
+  (JNIEnv *, jobject, jlong, jint);
+
+/*
+ * Class:     android_text_Layout
+ * Method:    native_get_ellipsis_start
+ * Signature: (JI)I
+ */
+JNIEXPORT jint JNICALL Java_android_text_Layout_native_1get_1ellipsis_1start
+  (JNIEnv *, jobject, jlong, jint);
 
 #ifdef __cplusplus
 }

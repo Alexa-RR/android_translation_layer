@@ -7,6 +7,12 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_app_AlertDialog_DISMISS
+#define android_app_AlertDialog_DISMISS 67L
+#undef android_app_AlertDialog_CANCEL
+#define android_app_AlertDialog_CANCEL 68L
+#undef android_app_AlertDialog_SHOW
+#define android_app_AlertDialog_SHOW 69L
 /*
  * Class:     android_app_AlertDialog
  * Method:    nativeConstruct

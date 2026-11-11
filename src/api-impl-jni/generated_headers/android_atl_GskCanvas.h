@@ -7,8 +7,24 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_atl_GskCanvas_MATRIX_SAVE_FLAG
+#define android_atl_GskCanvas_MATRIX_SAVE_FLAG 1L
+#undef android_atl_GskCanvas_CLIP_SAVE_FLAG
+#define android_atl_GskCanvas_CLIP_SAVE_FLAG 2L
 #undef android_atl_GskCanvas_HAS_ALPHA_LAYER_SAVE_FLAG
 #define android_atl_GskCanvas_HAS_ALPHA_LAYER_SAVE_FLAG 4L
+#undef android_atl_GskCanvas_FULL_COLOR_LAYER_SAVE_FLAG
+#define android_atl_GskCanvas_FULL_COLOR_LAYER_SAVE_FLAG 8L
+#undef android_atl_GskCanvas_CLIP_TO_LAYER_SAVE_FLAG
+#define android_atl_GskCanvas_CLIP_TO_LAYER_SAVE_FLAG 16L
+#undef android_atl_GskCanvas_ALL_SAVE_FLAG
+#define android_atl_GskCanvas_ALL_SAVE_FLAG 31L
+#undef android_atl_GskCanvas_TL_CLIP_RECT
+#define android_atl_GskCanvas_TL_CLIP_RECT 0L
+#undef android_atl_GskCanvas_TL_CLIP_PATH
+#define android_atl_GskCanvas_TL_CLIP_PATH 1L
+#undef android_atl_GskCanvas_TL_CLIP_OUT
+#define android_atl_GskCanvas_TL_CLIP_OUT 2L
 /*
  * Class:     android_atl_GskCanvas
  * Method:    native_drawBitmap
@@ -144,6 +160,166 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pop
  */
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRenderNode
   (JNIEnv *, jobject, jlong, jlong);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_clipPath
+ * Signature: (JJI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipPath
+  (JNIEnv *, jclass, jlong, jlong, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_clipOutPath
+ * Signature: (JJI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1clipOutPath
+  (JNIEnv *, jclass, jlong, jlong, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_pushColorMatrix
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushColorMatrix
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_drawPathFillType
+ * Signature: (JJJIFFFF)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawPathFillType
+  (JNIEnv *, jobject, jlong, jlong, jlong, jint, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_layerBegin
+ * Signature: ()J
+ */
+JNIEXPORT jlong JNICALL Java_android_atl_GskCanvas_native_1layerBegin
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_layerFinish
+ * Signature: (J)J
+ */
+JNIEXPORT jlong JNICALL Java_android_atl_GskCanvas_native_1layerFinish
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_nodeUnref
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1nodeUnref
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendNode
+ * Signature: (JJ)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendNode
+  (JNIEnv *, jclass, jlong, jlong);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendLayer
+ * Signature: (JJFJ)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendLayer
+  (JNIEnv *, jclass, jlong, jlong, jfloat, jlong);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendComposite
+ * Signature: (JJJJI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendComposite
+  (JNIEnv *, jclass, jlong, jlong, jlong, jlong, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_pushMask
+ * Signature: (JI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushMask
+  (JNIEnv *, jclass, jlong, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_pushBlur
+ * Signature: (JF)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushBlur
+  (JNIEnv *, jclass, jlong, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_pushOpacity
+ * Signature: (JF)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushOpacity
+  (JNIEnv *, jclass, jlong, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_pushRepeat
+ * Signature: (JFFFFFFFF)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushRepeat
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendTexture
+ * Signature: (JJFFFFI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendTexture
+  (JNIEnv *, jclass, jlong, jlong, jfloat, jfloat, jfloat, jfloat, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendCoverageRect
+ * Signature: (JFFFF)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendCoverageRect
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_textureNode
+ * Signature: (JFF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_atl_GskCanvas_native_1textureNode
+  (JNIEnv *, jclass, jlong, jfloat, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendLinearGradient
+ * Signature: (JFFFFFFFF[I[FI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendLinearGradient
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jintArray, jfloatArray, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendRadialGradient
+ * Signature: (JFFFFFFF[I[FI)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendRadialGradient
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jintArray, jfloatArray, jint);
+
+/*
+ * Class:     android_atl_GskCanvas
+ * Method:    native_appendSweepGradient
+ * Signature: (JFFFFFF[I[F)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendSweepGradient
+  (JNIEnv *, jclass, jlong, jfloat, jfloat, jfloat, jfloat, jfloat, jfloat, jintArray, jfloatArray);
 
 #ifdef __cplusplus
 }

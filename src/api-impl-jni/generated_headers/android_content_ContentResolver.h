@@ -7,6 +7,18 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_content_ContentResolver_NOTIFY_SYNC_TO_NETWORK
+#define android_content_ContentResolver_NOTIFY_SYNC_TO_NETWORK 1L
+#undef android_content_ContentResolver_NOTIFY_SKIP_NOTIFY_FOR_DESCENDANTS
+#define android_content_ContentResolver_NOTIFY_SKIP_NOTIFY_FOR_DESCENDANTS 2L
+#undef android_content_ContentResolver_NOTIFY_INSERT
+#define android_content_ContentResolver_NOTIFY_INSERT 4L
+#undef android_content_ContentResolver_NOTIFY_UPDATE
+#define android_content_ContentResolver_NOTIFY_UPDATE 8L
+#undef android_content_ContentResolver_NOTIFY_DELETE
+#define android_content_ContentResolver_NOTIFY_DELETE 16L
+#undef android_content_ContentResolver_NOTIFY_NO_DELAY
+#define android_content_ContentResolver_NOTIFY_NO_DELAY 32768L
 /*
  * Class:     android_content_ContentResolver
  * Method:    native_query_file_info

@@ -7,6 +7,16 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+#undef android_media_session_MediaSession_FLAG_HANDLES_MEDIA_BUTTONS
+#define android_media_session_MediaSession_FLAG_HANDLES_MEDIA_BUTTONS 1L
+#undef android_media_session_MediaSession_FLAG_HANDLES_TRANSPORT_CONTROLS
+#define android_media_session_MediaSession_FLAG_HANDLES_TRANSPORT_CONTROLS 2L
+#undef android_media_session_MediaSession_FLAG_EXCLUSIVE_GLOBAL_PRIORITY
+#define android_media_session_MediaSession_FLAG_EXCLUSIVE_GLOBAL_PRIORITY 65536L
+#undef android_media_session_MediaSession_INVALID_UID
+#define android_media_session_MediaSession_INVALID_UID -1L
+#undef android_media_session_MediaSession_INVALID_PID
+#define android_media_session_MediaSession_INVALID_PID -1L
 /*
  * Class:     android_media_session_MediaSession
  * Method:    nativeSetState

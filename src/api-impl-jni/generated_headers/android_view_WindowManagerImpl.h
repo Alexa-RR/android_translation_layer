@@ -9,26 +9,26 @@ extern "C" {
 #endif
 /*
  * Class:     android_view_WindowManagerImpl
- * Method:    native_addView
- * Signature: (JIIIII)V
+ * Method:    native_addWindow
+ * Signature: (Landroid/view/View;JIF)J
  */
-JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1addView
-  (JNIEnv *, jclass, jlong, jint, jint, jint, jint, jint);
+JNIEXPORT jlong JNICALL Java_android_view_WindowManagerImpl_native_1addWindow
+  (JNIEnv *, jclass, jobject, jlong, jint, jfloat);
 
 /*
  * Class:     android_view_WindowManagerImpl
- * Method:    native_updateViewLayout
- * Signature: (JIIII)V
+ * Method:    native_updateWindow
+ * Signature: (JIF)V
  */
-JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1updateViewLayout
-  (JNIEnv *, jclass, jlong, jint, jint, jint, jint);
+JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1updateWindow
+  (JNIEnv *, jclass, jlong, jint, jfloat);
 
 /*
  * Class:     android_view_WindowManagerImpl
- * Method:    native_removeView
+ * Method:    native_removeWindow
  * Signature: (J)V
  */
-JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1removeView
+JNIEXPORT void JNICALL Java_android_view_WindowManagerImpl_native_1removeWindow
   (JNIEnv *, jclass, jlong);
 
 #ifdef __cplusplus
