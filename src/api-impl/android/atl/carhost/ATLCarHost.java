@@ -35,7 +35,8 @@ import java.lang.reflect.Method;
  * ({@link ATLCarSurface}), and its templates, toasts and alerts go as JSON to the car page
  * ({@link ATLCarAppChannel}, docs in teslalinux docs/UPSTREAM-NOTES.md), which draws them over the
  * map and sends the driver's touches back. The car itself ({@link ATLCarVehicle}) gives the
- * driving restrictions and night mode. Host services: "app", "navigation", "constraints". Every
+ * driving restrictions and night mode; the car display's density is the device's times the map
+ * scale the renderer chooses ({@link #carDensityDpi}). Host services: "app", "navigation", "constraints". Every
  * call the app makes to them is logged (tag ATLCarHost).
  */
 public final class ATLCarHost {
@@ -46,6 +47,41 @@ public final class ATLCarHost {
 	/** the host's package: the framework (see PackageManager.getPackagesForUid(SYSTEM_UID)) */
 	public static final String HOST_PACKAGE = "android";
 	public static final String ACTION_CAR_APP_SERVICE = "androidx.car.app.CarAppService";
+	/** the bounds of the map scale a renderer can choose (the car display's density over the device's) */
+	public static final float MAP_SCALE_MIN = 0.5f;
+	public static final float MAP_SCALE_MAX = 2f;
+
+	/**
+	 * The car display's density: the device display's density times the map scale (within
+	 * MAP_SCALE_MIN..MAX; anything else counts as 1). Apps get it as the SurfaceContainer's dpi and
+	 * the CarContext configuration's densityDpi, and size their map's text and symbols by it.
+	 */
+	public static int carDensityDpi(int displayDpi, float mapScale) {
+		if (!(mapScale >= MAP_SCALE_MIN && mapScale <= MAP_SCALE_MAX))
+			mapScale = 1f;
+		return Math.max(1, Math.round(displayDpi * mapScale));
+	}
+
+	/**
+	 * The configuration a car display gives a car app's CarContext (ICarApp.onAppCreate,
+	 * onConfigurationChanged): the device's, with the car's density, its size in dp at that density
+	 * (the display's widthPx x heightPx, rounded as a display context computes it) and its night mode
+	 * (CarContext.isDarkMode reads Configuration.UI_MODE_NIGHT_YES).
+	 */
+	public static Configuration carConfiguration(Configuration device, int densityDpi, int widthPx, int heightPx, boolean night) {
+		Configuration config = new Configuration(device);
+		config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | (night ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO);
+		if (densityDpi > 0) {
+			config.densityDpi = densityDpi;
+			if (widthPx > 0 && heightPx > 0) {
+				float density = densityDpi * android.util.DisplayMetrics.DENSITY_DEFAULT_SCALE;
+				config.screenWidthDp = (int)(widthPx / density + 0.5f);
+				config.screenHeightDp = (int)(heightPx / density + 0.5f);
+				config.smallestScreenWidthDp = Math.min(config.screenWidthDp, config.screenHeightDp);
+			}
+		}
+		return config;
+	}
 
 	private static final Object sLock = new Object();
 	private static ATLCarHost sInstance;
@@ -136,6 +172,7 @@ public final class ATLCarHost {
 					@Override
 					public void onNightChanged(boolean night) {
 						channel.sendDayNight(night);
+						log("car night mode: " + (night ? "night" : "day"));
 						configurationChanged();
 					}
 				});
@@ -171,10 +208,12 @@ public final class ATLCarHost {
 					}
 
 					@Override
-					public void surfaceInfo(int width, int height, int dpi) {
-						channel.sendSurface(width, height, dpi);
+					public void surfaceInfo(int width, int height, int dpi, int mapDpi) {
+						channel.sendSurface(width, height, dpi, mapDpi);
 					}
 				});
+				/* the device's density until a renderer chooses a map scale */
+				channel.sendMapScale(carSurface.mapScale(), false);
 				carSurface.show();
 			}
 		});
@@ -348,20 +387,38 @@ public final class ATLCarHost {
 		}
 	}
 
-	/* the car's configuration for the app's CarContext: the device's, with the car's night mode
-	 * (CarContext.isDarkMode reads Configuration.UI_MODE_NIGHT_YES) */
+	/* the car's configuration for the app's CarContext: the device's, with the car display's
+	 * density (the map scale's) and night mode */
 	private Configuration carConfiguration() {
-		Configuration config = new Configuration(app.getApplication().getResources().getConfiguration());
-		int night = vehicle != null && vehicle.isNight() ? Configuration.UI_MODE_NIGHT_YES : Configuration.UI_MODE_NIGHT_NO;
-		config.uiMode = (config.uiMode & ~Configuration.UI_MODE_NIGHT_MASK) | night;
-		return config;
+		android.content.res.Resources res = app.getApplication().getResources();
+		android.util.DisplayMetrics m = res.getDisplayMetrics();
+		int dpi = carSurface != null ? carSurface.dpi() : m.densityDpi;
+		return carConfiguration(res.getConfiguration(), dpi, m.widthPixels, m.heightPixels, vehicle != null && vehicle.isNight());
 	}
 
 	private boolean created;
 
-	/* host thread: the car switched between day and night: the app hears onConfigurationChanged */
+	/* host thread: the driver chose a map scale on the renderer: the car display's density changes,
+	 * the app hears onConfigurationChanged and gets its surface again at the new density; every
+	 * renderer hears the scale */
+	private void setMapScale(float scale) {
+		if (carSurface == null)
+			return;
+		if (!(scale >= MAP_SCALE_MIN && scale <= MAP_SCALE_MAX)) {
+			Log.w(TAG, "renderer: map scale " + scale + " outside " + MAP_SCALE_MIN + ".." + MAP_SCALE_MAX);
+			return;
+		}
+		boolean changed = carSurface.setMapScale(scale);
+		channel.sendMapScale(scale, true);
+		if (!changed)
+			return;
+		log("map scale " + scale + ": the car display's density is " + carSurface.dpi() + " dpi");
+		configurationChanged();
+	}
+
+	/* host thread: the car's configuration changed (night mode, density): the app hears
+	 * onConfigurationChanged */
 	private void configurationChanged() {
-		log("car night mode: " + (vehicle.isNight() ? "night" : "day"));
 		if (carApp == null || !created)
 			return;
 		try {
@@ -572,6 +629,11 @@ public final class ATLCarHost {
 				/* the driver's choice on the car page: "day", "night" or "auto" (the sun) */
 				if (vehicle != null)
 					vehicle.setMode(m.optString("mode", "auto"));
+				return;
+			}
+			if ("mapScale".equals(type)) {
+				/* the driver's map size on the car page: a factor on the display's density */
+				setMapScale((float)m.getDouble("scale"));
 				return;
 			}
 			if ("stopNavigation".equals(type)) {

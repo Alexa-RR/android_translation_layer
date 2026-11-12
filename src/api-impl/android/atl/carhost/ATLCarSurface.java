@@ -26,6 +26,12 @@ import android.view.WindowManager;
  * surface callbacks do on a car: onScroll (pan), onFling, onScale (pinch; a double tap zooms in by
  * 2, as the AOSP host does) and onClick.
  *
+ * <p>The density the app gets is the car display's: the device's density times the map scale the
+ * renderer chose ({@link ATLCarHost#carDensityDpi}). Apps size their map's text and symbols by it
+ * (SurfaceContainer.getDpi). When it changes, the app gets the surface again the way a host
+ * replaces its surface: onSurfaceDestroyed for the old one, onSurfaceAvailable at the new density,
+ * then the visible and stable areas.
+ *
  * The window and the gestures live on the main thread; every call into the app goes through the
  * host's thread, as the platform (ATLCarHost's identity).
  */
@@ -53,8 +59,11 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		/** a done callback for a call that reports back */
 		IBinder done(String what);
 
-		/** the surface's size and density changed (for the renderer) */
-		void surfaceInfo(int width, int height, int dpi);
+		/**
+		 * the surface's size or density changed (for the renderer): the display's density, which
+		 * the renderer lays its templates out with, and the density the app's map got
+		 */
+		void surfaceInfo(int width, int height, int dpi, int mapDpi);
 	}
 
 	private final Context context;
@@ -65,7 +74,11 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 	/* main thread */
 	private int width, height;
 	private boolean available;
+	/* the density the app got with the current surface (main thread) */
+	private int givenDpi;
 	private int[] visibleArea;
+	/* the renderer's map scale on the display's density (written on the host thread) */
+	private volatile float mapScale = 1f;
 
 	ATLCarSurface(Context context, Handler host, Sender sender) {
 		this.context = context;
@@ -140,17 +153,54 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		});
 	}
 
-	private int dpi() {
+	/** the device display's density */
+	int displayDpi() {
 		DisplayMetrics m = context.getResources().getDisplayMetrics();
 		return m.densityDpi;
 	}
 
+	/** the car display's density: what the app's map is drawn at */
+	int dpi() {
+		return ATLCarHost.carDensityDpi(displayDpi(), mapScale);
+	}
+
+	float mapScale() {
+		return mapScale;
+	}
+
+	/**
+	 * The renderer's map scale (host thread, already within ATLCarHost's bounds). Returns whether
+	 * the car display's density changed; if it did and the app has the surface, the app gets it
+	 * again at the new density.
+	 */
+	boolean setMapScale(float scale) {
+		int before = dpi();
+		mapScale = scale;
+		if (dpi() == before)
+			return false;
+		main.post(new Runnable() {
+			@Override
+			public void run() {
+				if (!available || view == null)
+					return;
+				android.view.Surface surface = view.getHolder().getSurface();
+				sendDestroyed(surface, width, height);
+				sendAvailable(surface, width, height);
+				if (visibleArea != null)
+					setVisibleArea(visibleArea[0], visibleArea[1], visibleArea[2], visibleArea[3]);
+			}
+		});
+		return true;
+	}
+
 	private void sendAvailable(final android.view.Surface surface, final int w, final int h) {
 		final int dpi = dpi();
+		final int displayDpi = displayDpi();
+		givenDpi = dpi;
 		host.post(new Runnable() {
 			@Override
 			public void run() {
-				sender.surfaceInfo(w, h, dpi);
+				sender.surfaceInfo(w, h, displayDpi, dpi);
 				IBinder cb = sender.callback();
 				if (cb == null)
 					return;
@@ -174,7 +224,8 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 	}
 
 	private void sendDestroyed(final android.view.Surface surface, final int w, final int h) {
-		final int dpi = dpi();
+		/* the container the app was given */
+		final int dpi = givenDpi;
 		host.post(new Runnable() {
 			@Override
 			public void run() {

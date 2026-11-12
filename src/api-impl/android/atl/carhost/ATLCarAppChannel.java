@@ -26,13 +26,16 @@ import java.util.Map;
  * text frames, described in teslalinux's docs/UPSTREAM-NOTES.md ("Car app templates"):
  *
  * <ul>
- * <li>to the renderer: {"type":"surface","width":W,"height":H,"dpi":D} for the map surface the
- *     templates are laid out on, {"type":"icon","id":N,"png":BASE64} for each icon before the first template
+ * <li>to the renderer: {"type":"surface","width":W,"height":H,"dpi":D,"mapDpi":M} for the map
+ *     surface the templates are laid out on (D the display's density, M the one the app's map is
+ *     drawn at), {"type":"icon","id":N,"png":BASE64} for each icon before the first template
  *     that uses it, {"type":"template","seq":N,"template":{...}} (CarModelJson), and state such as
- *     {"type":"dayNight","night":B} (the car's night mode);</li>
+ *     {"type":"dayNight","night":B} (the car's night mode) and {"type":"mapScale","scale":S,"set":B}
+ *     (the map's scale, and whether a renderer chose it since the app started);</li>
  * <li>from the renderer: {"type":"click","cb":ID}, {"type":"selected","cb":ID,"index":I},
  *     {"type":"checked","cb":ID,"checked":B}, {"type":"search","cb":ID,"text":T,"submit":B},
- *     {"type":"back"}; CarAppChannelListener receives them on the host's handler.</li>
+ *     {"type":"back"}, {"type":"mapScale","scale":S}; CarAppChannelListener receives them on the
+ *     host's handler.</li>
  * </ul>
  * A renderer that connects gets the icons and the current template at once.
  */
@@ -165,9 +168,27 @@ final class ATLCarAppChannel {
 		broadcast(json);
 	}
 
-	/** Sends the map surface's size and density (the renderer lays the templates out in it). */
-	void sendSurface(int width, int height, int dpi) {
-		String msg = "{\"type\":\"surface\",\"width\":" + width + ",\"height\":" + height + ",\"dpi\":" + dpi + "}";
+	/**
+	 * Tells the renderers the map's scale on the display's density, and whether a renderer chose
+	 * it since the app started (state: new renderers get it too). A renderer with a choice of its
+	 * own sends it while none is set, and follows the one set otherwise, so all of them agree.
+	 */
+	void sendMapScale(float scale, boolean set) {
+		String msg = "{\"type\":\"mapScale\",\"scale\":" + scale + ",\"set\":" + set + "}";
+		synchronized (this) {
+			mapScaleMessage = msg;
+		}
+		broadcast(msg);
+	}
+
+	private String mapScaleMessage;
+
+	/**
+	 * Sends the map surface's size, the display's density (the renderer lays the templates out
+	 * with it) and the density the app's map is drawn at.
+	 */
+	void sendSurface(int width, int height, int dpi, int mapDpi) {
+		String msg = "{\"type\":\"surface\",\"width\":" + width + ",\"height\":" + height + ",\"dpi\":" + dpi + ",\"mapDpi\":" + mapDpi + "}";
 		synchronized (this) {
 			surfaceMessage = msg;
 		}
@@ -271,6 +292,8 @@ final class ATLCarAppChannel {
 					initial.add(restrictionsMessage);
 				if (dayNightMessage != null)
 					initial.add(dayNightMessage);
+				if (mapScaleMessage != null)
+					initial.add(mapScaleMessage);
 				initial.addAll(iconMessages.values());
 				if (templateMessage != null)
 					initial.add(templateMessage);
