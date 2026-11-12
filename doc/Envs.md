@@ -84,3 +84,14 @@ The following environment variables are recognized by the main executable:
 ---
 
 `ATL_CAR_HOST_DELAY_MS=<ms>` - with `ATL_CAR_HOST=1`, how long the host waits after the first resumed activity before it binds the app's car service (default 0)
+
+---
+
+`ATL_FILE_OVERLAYS=/path/manifest.json` - the app reads a transformed copy of some of its own files: each entry of the JSON manifest names a
+                   package, a path (relative to the app's data directory, or absolute), the (versionCode, sha256 of the original)
+                   pairs it was checked with, and either a list of `[FROM, TO]` text replacements (each FROM exactly once in the
+                   original) or the whole `contents`. A read-only `open()`/`fopen()`/`freopen()`/`__open_2()` from the app's native code
+                   of a listed file, when the running package and versionCode and the file's sha256 match a verified pair, gets a
+                   sealed memfd with the transformed copy; anything else opens the real file. The files on disk are never written.
+                   Needs bionic_translation's open overlay hook (`libc_bio_set_open_overlay_func`). The format is described in
+                   `src/api-impl-jni/file_overlays.c`; each file is logged once (applied, or why not) with the prefix `ATL file overlays`.

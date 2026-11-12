@@ -8,6 +8,7 @@
 #include <libportal/portal.h>
 
 #include "../api-impl-jni/defines.h"
+#include "../api-impl-jni/file_overlays.h"
 #include "../api-impl-jni/util.h"
 #include "../api-impl-jni/app/android_app_Activity.h"
 #include "../api-impl-jni/content/android_content_Context.h"
@@ -1031,6 +1032,17 @@ int main(int argc, char **argv)
 	setenv("LC_ALL", "C.UTF-8", 1);
 
 	libc_bio_set_apply_path_overrides_func(apply_path_overrides);
+
+	/* ATL_FILE_OVERLAYS: the app's read-only opens of the files named there get a verified,
+	 * transformed copy (api-impl-jni/file_overlays.c). The hook is looked up at run time, so a
+	 * bionic_translation without it still runs apps, only without overlays. */
+	if (getenv("ATL_FILE_OVERLAYS")) {
+		void (*set_open_overlay)(int (*)(const char *, int)) = dlsym(RTLD_DEFAULT, "libc_bio_set_open_overlay_func");
+		if (set_open_overlay)
+			set_open_overlay(atl_file_overlay_open);
+		else
+			fprintf(stderr, "ATL file overlays: bionic_translation has no open overlay hook (libc_bio_set_open_overlay_func); the app reads its own files\n");
+	}
 
 	/* before GTK creates its font map: characters a typeface lacks come from fonts.xml's fallback
 	 * families, in Android's order */

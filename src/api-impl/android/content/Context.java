@@ -140,6 +140,10 @@ public abstract class Context {
 			}
 		}
 		ATLLoadedApp primary_application = ATLLoadedApp.getPrimaryApplication();
+		// file overlays (ATL_FILE_OVERLAYS, file_overlays.c) apply per package and versionCode: they
+		// learn the app's identity here, before any of the app's code runs. AOSP's long version code
+		// (getLongVersionCode) with versionCodeMajor 0, which ATL's PackageParser does not read.
+		native_set_file_overlay_package(primary_application.pkg.packageName, primary_application.pkg.mVersionCode & 0xffffffffL);
 
 		ApplicationInfo application_info = primary_application.pkg.applicationInfo;
 		application_info.dataDir = Environment.getExternalStorageDirectory().getAbsolutePath();
@@ -175,6 +179,7 @@ public abstract class Context {
 	}
 
 	private static native String native_get_apk_path();
+	private static native void native_set_file_overlay_package(String packageName, long versionCode);
 	protected static native void native_updateConfig(Configuration config);
 	protected static native void nativeOpenFile(int fd);
 	protected static native void nativeShareFile(String text, int fd);

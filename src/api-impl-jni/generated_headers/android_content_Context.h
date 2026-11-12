@@ -33,6 +33,14 @@ JNIEXPORT jstring JNICALL Java_android_content_Context_native_1get_1apk_1path
 
 /*
  * Class:     android_content_Context
+ * Method:    native_set_file_overlay_package
+ * Signature: (Ljava/lang/String;J)V
+ */
+JNIEXPORT void JNICALL Java_android_content_Context_native_1set_1file_1overlay_1package
+  (JNIEnv *, jclass, jstring, jlong);
+
+/*
+ * Class:     android_content_Context
  * Method:    native_updateConfig
  * Signature: (Landroid/content/res/Configuration;)V
  */

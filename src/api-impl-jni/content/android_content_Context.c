@@ -13,6 +13,7 @@
 #include "unifiedpush-distributor.h"
 
 #include "../defines.h"
+#include "../file_overlays.h"
 #include "../util.h"
 
 #include "../generated_headers/android_content_Context.h"
@@ -25,6 +26,16 @@ extern char *apk_path;
 JNIEXPORT jstring JNICALL Java_android_content_Context_native_1get_1apk_1path(JNIEnv *env, jclass this)
 {
 	return _JSTRING(apk_path);
+}
+
+/* the app's package and versionCode, for the file overlays (ATL_FILE_OVERLAYS) */
+JNIEXPORT void JNICALL Java_android_content_Context_native_1set_1file_1overlay_1package(JNIEnv *env, jclass this, jstring package_name_jstr, jlong version_code)
+{
+	if (!package_name_jstr)
+		return;
+	const char *package_name = (*env)->GetStringUTFChars(env, package_name_jstr, NULL);
+	atl_file_overlays_init(package_name, version_code);
+	(*env)->ReleaseStringUTFChars(env, package_name_jstr, package_name);
 }
 
 #ifdef XDP_TYPE_INPUT_CAPTURE_SESSION // libportal >= 0.8
