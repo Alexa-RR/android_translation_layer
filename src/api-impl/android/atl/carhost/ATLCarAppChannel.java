@@ -28,7 +28,8 @@ import java.util.Map;
  * <ul>
  * <li>to the renderer: {"type":"surface","width":W,"height":H,"dpi":D} for the map surface the
  *     templates are laid out on, {"type":"icon","id":N,"png":BASE64} for each icon before the first template
- *     that uses it, {"type":"template","seq":N,"template":{...}} (CarModelJson);</li>
+ *     that uses it, {"type":"template","seq":N,"template":{...}} (CarModelJson), and state such as
+ *     {"type":"dayNight","night":B} (the car's night mode);</li>
  * <li>from the renderer: {"type":"click","cb":ID}, {"type":"selected","cb":ID,"index":I},
  *     {"type":"checked","cb":ID,"checked":B}, {"type":"search","cb":ID,"text":T,"submit":B},
  *     {"type":"back"}; CarAppChannelListener receives them on the host's handler.</li>
@@ -144,6 +145,21 @@ final class ATLCarAppChannel {
 
 	private String restrictionsMessage;
 
+	/**
+	 * Tells the renderers whether the car is in night mode, as the app hears it
+	 * (CarContext.isDarkMode); state: new renderers get it too. A renderer can draw its own panels
+	 * by day or by night with the app's map.
+	 */
+	void sendDayNight(boolean night) {
+		String msg = "{\"type\":\"dayNight\",\"night\":" + night + "}";
+		synchronized (this) {
+			dayNightMessage = msg;
+		}
+		broadcast(msg);
+	}
+
+	private String dayNightMessage;
+
 	/** Sends a one-off message (a toast, an alert) to the renderers connected now. */
 	void sendEvent(String json) {
 		broadcast(json);
@@ -253,6 +269,8 @@ final class ATLCarAppChannel {
 					initial.add(navigationMessage);
 				if (restrictionsMessage != null)
 					initial.add(restrictionsMessage);
+				if (dayNightMessage != null)
+					initial.add(dayNightMessage);
 				initial.addAll(iconMessages.values());
 				if (templateMessage != null)
 					initial.add(templateMessage);

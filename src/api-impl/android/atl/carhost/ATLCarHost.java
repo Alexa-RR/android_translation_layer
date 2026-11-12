@@ -135,11 +135,13 @@ public final class ATLCarHost {
 
 					@Override
 					public void onNightChanged(boolean night) {
+						channel.sendDayNight(night);
 						configurationChanged();
 					}
 				});
 				vehicle.start(app.getApplication());
 				sendRestrictions(vehicle.restrictions());
+				channel.sendDayNight(vehicle.isNight());
 				carSurface = new ATLCarSurface(app.getApplication(), handler, new ATLCarSurface.Sender() {
 					@Override
 					public IBinder callback() {
