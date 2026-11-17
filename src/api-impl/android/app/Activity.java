@@ -904,6 +904,15 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 			mBackDispatcher = new TlBackDispatcher(this);
 		return mBackDispatcher;
 	}
+	private android.window.SplashScreen mSplashScreen;
+	/** AOSP (API 31): the interface to this activity's splash screen (see android.window.SplashScreen). */
+	public final android.window.SplashScreen getSplashScreen() {
+		synchronized (this) {
+			if (mSplashScreen == null)
+				mSplashScreen = new android.window.SplashScreen.SplashScreenImpl(this);
+			return mSplashScreen;
+		}
+	}
 	public void addContentView(View view, ViewGroup.LayoutParams params) { setContentView(view, params); }
 	/** AOSP: whether the activity was launched in a bubble; this platform has no bubbles (no SystemUI), so never. */
 	public boolean isLaunchedFromBubble() { return false; }
@@ -1301,6 +1310,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 			tlLiveActivities.remove(this);
 		}
 		Dialog.tlTokenDestroyed(this);
+		android.window.SplashScreen.SplashScreenManagerGlobal.activityDestroyed(this);
 		synchronized (mManagedCursors) {
 			for (android.database.Cursor c : mManagedCursors)
 				c.close();

@@ -238,6 +238,8 @@ srcs = [
 	'android/window/OnBackInvokedCallback.java',
 	'android/window/OnBackAnimationCallback.java',
 	'android/window/BackEvent.java',
+	'android/window/SplashScreen.java',
+	'android/window/SplashScreenView.java',
 	'android/location/OnNmeaMessageListener.java',
 	'android/location/LocationRequest.java',
 	'android/location/LocationProvider.java',
