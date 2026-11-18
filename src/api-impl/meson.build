@@ -395,6 +395,7 @@ srcs = [
 	'android/atl/carhost/Bundleable.java',
 	'android/atl/carhost/ATLCarAppChannel.java',
 	'android/atl/ATLWebSocketServer.java',
+	'android/atl/TlPrewarm.java',
 	'android/atl/carhost/ATLCarSurface.java',
 	'android/atl/carhost/CarModelDump.java',
 	'android/atl/carhost/ATLCarVehicle.java',
