@@ -394,9 +394,12 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 	@Override
 	public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
 		/* the display's size is the view's: with a render scale the surface's own is smaller */
-		if (view != null && view.getWidth() > 0 && view.getHeight() > 0) {
-			w = view.getWidth();
-			h = view.getHeight();
+		if (view != null) {
+			int[] size = view.tlViewSize();
+			if (size[0] > 0 && size[1] > 0) {
+				w = size[0];
+				h = size[1];
+			}
 		}
 		if (available && w == width && h == height)
 			return;

@@ -37,9 +37,23 @@ public class SurfaceView extends View {
 		mSurface.widget = this.widget;
 	}
 
+	/* the widget's own size, from its resize signal (the view's size on the screen) */
+	private int tlViewWidth, tlViewHeight;
+
+	/** @hide the size this view has on the screen (its widget's), whatever its surface's size */
+	public int[] tlViewSize() {
+		return new int[] {tlViewWidth > 0 ? tlViewWidth : getWidth(), tlViewHeight > 0 ? tlViewHeight : getHeight()};
+	}
+
 	@Export
 	private void surfaceChanged(int format, int width, int height) {
-		/* the view's size from the widget; a fixed size (setFixedSize) is the surface's instead */
+		/* from the widget's resize: the view's size; a fixed size (setFixedSize) is the surface's */
+		tlViewWidth = width;
+		tlViewHeight = height;
+		tlSurfaceSizeChanged(format, width, height);
+	}
+
+	private void tlSurfaceSizeChanged(int format, int width, int height) {
 		if (mRequestedWidth > 0 && mRequestedHeight > 0) {
 			width = mRequestedWidth;
 			height = mRequestedHeight;
@@ -64,9 +78,9 @@ public class SurfaceView extends View {
 		// AOSP: surfaceChanged(format, w, h) always follows surfaceCreated once the size is known; the
 		// native resize signal only fires on later size changes, so report the current size here.
 		if (tlSurfaceWidth > 0 && tlSurfaceHeight > 0)
-			surfaceChanged(1 /*RGBA_8888*/, tlSurfaceWidth, tlSurfaceHeight);
+			tlSurfaceSizeChanged(1 /*RGBA_8888*/, tlSurfaceWidth, tlSurfaceHeight);
 		else if (getWidth() > 0 && getHeight() > 0)
-			surfaceChanged(1 /*RGBA_8888*/, getWidth(), getHeight());
+			tlSurfaceSizeChanged(1 /*RGBA_8888*/, getWidth(), getHeight());
 	}
 
 	private boolean tlSurfaceCreated;
@@ -83,10 +97,11 @@ public class SurfaceView extends View {
 
 	/** the surface's size changed (setFixedSize): the callbacks hear it, as AOSP's updateSurface */
 	private void tlReportSize() {
-		int w = mRequestedWidth > 0 ? mRequestedWidth : getWidth();
-		int h = mRequestedHeight > 0 ? mRequestedHeight : getHeight();
+		int[] view = tlViewSize();
+		int w = mRequestedWidth > 0 ? mRequestedWidth : view[0];
+		int h = mRequestedHeight > 0 ? mRequestedHeight : view[1];
 		if (w > 0 && h > 0)
-			surfaceChanged(1 /*RGBA_8888*/, w, h);
+			tlSurfaceSizeChanged(1 /*RGBA_8888*/, w, h);
 	}
 
 	@Override
