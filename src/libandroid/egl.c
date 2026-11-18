@@ -522,6 +522,19 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 #define DRM_FORMAT_ARGB8888 TL_FOURCC('A', 'R', '2', '4')
 #define DRM_FORMAT_XRGB8888 TL_FOURCC('X', 'R', '2', '4')
 
+/* how many frames an app may have queued but not shown (ATL_SWAP_FRAMES_AHEAD, 1 to 3; 2) */
+static int tl_frames_ahead(void)
+{
+	static int n;
+	if (!n) {
+		const char *e = getenv("ATL_SWAP_FRAMES_AHEAD");
+		n = e ? atoi(e) : 2;
+		if (n < 1 || n > 3)
+			n = 2;
+	}
+	return n;
+}
+
 gboolean tl_surface_offload_enabled(void)
 {
 	static int enabled = -1;
@@ -581,7 +594,12 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 	ATLSurface *atl_surface = draw;
 	if (!atl_surface->unused_buffers) {
 		atl_surface->vsync = g_async_queue_new();
-		g_async_queue_push(atl_surface->vsync, GINT_TO_POINTER(1));
+		/* tl_frames_ahead: eglSwapBuffers waits for a frame shown TL_FRAMES_AHEAD frames back. With
+		 * one, every frame waited for the previous one on the screen (shown on the compositor's
+		 * tick), so a frame a little over one tick long took two: 30 frames/s at 60 Hz. AOSP's
+		 * buffer queue lets an app queue a frame ahead the same way (triple buffering). */
+		for (int i = 0; i < tl_frames_ahead(); i++)
+			g_async_queue_push(atl_surface->vsync, GINT_TO_POINTER(1));
 		atl_surface->unused_buffers = g_async_queue_new();
 		GLint previousTexture;
 		glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture); // Save current binding
@@ -655,6 +673,20 @@ static void frame_callback(SurfaceViewWidget *surface_view_widget)
 	g_async_queue_push(surface_view_widget->frame_callback_data, GINT_TO_POINTER(1));
 }
 
+/* the frame about to replace the widget's: one that was never shown counts as consumed, as a frame
+ * SurfaceFlinger drops for a newer one (its token goes back; with frames ahead, frames can arrive
+ * faster than the screen shows them) */
+static void tl_set_frame_callback(ATLSurface *atl_surface)
+{
+	SurfaceViewWidget *widget = atl_surface->surface_view_widget;
+	if (widget->frame_callback) {
+		widget->frame_callback(widget);
+		widget->frame_callback = NULL;
+	}
+	widget->frame_callback_data = atl_surface->vsync;
+	widget->frame_callback = frame_callback;
+}
+
 static gboolean queue_texture(gpointer data)
 {
 	static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES = NULL;
@@ -695,8 +727,7 @@ static gboolean queue_texture(gpointer data)
 		GdkTexture *texture = gdk_dmabuf_texture_builder_build(builder, destroy_texture, buffer, &error);
 		g_object_unref(builder);
 		if (texture) {
-			atl_surface->surface_view_widget->frame_callback_data = atl_surface->vsync;
-			atl_surface->surface_view_widget->frame_callback = frame_callback;
+			tl_set_frame_callback(atl_surface);
 			surface_view_widget_set_texture(atl_surface->surface_view_widget, texture, TRUE);
 			if (!gtk_widget_get_mapped(GTK_WIDGET(atl_surface->surface_view_widget)) && atl_surface->surface_view_widget->frame_callback) {
 				atl_surface->surface_view_widget->frame_callback(atl_surface->surface_view_widget);
@@ -759,8 +790,7 @@ static gboolean queue_texture(gpointer data)
 		gdk_gl_texture_builder_set_sync(buffer->texture_builder, buffer->tl_gtk_sync);
 		tl_import_context_end(previous);
 	}
-	atl_surface->surface_view_widget->frame_callback_data = atl_surface->vsync;
-	atl_surface->surface_view_widget->frame_callback = frame_callback;
+	tl_set_frame_callback(atl_surface);
 	surface_view_widget_set_texture(atl_surface->surface_view_widget, gdk_gl_texture_builder_build(buffer->texture_builder, destroy_texture, buffer), TRUE);
 	if (!gtk_widget_get_mapped(GTK_WIDGET(atl_surface->surface_view_widget)) && atl_surface->surface_view_widget->frame_callback) {
 		/* tl_makecurrent_nowait: nobody snapshots a hidden widget; consume the frame like SurfaceFlinger does */
