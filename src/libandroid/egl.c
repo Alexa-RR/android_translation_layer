@@ -2,6 +2,7 @@
 #include <gdk/x11/gdkx.h>
 #include <gtk/gtk.h>
 
+#include <unistd.h>
 #include <wayland-egl.h>
 
 #include <EGL/egl.h>
@@ -265,6 +266,11 @@ struct _ATLSurface {
 		struct _ATLSurface *surface;
 		EGLImage egl_image;
 		GdkGLTextureBuilder *texture_builder;
+		/* tl_surface_offload: the buffer as a dmabuf (fd -1: none), handed to GTK as a GdkDmabufTexture */
+		int dmabuf_fd;
+		int dmabuf_fourcc;
+		EGLint dmabuf_stride, dmabuf_offset;
+		EGLuint64KHR dmabuf_modifier;
 		uint32_t gl_texture;
 		uint32_t gl_framebuffer;
 		EGLSync tl_frame_fence;          /* native-egl-import-fence.sh: the app's commands for this frame */
@@ -354,7 +360,11 @@ static void atl_surface_class_init(ATLSurfaceClass *class)
 {
 	G_OBJECT_CLASS(class)->dispose = atl_surface_dispose;
 }
-static void atl_surface_init(ATLSurface *self) {}
+static void atl_surface_init(ATLSurface *self)
+{
+	for (int i = 0; i < NUM_BUFFERS; i++)
+		self->buffers[i].dmabuf_fd = -1; /* tl_surface_offload: no dmabuf until the buffer exists */
+}
 G_DEFINE_TYPE(ATLSurface, atl_surface, G_TYPE_OBJECT)
 
 /*
@@ -482,6 +492,9 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 			if (atl_surface->buffers[i].egl_image)
 				eglDestroyImage(display, atl_surface->buffers[i].egl_image);
 			atl_surface->buffers[i].egl_image = 0;
+			if (atl_surface->buffers[i].dmabuf_fd >= 0)
+				close(atl_surface->buffers[i].dmabuf_fd);
+			atl_surface->buffers[i].dmabuf_fd = -1;
 			if (atl_surface->buffers[i].gl_framebuffer)
 				glDeleteFramebuffers(1, &atl_surface->buffers[i].gl_framebuffer);
 			if (atl_surface->buffers[i].gl_texture)
@@ -495,6 +508,47 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 	}
 
 	return ret;
+}
+
+/* tl_surface_offload: SurfaceView frames go to GTK as dmabufs, which GTK can put in a Wayland
+ * subsurface of their own (GtkGraphicsOffload in the SurfaceView widget) instead of drawing them
+ * into the window: the window is not redrawn for every frame of the app, and the frame reaches the
+ * compositor as it is. The GL texture path stays for when a buffer cannot be exported or GTK does
+ * not offload. ATL_SURFACE_OFFLOAD=0 turns it off. */
+gboolean tl_surface_offload_enabled(void)
+{
+	static int enabled = -1;
+	if (enabled < 0) {
+		const char *e = getenv("ATL_SURFACE_OFFLOAD");
+		enabled = !(e && !strcmp(e, "0"));
+	}
+	return enabled;
+}
+
+static void tl_export_dmabuf(EGLDisplay display, struct atl_surface_buffer *buffer)
+{
+	static PFNEGLEXPORTDMABUFIMAGEQUERYMESAPROC query;
+	static PFNEGLEXPORTDMABUFIMAGEMESAPROC export_image;
+	buffer->dmabuf_fd = -1;
+	if (!tl_surface_offload_enabled() || !buffer->egl_image)
+		return;
+	if (!query) {
+		query = (PFNEGLEXPORTDMABUFIMAGEQUERYMESAPROC)eglGetProcAddress("eglExportDMABUFImageQueryMESA");
+		export_image = (PFNEGLEXPORTDMABUFIMAGEMESAPROC)eglGetProcAddress("eglExportDMABUFImageMESA");
+	}
+	int fourcc = 0, planes = 0;
+	EGLuint64KHR modifier = 0;
+	if (!query || !export_image || !query(display, buffer->egl_image, &fourcc, &planes, &modifier) || planes != 1)
+		return;
+	int fd = -1;
+	EGLint stride = 0, offset = 0;
+	if (!export_image(display, buffer->egl_image, &fd, &stride, &offset) || fd < 0)
+		return;
+	buffer->dmabuf_fd = fd;
+	buffer->dmabuf_fourcc = fourcc;
+	buffer->dmabuf_stride = stride;
+	buffer->dmabuf_offset = offset;
+	buffer->dmabuf_modifier = modifier;
 }
 
 static GLuint tl_surface_back_buffer(ATLSurface *atl_surface); /* tl_makecurrent_nowait */
@@ -551,6 +605,7 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, atl_surface->buffers[i].gl_texture, 0);
 			if (atl_surface->renderbuffer)
 				glFramebufferRenderbuffer(GL_FRAMEBUFFER, atl_surface->renderbuffer_attachment, GL_RENDERBUFFER, atl_surface->renderbuffer);
+			tl_export_dmabuf(eglGetCurrentDisplay(), &atl_surface->buffers[i]);
 			g_async_queue_push(atl_surface->unused_buffers, &atl_surface->buffers[i]);
 		}
 		glBindTexture(GL_TEXTURE_2D, previousTexture);
@@ -602,6 +657,46 @@ static gboolean queue_texture(gpointer data)
 		return G_SOURCE_REMOVE;
 	}
 	struct atl_surface_buffer *buffer = atl_surface->front_buffer;
+	if (buffer->dmabuf_fd >= 0) {
+		/* tl_surface_offload: the dmabuf itself; the GPU work that drew it is waited for through the
+		 * buffer's implicit fence (the app flushed it in eglSwapBuffers) */
+		if (buffer->tl_frame_fence) {
+			eglDestroySync(buffer->tl_frame_fence_display, buffer->tl_frame_fence);
+			buffer->tl_frame_fence = NULL;
+		}
+		GdkDmabufTextureBuilder *builder = gdk_dmabuf_texture_builder_new();
+		gdk_dmabuf_texture_builder_set_display(builder, gtk_widget_get_display(GTK_WIDGET(atl_surface->surface_view_widget)));
+		gdk_dmabuf_texture_builder_set_width(builder, atl_surface->width);
+		gdk_dmabuf_texture_builder_set_height(builder, atl_surface->height);
+		gdk_dmabuf_texture_builder_set_fourcc(builder, buffer->dmabuf_fourcc);
+		gdk_dmabuf_texture_builder_set_modifier(builder, buffer->dmabuf_modifier);
+		gdk_dmabuf_texture_builder_set_premultiplied(builder, TRUE);
+		gdk_dmabuf_texture_builder_set_n_planes(builder, 1);
+		gdk_dmabuf_texture_builder_set_fd(builder, 0, buffer->dmabuf_fd);
+		gdk_dmabuf_texture_builder_set_stride(builder, 0, buffer->dmabuf_stride);
+		gdk_dmabuf_texture_builder_set_offset(builder, 0, buffer->dmabuf_offset);
+		GError *error = NULL;
+		GdkTexture *texture = gdk_dmabuf_texture_builder_build(builder, destroy_texture, buffer, &error);
+		g_object_unref(builder);
+		if (texture) {
+			atl_surface->surface_view_widget->frame_callback_data = atl_surface->vsync;
+			atl_surface->surface_view_widget->frame_callback = frame_callback;
+			surface_view_widget_set_texture(atl_surface->surface_view_widget, texture, TRUE);
+			if (!gtk_widget_get_mapped(GTK_WIDGET(atl_surface->surface_view_widget)) && atl_surface->surface_view_widget->frame_callback) {
+				atl_surface->surface_view_widget->frame_callback(atl_surface->surface_view_widget);
+				atl_surface->surface_view_widget->frame_callback = NULL;
+			}
+			return G_SOURCE_REMOVE; /* the reference is dropped in destroy_texture */
+		}
+		static int warned;
+		if (!warned++)
+			fprintf(stderr, "[egl] SurfaceView frames go through GL textures: GTK takes no dmabuf of format %.4s modifier 0x%llx (%s)\n",
+			        (char *)&buffer->dmabuf_fourcc, (unsigned long long)buffer->dmabuf_modifier, error ? error->message : "?");
+		g_clear_error(&error);
+		close(buffer->dmabuf_fd);
+		buffer->dmabuf_fd = -1;
+		/* the GL path needs the image the export left alone */
+	}
 	if (!buffer->texture_builder) {
 		GLuint texture_id;
 		gboolean current;

@@ -8,6 +8,7 @@ struct _SurfaceViewWidget {
 	gboolean needs_flip;
 	void (*frame_callback)(SurfaceViewWidget *surface_view_widget);
 	gpointer frame_callback_data;
+	GtkWidget *offload_content; /* tl_surface_offload: the child that draws the frame, or NULL */
 };
 
 struct _SurfaceViewWidgetClass {

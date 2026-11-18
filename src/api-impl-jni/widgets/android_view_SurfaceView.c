@@ -13,8 +13,73 @@
 
 G_DEFINE_TYPE(SurfaceViewWidget, surface_view_widget, GTK_TYPE_WIDGET)
 
+/* the app's frame in the widget's bounds, upright (a GL frame is stored bottom row first) */
+static void tl_surface_append_frame(SurfaceViewWidget *surface_view_widget, GtkWidget *area, GdkSnapshot *snapshot)
+{
+	if (!surface_view_widget->texture)
+		return;
+	graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, gtk_widget_get_width(area), gtk_widget_get_height(area));
+	if (surface_view_widget->needs_flip) {
+		gtk_snapshot_save(snapshot);
+		gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(0, gtk_widget_get_height(area)));
+		gtk_snapshot_scale(snapshot, 1, -1);
+	}
+	gtk_snapshot_append_texture(snapshot, surface_view_widget->texture, &bounds);
+	if (surface_view_widget->needs_flip)
+		gtk_snapshot_restore(snapshot);
+}
+
+static void tl_surface_frame_shown(SurfaceViewWidget *surface_view_widget)
+{
+	g_object_set_data(G_OBJECT(surface_view_widget), "tl-frame-pending", NULL);
+	if (surface_view_widget->frame_callback) {
+		surface_view_widget->frame_callback(surface_view_widget);
+		surface_view_widget->frame_callback = NULL;
+	}
+}
+
+/* tl_surface_offload: the frame is drawn by a child inside a GtkGraphicsOffload, which puts a dmabuf
+ * frame (libandroid's egl.c) into a Wayland subsurface of its own: GTK passes each new frame to the
+ * compositor without redrawing the window (a flip becomes the buffer's transform; with the app's
+ * views over it, the subsurface goes below the window and GTK leaves a hole there). A frame GTK
+ * cannot offload is drawn into the window as before. */
+#define TL_TYPE_SURFACE_CONTENT (tl_surface_content_get_type())
+G_DECLARE_FINAL_TYPE(TlSurfaceContent, tl_surface_content, TL, SURFACE_CONTENT, GtkWidget)
+struct _TlSurfaceContent {
+	GtkWidget parent_instance;
+	SurfaceViewWidget *surface_view; /* not a reference: the content lives inside it */
+};
+G_DEFINE_TYPE(TlSurfaceContent, tl_surface_content, GTK_TYPE_WIDGET)
+
+static void tl_surface_content_snapshot(GtkWidget *widget, GdkSnapshot *snapshot)
+{
+	TlSurfaceContent *content = TL_SURFACE_CONTENT(widget);
+	tl_surface_append_frame(content->surface_view, widget, snapshot);
+	tl_surface_frame_shown(content->surface_view);
+}
+
+static void tl_surface_content_class_init(TlSurfaceContentClass *class)
+{
+	GTK_WIDGET_CLASS(class)->snapshot = tl_surface_content_snapshot;
+}
+
+static void tl_surface_content_init(TlSurfaceContent *self)
+{
+	gtk_widget_set_can_target(GTK_WIDGET(self), FALSE);
+}
+
+gboolean tl_surface_offload_enabled(void); /* libandroid's egl.c */
+
 static void surface_view_widget_init(SurfaceViewWidget *surface_view_widget)
 {
+	if (!tl_surface_offload_enabled() || getenv("ATL_DIRECT_EGL"))
+		return;
+	TlSurfaceContent *content = g_object_new(TL_TYPE_SURFACE_CONTENT, NULL);
+	content->surface_view = surface_view_widget;
+	GtkWidget *offload = gtk_graphics_offload_new(GTK_WIDGET(content));
+	gtk_widget_set_can_target(offload, FALSE);
+	gtk_widget_set_parent(offload, GTK_WIDGET(surface_view_widget));
+	surface_view_widget->offload_content = GTK_WIDGET(content);
 }
 
 // resize signal copied from GtkDrawingArea
@@ -58,25 +123,14 @@ static void surface_view_widget_snapshot(GtkWidget *widget, GdkSnapshot *snapsho
 			fprintf(stderr, "[surface] snapshot #%d widget %p texture=%p %dx%d\n", snaps, (void *)widget, (void *)surface_view_widget->texture,
 			        gtk_widget_get_width(widget), gtk_widget_get_height(widget));
 	}
-	g_object_set_data(G_OBJECT(widget), "tl-frame-pending", NULL);
-	if (surface_view_widget->texture) {
-		graphene_rect_t bounds = GRAPHENE_RECT_INIT(0, 0, gtk_widget_get_width(widget), gtk_widget_get_height(widget));
-		if (surface_view_widget->needs_flip) {
-			gtk_snapshot_save(snapshot);
-			gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(0, gtk_widget_get_height(widget)));
-			gtk_snapshot_scale(snapshot, 1, -1);
-		}
-		gtk_snapshot_append_texture(snapshot, surface_view_widget->texture, &bounds);
-		if (surface_view_widget->needs_flip)
-			gtk_snapshot_restore(snapshot);
-	}
-	/* embedded windows (SurfaceView.setChildSurfacePackage) are child layers above the content */
+	if (!surface_view_widget->offload_content)
+		tl_surface_append_frame(surface_view_widget, widget, snapshot);
+	/* the offload child (tl_surface_offload) first, then embedded windows
+	 * (SurfaceView.setChildSurfacePackage): child layers above the content */
 	for (GtkWidget *child = gtk_widget_get_first_child(widget); child; child = gtk_widget_get_next_sibling(child))
 		gtk_widget_snapshot_child(widget, child, snapshot);
-	if (surface_view_widget->frame_callback) {
-		surface_view_widget->frame_callback(surface_view_widget);
-		surface_view_widget->frame_callback = NULL;
-	}
+	if (!surface_view_widget->offload_content)
+		tl_surface_frame_shown(surface_view_widget);
 }
 
 static void surface_view_widget_dispose(GObject *object)
@@ -177,6 +231,8 @@ void surface_view_widget_set_texture(SurfaceViewWidget *surface_view_widget, Gdk
 			        gtk_widget_get_mapped(GTK_WIDGET(surface_view_widget)), gtk_widget_get_visible(GTK_WIDGET(surface_view_widget)));
 	}
 	g_object_set_data(G_OBJECT(surface_view_widget), "tl-frame-pending", GINT_TO_POINTER(1));
+	if (surface_view_widget->offload_content)
+		gtk_widget_queue_draw(surface_view_widget->offload_content);
 	tl_flag_ancestors(GTK_WIDGET(surface_view_widget));
 	tl_invalidate_java_view(GTK_WIDGET(surface_view_widget));
 }
