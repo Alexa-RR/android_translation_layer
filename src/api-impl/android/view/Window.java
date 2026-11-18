@@ -139,7 +139,18 @@ public class Window {
 		tlContentParentExplicitlySet = true; // AOSP PhoneWindow.setContentView (layout)
 		decorView.removeAllViews();
 		decorView.addView(view);
-		if (view != null) {
+		if (view != null)
+			tlAttachDecor();
+	}
+
+	/** the decor joins the window: an activity's page, or for a translucent or floating activity a layer
+	 * over the window below (its window does not replace that one); a dialog's window, its layer */
+	public void tlAttachDecor() {
+		if (context instanceof android.app.Activity && ((android.app.Activity)context).getWindow() == this
+		    && ((android.app.Activity)context).tlIsTranslucentOrFloating()) {
+			android.app.Activity activity = (android.app.Activity)context;
+			tlSetLayerRoot(native_window, decorView.widget, activity.tlIsFloating(), activity.tlDimsBehind(), activity);
+		} else {
 			set_widget_as_root(native_window, decorView.widget);
 		}
 	}
@@ -337,6 +348,11 @@ public class Window {
 	public void setSustainedPerformanceMode(boolean enable) {}
 	/** teslalinux: removes the decor from the window (a destroyed activity's window is gone in AOSP). */
 	public native void tlRemoveRoot(long native_window, long widget);
+	/** the decor of a translucent or floating activity as a layer over the window's activity pages
+	 * (floating: centred at its own size; dim: the rest of the layer dims what is behind) */
+	private native void tlSetLayerRoot(long native_window, long widget, boolean floating, boolean dim, android.app.Activity activity);
+	/** the decor's page becomes the window's shown page, or its layer is shown or hidden */
+	public native void tlShowRoot(long native_window, long widget, boolean shown);
 	private int tlSoftInputMode;
 
 	public int tlGetSoftInputMode() {

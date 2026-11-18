@@ -47,6 +47,8 @@ static void activity_window_focus(JNIEnv *env, jobject activity, jboolean focuse
 
 static void activity_stop(JNIEnv *env, jobject activity)
 {
+	if (!_GET_BOOL_FIELD(activity, "tlStarted"))
+		return; /* never started, or stopped already */
 	J__Activity__performStop(env, activity);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
@@ -77,11 +79,14 @@ static void activity_focus(JNIEnv *env, jobject activity)
 	if (_GET_BOOL_FIELD(activity, "finishing"))
 		return;
 
-	J__Activity__performStart(env, activity);
-	if ((*env)->ExceptionCheck(env))
-		(*env)->ExceptionDescribe(env);
-	if (_GET_BOOL_FIELD(activity, "finishing"))
-		return;
+	/* an activity that stayed visible behind a translucent one is still started: only onResume */
+	if (!_GET_BOOL_FIELD(activity, "tlStarted")) {
+		J__Activity__performStart(env, activity);
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionDescribe(env);
+		if (_GET_BOOL_FIELD(activity, "finishing"))
+			return;
+	}
 
 	J__Activity__performResume(env, activity);
 	if ((*env)->ExceptionCheck(env))
@@ -100,6 +105,46 @@ static void activity_focus(JNIEnv *env, jobject activity)
 		(*env)->ExceptionDescribe(env);
 }
 
+static gboolean activity_in_backlog(JNIEnv *env, jobject activity)
+{
+	for (GList *l = activity_backlog; l != NULL; l = l->next)
+		if ((*env)->IsSameObject(env, activity, l->data))
+			return TRUE;
+	return FALSE;
+}
+
+static void activity_set_shown(JNIEnv *env, jobject activity, gboolean shown)
+{
+	(*env)->CallVoidMethod(env, activity, _METHOD(_CLASS(activity), "tlSetShown", "(Z)V"), (jboolean)shown);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
+/* AOSP visibility (ActivityRecord.occludesParent): from the top of the stack down, activities are
+ * visible until the first opaque one, which is the last visible one. A visible activity under the
+ * top one is started (and paused); one under an opaque activity is stopped and its window hidden.
+ * The top activity's own lifecycle is activity_update_current's. */
+static void activity_update_visibility(JNIEnv *env)
+{
+	gboolean covered = FALSE;
+	for (GList *l = activity_backlog; l != NULL; l = l->next) {
+		jobject activity = l->data;
+		if (l != activity_backlog) {
+			if (covered) {
+				activity_pause(env, activity);
+				activity_stop(env, activity);
+			} else if (!_GET_BOOL_FIELD(activity, "tlStarted") && !_GET_BOOL_FIELD(activity, "finishing")) {
+				J__Activity__performStart(env, activity); /* revealed under a translucent activity */
+				if ((*env)->ExceptionCheck(env))
+					(*env)->ExceptionDescribe(env);
+			}
+		}
+		activity_set_shown(env, activity, !covered);
+		if (!_GET_BOOL_FIELD(activity, "tlTranslucent"))
+			covered = TRUE;
+	}
+}
+
 static void activity_update_current(JNIEnv *env)
 {
 	jobject activity_new = activity_backlog ? g_list_first(activity_backlog)->data : NULL;
@@ -114,8 +159,10 @@ static void activity_update_current(JNIEnv *env)
 
 		if (activity_new)
 			activity_focus(env, activity_new);
-		if (activity_old)
+		/* an activity leaving the stack is stopped; one still in it as the visibility rule says */
+		if (activity_old && !activity_in_backlog(env, activity_old))
 			activity_stop(env, activity_old);
+		activity_update_visibility(env);
 		if (activity_new && _GET_BOOL_FIELD(activity_new, "finishing"))
 			return;
 
@@ -175,8 +222,10 @@ void activity_close_all(void)
 	// deactivate all activities
 	activity_backlog = NULL;
 	activity_update_current(env);
-	// destroy all activities
+	// destroy all activities (those that stayed visible under a translucent one are stopped first)
 	for (l = activities; l != NULL; l = l->next) {
+		activity_pause(env, l->data);
+		activity_stop(env, l->data);
 		activity_close(env, l->data);
 		_UNREF(l->data);
 	}
@@ -202,10 +251,12 @@ void activity_start(JNIEnv *env, jobject activity_object)
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 
-	if (_GET_BOOL_FIELD(activity_object, "finishing")) { // finish() was called before the activity was created
+	if (_GET_BOOL_FIELD(activity_object, "finishing")) { // finish() was called in onCreate
 		activity_current = activity_previous;
 		if (activity_previous)
 			activity_resume_only(env, activity_previous);
+		/* AOSP: an activity that finishes in onCreate is destroyed without being started */
+		activity_close(env, activity_object);
 		return;
 	}
 
@@ -217,9 +268,8 @@ void activity_start(JNIEnv *env, jobject activity_object)
 
 	if (activity_previous)
 		activity_window_focus(env, activity_previous, false);
+	/* the previous activity is stopped there only when the new one hides it (an opaque activity) */
 	activity_update_current(env);
-	if (activity_previous && activity_previous != activity_current)
-		activity_stop(env, activity_previous);
 }
 
 JNIEXPORT void JNICALL Java_android_app_Activity_nativeFinish(JNIEnv *env, jobject this, jlong window)
@@ -235,6 +285,9 @@ JNIEXPORT void JNICALL Java_android_app_Activity_nativeFinish(JNIEnv *env, jobje
 	}
 	activity_update_current(env);
 	if (removed_activity) {
+		/* one that was not on top may still be started (visible under a translucent activity) */
+		activity_pause(env, removed_activity);
+		activity_stop(env, removed_activity);
 		activity_close(env, removed_activity);
 		_UNREF(removed_activity);
 	}

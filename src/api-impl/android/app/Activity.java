@@ -11,6 +11,7 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageParser;
 import android.content.res.Configuration;
 import android.content.res.Resources;
+import android.content.res.TypedArray;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -180,7 +181,7 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		int[] tlTransition = tlTakePageTransition();
 		if (tlTransition != null)
 			nativeSetPageTransition(window.native_window, tlTransition[0], tlTransition[1]);
-		window.set_widget_as_root(window.native_window, window.getDecorView().widget);
+		window.tlAttachDecor();
 		if (tlTransition != null)
 			nativeSetPageTransition(window.native_window, 0, 0);
 		window.setTitle(title);
@@ -1076,13 +1077,19 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		if (savedInstanceState == null)
 			savedInstanceState = tlPendingSavedState; /* recreate(): the replaced instance's state */
 		tlOnCreate();
+		/* AOSP PhoneWindow: windowCloseOnTouchOutside is the default; setFinishOnTouchOutside in onCreate overrides it */
+		TypedArray close = getTheme().obtainStyledAttributes(new int[] {android.R.attr.windowCloseOnTouchOutside});
+		mFinishOnTouchOutside = close.getBoolean(0, false);
+		close.recycle();
 		dispatchActivityPreCreated(savedInstanceState); onCreate(savedInstanceState); dispatchActivityPostCreated(savedInstanceState);
+		tlTranslucent = tlIsTranslucentOrFloating();
 	}
 	/** AOSP: a stopped activity gets onRestart before onStart. */
 	private boolean mStopped;
 	@Export
 	public final void performStart() {
 		if (mStopped) { mStopped = false; tlRequeryManagedCursors(); onRestart(); }
+		tlStarted = true;
 		dispatchActivityPreStarted(); onStart(); tlAfterStart(); dispatchActivityPostStarted();
 	}
 	@Export
@@ -1099,7 +1106,54 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	public final void performPause() { dispatchActivityPrePaused(); onPause(); dispatchActivityPostPaused(); }
 	@Export
 	public final void performStop() {
-		dispatchActivityPreStopped(); onStop(); mStopped = true; tlAfterStop(); dispatchActivityPostStopped();
+		dispatchActivityPreStopped(); onStop(); mStopped = true; tlStarted = false; tlAfterStop(); dispatchActivityPostStopped();
+	}
+
+	/* ---- translucent and floating activities (AOSP ActivityRecord.occludesParent) ----
+	 * An activity whose theme has windowIsTranslucent or windowIsFloating does not hide the one
+	 * below it: that one stays visible and started (paused, not stopped), and its window stays on
+	 * the screen under this one's. The native activity stack (android_app_Activity.c) reads
+	 * tlTranslucent and tlStarted, and shows or hides each activity's window with tlSetShown. */
+	boolean tlTranslucent;   /* set once onCreate has run (the theme an app sets in onCreate counts) */
+	boolean tlStarted;       /* between onStart and onStop */
+	private int tlTranslucentState = -1;
+
+	/** AOSP ActivityInfo.isTranslucentOrFloating, on this activity's theme. */
+	public boolean tlIsTranslucentOrFloating() {
+		if (tlTranslucentState < 0) {
+			TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.windowIsFloating, android.R.attr.windowIsTranslucent});
+			tlTranslucentState = (a.getBoolean(0, false) || a.getBoolean(1, false)) ? 1 : 0;
+			a.recycle();
+		}
+		return tlTranslucentState == 1;
+	}
+
+	/** windowIsFloating: the window wraps its content, centred (AOSP's floating window layout). */
+	public boolean tlIsFloating() {
+		TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.windowIsFloating});
+		boolean floating = a.getBoolean(0, false);
+		a.recycle();
+		return floating;
+	}
+
+	/** AOSP FLAG_DIM_BEHIND: a floating window with backgroundDimEnabled dims what is behind it. */
+	public boolean tlDimsBehind() {
+		TypedArray a = getTheme().obtainStyledAttributes(new int[] {android.R.attr.windowIsFloating, android.R.attr.backgroundDimEnabled});
+		boolean dim = a.getBoolean(0, false) && a.getBoolean(1, false);
+		a.recycle();
+		return dim;
+	}
+
+	/** native: this activity's window is on the screen (its decor page or layer) or hidden behind an opaque activity */
+	void tlSetShown(boolean shown) {
+		if (window != null && window.native_window != 0)
+			window.tlShowRoot(window.native_window, window.getDecorView().widget, shown);
+	}
+
+	/** native: a touch on the layer outside a floating activity's window (AOSP: finishes it when it closes on touch outside) */
+	void tlTouchOutside() {
+		if (mFinishOnTouchOutside && !finishing)
+			finish();
 	}
 	@Export
 	public final void performDestroy() {

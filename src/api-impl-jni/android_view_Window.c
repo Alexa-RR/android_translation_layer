@@ -1,6 +1,7 @@
 #include <gtk/gtk.h>
 
 #include "defines.h"
+#include "util.h"
 
 #include "generated_headers/android_view_Window.h"
 
@@ -149,11 +150,113 @@ JNIEXPORT void JNICALL Java_android_view_Window_set_1screen_1brightness(JNIEnv *
 	g_object_unref(connection);
 }
 
+/* tl_activity_layer: a translucent or floating activity (windowIsTranslucent / windowIsFloating)
+ * does not replace the activity below it, whose window AOSP keeps on the screen: its decor goes in
+ * a layer of the main window's GtkOverlay, over the page of the activity below (and under any
+ * dialog shown later). The layer fills the window; a floating activity's decor is centred at its
+ * own size in it, and a touch on the rest goes to Activity.tlTouchOutside (AOSP's touch-modal
+ * window: nothing below gets it; windowCloseOnTouchOutside finishes the activity). */
+extern GtkWidget *tl_main_overlay;
+#define TL_ACTIVITY_LAYER "tl-activity-layer"
+
+static void tl_activity_layer_pressed(GtkGestureClick *gesture, int n_press, double x, double y, GtkWidget *layer)
+{
+	GtkWidget *content = gtk_widget_get_first_child(layer);
+	graphene_rect_t bounds;
+	if (content && gtk_widget_compute_bounds(content, layer, &bounds) && graphene_rect_contains_point(&bounds, &GRAPHENE_POINT_INIT(x, y)))
+		return; /* inside the activity's window: its views handle the touch */
+	gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+	jobject activity = g_object_get_data(G_OBJECT(layer), "activity");
+	if (!activity)
+		return;
+	JNIEnv *env = get_jni_env();
+	(*env)->CallVoidMethod(env, activity, _METHOD(_CLASS(activity), "tlTouchOutside", "()V"));
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+}
+
+static void tl_activity_layer_free_ref(gpointer ref)
+{
+	JNIEnv *env = get_jni_env();
+	_UNREF((jobject)ref);
+}
+
+JNIEXPORT void JNICALL Java_android_view_Window_tlSetLayerRoot(JNIEnv *env, jobject this, jlong window, jlong widget, jboolean floating, jboolean dim, jobject activity)
+{
+	GtkWidget *content = gtk_widget_get_parent(GTK_WIDGET(_PTR(widget)));
+	if (!tl_main_overlay || !GTK_IS_WINDOW(_PTR(window))) { /* no overlay (no main window yet): a page like any activity's */
+		Java_android_view_Window_set_1widget_1as_1root(env, this, window, widget);
+		return;
+	}
+	GtkWidget *layer = g_object_get_data(G_OBJECT(content), TL_ACTIVITY_LAYER);
+	if (!layer) {
+		layer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+		gtk_widget_set_hexpand(layer, TRUE);
+		gtk_widget_set_vexpand(layer, TRUE);
+		gtk_widget_set_halign(layer, GTK_ALIGN_FILL);
+		gtk_widget_set_valign(layer, GTK_ALIGN_FILL);
+		gtk_widget_set_focusable(layer, TRUE);
+		GtkGesture *click = gtk_gesture_click_new();
+		gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 0);
+		g_signal_connect(click, "pressed", G_CALLBACK(tl_activity_layer_pressed), layer);
+		gtk_widget_add_controller(layer, GTK_EVENT_CONTROLLER(click));
+		g_object_set_data_full(G_OBJECT(layer), "activity", _REF(activity), tl_activity_layer_free_ref);
+		g_object_set_data(G_OBJECT(content), TL_ACTIVITY_LAYER, layer);
+		gtk_overlay_add_overlay(GTK_OVERLAY(tl_main_overlay), layer);
+		gtk_overlay_set_measure_overlay(GTK_OVERLAY(tl_main_overlay), layer, FALSE);
+		gtk_overlay_set_clip_overlay(GTK_OVERLAY(tl_main_overlay), layer, TRUE);
+	}
+	if (dim)
+		gtk_widget_add_css_class(layer, "tl-dialog-dim");
+	else
+		gtk_widget_remove_css_class(layer, "tl-dialog-dim");
+	GtkWidget *parent = gtk_widget_get_parent(content);
+	if (parent != layer) {
+		g_object_ref(content);
+		if (parent && GTK_IS_STACK(parent))
+			gtk_stack_remove(GTK_STACK(parent), content);
+		else if (parent)
+			gtk_widget_unparent(content);
+		gtk_box_append(GTK_BOX(layer), content);
+		g_object_unref(content);
+	}
+	GtkAlign align = floating ? GTK_ALIGN_CENTER : GTK_ALIGN_FILL;
+	gtk_widget_set_halign(content, align);
+	gtk_widget_set_valign(content, align);
+	gtk_widget_set_hexpand(content, TRUE);
+	gtk_widget_set_vexpand(content, TRUE);
+	gtk_widget_set_visible(layer, TRUE);
+}
+
+JNIEXPORT void JNICALL Java_android_view_Window_tlShowRoot(JNIEnv *env, jobject this, jlong window, jlong widget, jboolean shown)
+{
+	GtkWidget *content = gtk_widget_get_parent(GTK_WIDGET(_PTR(widget)));
+	if (!content)
+		return;
+	GtkWidget *layer = g_object_get_data(G_OBJECT(content), TL_ACTIVITY_LAYER);
+	if (layer) {
+		gtk_widget_set_visible(layer, shown);
+		return;
+	}
+	GtkWidget *parent = gtk_widget_get_parent(content);
+	if (shown && parent && GTK_IS_STACK(parent) && gtk_stack_get_visible_child(GTK_STACK(parent)) != content)
+		gtk_stack_set_visible_child(GTK_STACK(parent), content);
+}
+
 /* tl_window_attach: a destroyed activity's decor leaves the window (AOSP: its window is removed) */
 JNIEXPORT void JNICALL Java_android_view_Window_tlRemoveRoot(JNIEnv *env, jobject this, jlong window, jlong widget)
 {
 	GtkWidget *gtk_widget = gtk_widget_get_parent(GTK_WIDGET(_PTR(widget)));
-	GtkWidget *parent = gtk_widget ? gtk_widget_get_parent(gtk_widget) : NULL;
+	if (!gtk_widget)
+		return;
+	GtkWidget *layer = g_object_get_data(G_OBJECT(gtk_widget), TL_ACTIVITY_LAYER);
+	if (layer) { /* a translucent or floating activity's layer goes with it */
+		g_object_set_data(G_OBJECT(gtk_widget), TL_ACTIVITY_LAYER, NULL);
+		if (tl_main_overlay && gtk_widget_get_parent(layer) == tl_main_overlay)
+			gtk_overlay_remove_overlay(GTK_OVERLAY(tl_main_overlay), layer);
+		return;
+	}
+	GtkWidget *parent = gtk_widget_get_parent(gtk_widget);
 	if (parent && GTK_IS_STACK(parent))
 		gtk_stack_remove(GTK_STACK(parent), gtk_widget);
 }
