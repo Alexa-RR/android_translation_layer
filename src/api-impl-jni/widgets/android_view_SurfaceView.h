@@ -10,6 +10,7 @@ struct _SurfaceViewWidget {
 	gpointer frame_callback_data;
 	GtkWidget *offload_content; /* tl_surface_offload: the child that draws the frame, or NULL */
 	gboolean opaque;            /* SurfaceHolder.setFormat: the surface has no alpha (AOSP's default) */
+	int fixed_width, fixed_height; /* SurfaceHolder.setFixedSize: the buffers' size (0: the widget's) */
 };
 
 struct _SurfaceViewWidgetClass {

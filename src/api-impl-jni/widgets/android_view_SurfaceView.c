@@ -393,3 +393,14 @@ JNIEXPORT void JNICALL Java_android_view_SurfaceView_nativeSetOpaque(JNIEnv *env
 	if (child && SURFACE_VIEW_IS_WIDGET(child))
 		SURFACE_VIEW_WIDGET(child)->opaque = opaque;
 }
+
+/* SurfaceHolder.setFixedSize / setSizeFromLayout (0x0): the size of the window surfaces made from now on */
+JNIEXPORT void JNICALL Java_android_view_SurfaceView_nativeSetFixedSize(JNIEnv *env, jclass class, jlong widget, jint width, jint height)
+{
+	GtkWidget *wrapper = GTK_WIDGET(_PTR(widget));
+	GtkWidget *child = wrapper ? gtk_widget_get_first_child(wrapper) : NULL;
+	if (child && SURFACE_VIEW_IS_WIDGET(child)) {
+		SURFACE_VIEW_WIDGET(child)->fixed_width = width > 0 ? width : 0;
+		SURFACE_VIEW_WIDGET(child)->fixed_height = height > 0 ? height : 0;
+	}
+}

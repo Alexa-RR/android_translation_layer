@@ -79,6 +79,50 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 	private int[] visibleArea;
 	/* the renderer's map scale on the display's density (written on the host thread) */
 	private volatile float mapScale = 1f;
+	/*
+	 * The renderer's render scale: the map surface's buffers are this fraction of the display's
+	 * size (SurfaceHolder.setFixedSize) and are scaled up to it; the app gets that size with the
+	 * density scaled alike, so it lays its map out exactly as at full size, in fewer pixels (its
+	 * GPU work is mostly per pixel). Gestures and the visible area reach it in its surface's pixels.
+	 * Written on the host thread.
+	 */
+	private volatile float renderScale = 1f;
+	/* the size the app got with the current surface (main thread) */
+	private int givenWidth, givenHeight;
+
+	static final float RENDER_SCALE_MIN = 0.5f;
+
+	private int scaled(int px) {
+		return Math.max(1, Math.round(px * renderScale));
+	}
+
+	float renderScale() {
+		return renderScale;
+	}
+
+	/**
+	 * The renderer's render scale (host thread; RENDER_SCALE_MIN..1, else 1). Returns whether it
+	 * changed; if it did and the app has the surface, the app gets it again at the new size.
+	 */
+	boolean setRenderScale(float scale) {
+		float s = (scale >= RENDER_SCALE_MIN && scale <= 1f) ? scale : 1f;
+		if (s == renderScale)
+			return false;
+		renderScale = s;
+		main.post(new Runnable() {
+			@Override
+			public void run() {
+				if (!available || view == null)
+					return;
+				android.view.Surface surface = view.getHolder().getSurface();
+				sendDestroyed(surface, width, height);
+				sendAvailable(surface, width, height);
+				if (visibleArea != null)
+					setVisibleArea(visibleArea[0], visibleArea[1], visibleArea[2], visibleArea[3]);
+			}
+		});
+		return true;
+	}
 
 	ATLCarSurface(Context context, Handler host, Sender sender) {
 		this.context = context;
@@ -123,8 +167,12 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 	 * onVisibleAreaChanged, and onStableAreaChanged (the area that stays free whatever the
 	 * template shows; here the same, as the renderer reports what it lays out).
 	 */
-	void setVisibleArea(final int left, final int top, final int right, final int bottom) {
-		visibleArea = new int[] {left, top, right, bottom};
+	void setVisibleArea(int displayLeft, int displayTop, int displayRight, int displayBottom) {
+		visibleArea = new int[] {displayLeft, displayTop, displayRight, displayBottom};
+		/* in the app's surface pixels (render scale) */
+		final float rs = renderScale;
+		final int left = Math.round(displayLeft * rs), top = Math.round(displayTop * rs);
+		final int right = Math.round(displayRight * rs), bottom = Math.round(displayBottom * rs);
 		host.post(new Runnable() {
 			@Override
 			public void run() {
@@ -196,7 +244,18 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 	private void sendAvailable(final android.view.Surface surface, final int w, final int h) {
 		final int dpi = dpi();
 		final int displayDpi = displayDpi();
-		givenDpi = dpi;
+		/* the render scale: the surface's buffers (setFixedSize) and the app's density alike */
+		final int sw = scaled(w), sh = scaled(h);
+		final int appDpi = Math.max(1, Math.round(dpi * renderScale));
+		if (view != null) {
+			if (sw != w || sh != h)
+				view.getHolder().setFixedSize(sw, sh);
+			else
+				view.getHolder().setSizeFromLayout();
+		}
+		givenDpi = appDpi;
+		givenWidth = sw;
+		givenHeight = sh;
 		host.post(new Runnable() {
 			@Override
 			public void run() {
@@ -204,7 +263,7 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 				IBinder cb = sender.callback();
 				if (cb == null)
 					return;
-				android.os.Parcelable container = sender.container(surface, w, h, dpi);
+				android.os.Parcelable container = sender.container(surface, sw, sh, appDpi);
 				if (container == null)
 					return;
 				Parcel data = Parcel.obtain();
@@ -213,7 +272,7 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 					data.writeTypedObject(container, 0);
 					data.writeStrongBinder(sender.done("onSurfaceAvailable"));
 					cb.transact(TRANSACTION_onSurfaceAvailable, data, null, IBinder.FLAG_ONEWAY);
-					Log.i(TAG, "surface " + w + "x" + h + " at " + dpi + " dpi given to the app");
+					Log.i(TAG, "surface " + sw + "x" + sh + " at " + appDpi + " dpi given to the app (display " + w + "x" + h + ")");
 				} catch (RemoteException | RuntimeException e) {
 					Log.w(TAG, "onSurfaceAvailable not delivered", e);
 				} finally {
@@ -223,9 +282,10 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		});
 	}
 
-	private void sendDestroyed(final android.view.Surface surface, final int w, final int h) {
+	private void sendDestroyed(final android.view.Surface surface, int displayW, int displayH) {
 		/* the container the app was given */
 		final int dpi = givenDpi;
+		final int w = givenWidth > 0 ? givenWidth : displayW, h = givenHeight > 0 ? givenHeight : displayH;
 		host.post(new Runnable() {
 			@Override
 			public void run() {
@@ -277,7 +337,7 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		final ScaleGestureDetector scale = new ScaleGestureDetector(context, new ScaleGestureDetector.SimpleOnScaleGestureListener() {
 			@Override
 			public boolean onScale(ScaleGestureDetector d) {
-				sendFloats(TRANSACTION_onScale, d.getFocusX(), d.getFocusY(), d.getScaleFactor());
+				sendFloats(TRANSACTION_onScale, d.getFocusX() * renderScale, d.getFocusY() * renderScale, d.getScaleFactor());
 				return true;
 			}
 		});
@@ -291,7 +351,7 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 			public boolean onScroll(MotionEvent e1, MotionEvent e2, float dx, float dy) {
 				if (scale.isInProgress())
 					return false;
-				sendFloats(TRANSACTION_onScroll, dx, dy);
+				sendFloats(TRANSACTION_onScroll, dx * renderScale, dy * renderScale);
 				return true;
 			}
 
@@ -299,19 +359,19 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 			public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
 				if (scale.isInProgress())
 					return false;
-				sendFloats(TRANSACTION_onFling, vx, vy);
+				sendFloats(TRANSACTION_onFling, vx * renderScale, vy * renderScale);
 				return true;
 			}
 
 			@Override
 			public boolean onSingleTapConfirmed(MotionEvent e) {
-				sendFloats(TRANSACTION_onClick, e.getX(), e.getY());
+				sendFloats(TRANSACTION_onClick, e.getX() * renderScale, e.getY() * renderScale);
 				return true;
 			}
 
 			@Override
 			public boolean onDoubleTap(MotionEvent e) {
-				sendFloats(TRANSACTION_onScale, e.getX(), e.getY(), DOUBLE_TAP_ZOOM_FACTOR);
+				sendFloats(TRANSACTION_onScale, e.getX() * renderScale, e.getY() * renderScale, DOUBLE_TAP_ZOOM_FACTOR);
 				return true;
 			}
 		});
@@ -333,6 +393,11 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 
 	@Override
 	public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+		/* the display's size is the view's: with a render scale the surface's own is smaller */
+		if (view != null && view.getWidth() > 0 && view.getHeight() > 0) {
+			w = view.getWidth();
+			h = view.getHeight();
+		}
 		if (available && w == width && h == height)
 			return;
 		width = w;

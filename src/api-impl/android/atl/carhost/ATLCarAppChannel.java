@@ -34,7 +34,8 @@ import java.util.Map;
  *     (the map's scale, and whether a renderer chose it since the app started);</li>
  * <li>from the renderer: {"type":"click","cb":ID}, {"type":"selected","cb":ID,"index":I},
  *     {"type":"checked","cb":ID,"checked":B}, {"type":"search","cb":ID,"text":T,"submit":B},
- *     {"type":"back"}, {"type":"mapScale","scale":S}; CarAppChannelListener receives them on the
+ *     {"type":"back"}, {"type":"mapScale","scale":S}, {"type":"renderScale","scale":S} (the map
+ *     drawn in that fraction of the display's pixels, 0.5 to 1); CarAppChannelListener receives them on the
  *     host's handler.</li>
  * </ul>
  * A renderer that connects gets the icons and the current template at once.

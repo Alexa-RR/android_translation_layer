@@ -53,6 +53,7 @@
 // FIXME: put the header in a common place
 #include "../api-impl-jni/defines.h"
 
+#include "../api-impl-jni/widgets/android_view_SurfaceView.h"
 #include "native_window.h"
 
 /**
@@ -287,6 +288,12 @@ ANativeWindow *ANativeWindow_fromSurface(JNIEnv *env, jobject surface)
 	printf("XXXXX: SurfaceView widget: %p (%s), width: %d, height: %d\n", surface_view_widget, gtk_widget_get_name(surface_view_widget), width, height);
 	printf("XXXXX: SurfaceView widget: x: %lf, y: %lf\n", pos.x, pos.y);
 	printf("XXXXX: native offset: x: %lf, y: %lf\n", off_x, off_y);
+
+	/* SurfaceHolder.setFixedSize: the buffers have that size, scaled to the widget when drawn */
+	if (SURFACE_VIEW_IS_WIDGET(surface_view_widget) && SURFACE_VIEW_WIDGET(surface_view_widget)->fixed_width > 0) {
+		width = SURFACE_VIEW_WIDGET(surface_view_widget)->fixed_width;
+		height = SURFACE_VIEW_WIDGET(surface_view_widget)->fixed_height;
+	}
 
 	struct ANativeWindow *native_window = calloc(1, sizeof(struct ANativeWindow));
 	native_window->refcount = 1; // probably, 0 doesn't work

@@ -636,6 +636,13 @@ public final class ATLCarHost {
 				setMapScale((float)m.getDouble("scale"));
 				return;
 			}
+			if ("renderScale".equals(type)) {
+				/* the driver's map sharpness on the car page: the map drawn in this fraction of the
+				 * display's pixels and scaled up (ATLCarSurface.setRenderScale) */
+				if (carSurface != null && carSurface.setRenderScale((float)m.getDouble("scale")))
+					log("map render scale " + carSurface.renderScale());
+				return;
+			}
 			if ("stopNavigation".equals(type)) {
 				stopNavigation();
 				return;

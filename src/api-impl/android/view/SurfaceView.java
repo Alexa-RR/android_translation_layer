@@ -39,6 +39,11 @@ public class SurfaceView extends View {
 
 	@Export
 	private void surfaceChanged(int format, int width, int height) {
+		/* the view's size from the widget; a fixed size (setFixedSize) is the surface's instead */
+		if (mRequestedWidth > 0 && mRequestedHeight > 0) {
+			width = mRequestedWidth;
+			height = mRequestedHeight;
+		}
 		android.util.Log.i("SurfaceView", "surfaceChanged " + this + " " + width + "x" + height + " callbacks=" + mCallbacks.size());
 		tlSurfaceWidth = width;
 		tlSurfaceHeight = height;
@@ -70,6 +75,19 @@ public class SurfaceView extends View {
 	private int mRequestedFormat = android.graphics.PixelFormat.RGB_565;
 
 	private static native void nativeSetOpaque(long widget, boolean opaque);
+	/* AOSP SurfaceHolder.setFixedSize: -1 while the surface follows the view */
+	private int mRequestedWidth = -1;
+	private int mRequestedHeight = -1;
+
+	private static native void nativeSetFixedSize(long widget, int width, int height);
+
+	/** the surface's size changed (setFixedSize): the callbacks hear it, as AOSP's updateSurface */
+	private void tlReportSize() {
+		int w = mRequestedWidth > 0 ? mRequestedWidth : getWidth();
+		int h = mRequestedHeight > 0 ? mRequestedHeight : getHeight();
+		if (w > 0 && h > 0)
+			surfaceChanged(1 /*RGBA_8888*/, w, h);
+	}
 
 	@Override
 	protected native long native_constructor(Context context, AttributeSet attrs);
@@ -108,21 +126,29 @@ public class SurfaceView extends View {
 			}
 		}
 
+		/**
+		 * AOSP: the surface's buffers get this size whatever the view's, and the compositor scales
+		 * them to the view (here GTK, or the compositor for an offloaded frame). It applies to the
+		 * window surfaces made from now on; the callbacks hear the new size.
+		 */
 		@Override
 		public void setFixedSize(int width, int height) {
-			/*		if (mRequestedWidth != width || mRequestedHeight != height) {
-					mRequestedWidth = width;
-					mRequestedHeight = height;
-					requestLayout();
-					}*/
+			if (mRequestedWidth != width || mRequestedHeight != height) {
+				mRequestedWidth = width;
+				mRequestedHeight = height;
+				nativeSetFixedSize(widget, width, height);
+				tlReportSize();
+			}
 		}
 
+		/** AOSP: the surface follows the view's size again. */
 		@Override
 		public void setSizeFromLayout() {
-			/*		if (mRequestedWidth != -1 || mRequestedHeight != -1) {
-					mRequestedWidth = mRequestedHeight = -1;
-					requestLayout();
-					}*/
+			if (mRequestedWidth != -1 || mRequestedHeight != -1) {
+				mRequestedWidth = mRequestedHeight = -1;
+				nativeSetFixedSize(widget, 0, 0);
+				tlReportSize();
+			}
 		}
 
 		/**
