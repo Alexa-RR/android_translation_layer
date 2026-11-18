@@ -2693,12 +2693,42 @@ public class PackageManager {
 				}
 			}
 		}
+		/* the platform's speech recognizer (the car page's browser): a framework service */
+		ResolveInfo recognizer = tlSpeechRecognizerService(intent);
+		if (recognizer != null)
+			list.add(recognizer);
 		java.util.Collections.sort(list, new java.util.Comparator<ResolveInfo>() {
 			public int compare(ResolveInfo a, ResolveInfo b) {
 				return Integer.compare(b.priority, a.priority);
 			}
 		});
 		return list;
+	}
+
+	/**
+	 * teslalinux: the platform's RecognitionService ({@link android.speech.SpeechRecognizer#tlPageRecognizer}),
+	 * for an intent that would find it: action android.speech.RecognitionService, no package or the
+	 * framework's, no other component. AOSP lists the device's recognition services the same way.
+	 */
+	private ResolveInfo tlSpeechRecognizerService(Intent intent) {
+		ComponentName component = android.speech.SpeechRecognizer.tlPageRecognizer();
+		if (component == null || !"android.speech.RecognitionService".equals(intent.getAction()))
+			return null;
+		ComponentName explicit = intent.getComponent();
+		if (explicit != null && !explicit.equals(component))
+			return null;
+		if (intent.getPackage() != null && !intent.getPackage().equals(component.getPackageName()))
+			return null;
+		ServiceInfo si = new ServiceInfo();
+		si.packageName = component.getPackageName();
+		si.name = component.getClassName();
+		si.exported = true;
+		si.enabled = true;
+		ATLLoadedApp system = ATLLoadedApp.getSystemApplication();
+		si.applicationInfo = system != null ? system.pkg.applicationInfo : new ApplicationInfo();
+		ResolveInfo ri = new ResolveInfo();
+		ri.serviceInfo = si;
+		return ri;
 	}
 
 	/**
@@ -2721,7 +2751,8 @@ public class PackageManager {
 	 */
 	public List<ResolveInfo> queryIntentServicesAsUser(Intent intent,
 	                                                   int flags, int userId) {
-		return null;
+		/* one user on this device: its services are the caller's */
+		return queryIntentServices(intent, flags);
 	}
 
 	/**

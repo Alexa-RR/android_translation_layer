@@ -99,6 +99,22 @@ public class SpeechRecognizer {
         TlSpeechChannel.get();
     }
 
+    /**
+     * The platform's recognition service, as PackageManager lists it for the
+     * android.speech.RecognitionService action (a framework service, package "android"): the car
+     * page's recognizer. Its class name is the one of Google's recognition service, as microG names
+     * its services after Google's: apps such as Waze pick a recognition service by that class name
+     * and accept no other. Nothing of Google's runs or is contacted: requests to this component go
+     * to {@link TlSpeechChannel}. Null when there is no channel (ATL_SPEECH_CHANNEL_PORT unset).
+     * @hide
+     */
+    public static ComponentName tlPageRecognizer() {
+        return TlSpeechChannel.configuredPort() > 0 ? PAGE_RECOGNIZER : null;
+    }
+
+    private static final ComponentName PAGE_RECOGNIZER =
+            new ComponentName("android", "com.google.android.voicesearch.serviceapi.GoogleRecognitionService");
+
     /** No on-device recognition service is installed on this device. */
     public static boolean isOnDeviceRecognitionAvailable(@NonNull final Context context) {
         return false;
@@ -137,7 +153,7 @@ public class SpeechRecognizer {
             throw new IllegalArgumentException("intent must not be null");
         }
         checkIsCalledFromMainThread();
-        if (mServiceComponent == null) {
+        if (mServiceComponent == null || mServiceComponent.equals(tlPageRecognizer())) {
             startPageSession(recognizerIntent);
             return;
         }
