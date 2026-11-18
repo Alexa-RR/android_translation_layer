@@ -21,6 +21,14 @@ extern GtkWindow *window; // TODO: how do we get rid of this? the app won't pass
 static GHashTable *egl_surface_hashtable;
 #define tl_table_lookup(table, key) ((table) ? g_hash_table_lookup((table), (key)) : NULL)
 
+/* Wayland has no pbuffers: bionic_eglCreatePbufferSurface makes a window surface on a wl_surface that
+ * is never given a role (never shown); these are kept per pbuffer to be destroyed with it */
+struct tl_pbuffer_window {
+	struct wl_egl_window *egl_window;
+	struct wl_surface *wayland_surface;
+};
+static GHashTable *pbuffer_window_hashtable;
+
 // temporary for debugging
 static void PrintConfigAttributes(EGLDisplay display, EGLConfig config)
 {
@@ -209,10 +217,37 @@ EGLSurface bionic_eglCreatePbufferSurface(EGLDisplay display, EGLConfig config, 
 			}
 			*new_attr_pos = EGL_NONE;
 		}
-		struct wl_egl_window *egl_window = wl_egl_window_create(wayland_surface, width, height);
-		EGLSurface surface = eglCreateWindowSurface(display, config, (EGLNativeWindowType)egl_window, new_attrib_list);
+		/* EGL's default pbuffer size is 0x0, which wl_egl_window_create refuses: one pixel stands in */
+		struct wl_egl_window *egl_window = wl_egl_window_create(wayland_surface, width > 0 ? width : 1, height > 0 ? height : 1);
+		EGLSurface surface = egl_window ? eglCreateWindowSurface(display, config, (EGLNativeWindowType)egl_window, new_attrib_list) : EGL_NO_SURFACE;
+		free(new_attrib_list);
+		if (surface == EGL_NO_SURFACE) {
+			if (egl_window)
+				wl_egl_window_destroy(egl_window);
+			wl_surface_destroy(wayland_surface);
+			return EGL_NO_SURFACE;
+		}
+		/* the window and wl_surface behind it go when the pbuffer is destroyed (bionic_eglDestroySurface) */
+		struct tl_pbuffer_window *pbuffer_window = g_new(struct tl_pbuffer_window, 1);
+		pbuffer_window->egl_window = egl_window;
+		pbuffer_window->wayland_surface = wayland_surface;
+		if (!pbuffer_window_hashtable)
+			pbuffer_window_hashtable = g_hash_table_new(NULL, NULL);
+		g_hash_table_insert(pbuffer_window_hashtable, surface, pbuffer_window);
 		return surface;
 	}
+}
+
+/* after eglDestroySurface of a pbuffer: the Wayland window that stood in for it */
+static void tl_destroy_pbuffer_window(EGLSurface surface)
+{
+	struct tl_pbuffer_window *pbuffer_window = tl_table_lookup(pbuffer_window_hashtable, surface);
+	if (!pbuffer_window)
+		return;
+	g_hash_table_remove(pbuffer_window_hashtable, surface);
+	wl_egl_window_destroy(pbuffer_window->egl_window);
+	wl_surface_destroy(pbuffer_window->wayland_surface);
+	g_free(pbuffer_window);
 }
 
 #define NUM_BUFFERS 4 /* teslalinux: GTK holds two frames, the app draws one ahead (native-egl-swapchain.sh) */
@@ -394,18 +429,54 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 	return surface;
 }
 
+/* The surfaces each context draws to and reads from while an ATLSurface is current: Mesa sees no
+ * surface then (the context is made current surfaceless, the app draws into the surface's FBO), so
+ * eglGetCurrentSurface and framebuffer 0 are answered from here. An entry lives exactly as long as
+ * that binding: making the context current with a surface Mesa owns (a pbuffer), or destroying the
+ * ATLSurface, removes it. A stale entry made eglGetCurrentSurface report a destroyed surface (Waze's
+ * map kept it as the fallback surface it makes current between windows, EGL_BAD_SURFACE on every
+ * frame) and glBindFramebuffer(0) bind the freed surface's buffers. */
+static GHashTable *draw_surface_hashtable = NULL;
+static GHashTable *read_surface_hashtable = NULL;
+
+static gboolean tl_entry_is_surface(gpointer context, gpointer surface, gpointer destroyed)
+{
+	return surface == destroyed;
+}
+
+static void tl_forget_surface(EGLSurface surface)
+{
+	if (draw_surface_hashtable)
+		g_hash_table_foreach_remove(draw_surface_hashtable, tl_entry_is_surface, surface);
+	if (read_surface_hashtable)
+		g_hash_table_foreach_remove(read_surface_hashtable, tl_entry_is_surface, surface);
+}
+
+static void tl_forget_context(EGLContext context)
+{
+	if (draw_surface_hashtable)
+		g_hash_table_remove(draw_surface_hashtable, context);
+	if (read_surface_hashtable)
+		g_hash_table_remove(read_surface_hashtable, context);
+}
+
 EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 {
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
 
-	if (!native_window)
-		return eglDestroySurface(display, surface);
+	if (!native_window) {
+		EGLBoolean ret = eglDestroySurface(display, surface);
+		if (ret)
+			tl_destroy_pbuffer_window(surface);
+		return ret;
+	}
 
 	EGLBoolean ret = EGL_TRUE;
 	if (getenv("ATL_DIRECT_EGL")) {
 		ret = eglDestroySurface(display, surface);
 	} else {
 		ATLSurface *atl_surface = surface;
+		tl_forget_surface(surface);
 		atl_surface->destroyed = TRUE;
 		for (int i = 0; i < NUM_BUFFERS; i++) {
 			if (atl_surface->buffers[i].egl_image)
@@ -426,9 +497,6 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 	return ret;
 }
 
-static GHashTable *draw_surface_hashtable = NULL;
-static GHashTable *read_surface_hashtable = NULL;
-
 static GLuint tl_surface_back_buffer(ATLSurface *atl_surface); /* tl_makecurrent_nowait */
 EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context)
 {
@@ -436,7 +504,11 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 		return eglMakeCurrent(display, draw, read, context);
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, draw);
 	if (!native_window) {
-		return eglMakeCurrent(display, draw, read, context);
+		/* a surface of Mesa's own (or none): from now on Mesa answers for this context */
+		EGLBoolean ret = eglMakeCurrent(display, draw, read, context);
+		if (ret && context != EGL_NO_CONTEXT)
+			tl_forget_context(context);
+		return ret;
 	}
 	if (!draw_surface_hashtable)
 		draw_surface_hashtable = g_hash_table_new(NULL, NULL);
