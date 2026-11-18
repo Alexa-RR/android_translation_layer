@@ -112,16 +112,31 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		main.post(new Runnable() {
 			@Override
 			public void run() {
-				if (!available || view == null)
-					return;
-				android.view.Surface surface = view.getHolder().getSurface();
-				sendDestroyed(surface, width, height);
-				sendAvailable(surface, width, height);
-				if (visibleArea != null)
-					setVisibleArea(visibleArea[0], visibleArea[1], visibleArea[2], visibleArea[3]);
+				replaceView();
 			}
 		});
 		return true;
+	}
+
+	/**
+	 * A new map surface (main thread), as a host does when it replaces its surface: the app hears
+	 * onSurfaceDestroyed for the old one and onSurfaceAvailable for the new one, and makes its
+	 * window surface again, at the new size (an app keeps drawing into the one it made, whose
+	 * buffers keep their size).
+	 */
+	private void replaceView() {
+		SurfaceView old = view;
+		if (old == null)
+			return;
+		old.getHolder().removeCallback(this);
+		if (available) {
+			available = false;
+			sendDestroyed(old.getHolder().getSurface(), width, height);
+		}
+		width = height = 0;
+		view = null;
+		((WindowManager)context.getSystemService(Context.WINDOW_SERVICE)).removeView(old);
+		show(); /* surfaceChanged of the new view gives it to the app */
 	}
 
 	ATLCarSurface(Context context, Handler host, Sender sender) {
@@ -407,6 +422,9 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		height = h;
 		available = true;
 		sendAvailable(holder.getSurface(), w, h);
+		/* a new surface (replaceView) gets the visible area again, in its own pixels */
+		if (visibleArea != null)
+			setVisibleArea(visibleArea[0], visibleArea[1], visibleArea[2], visibleArea[3]);
 	}
 
 	@Override
