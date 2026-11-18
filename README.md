@@ -32,6 +32,10 @@ or implemented for real on GTK, never left as placeholders.
   handling, the on-screen keyboard and hardware keys, Choreographer vsync.
 - **Graphics and media**: a SurfaceView/EGL swapchain with a fence per frame, fixes for GTK's GL
   renderer, MediaCodec through FFmpeg, AudioTrack, and a configurable location source.
+- **TLS**: the platform TLS provider is AOSP's Conscrypt on BoringSSL, on ART's boot class path as
+  on Android (the runtime build adds it to art_standalone in place of wolfSSL's JSSE provider), so
+  `android.net.ssl.SSLSockets` and `com.android.org.conscrypt` are the real classes;
+  `X509TrustManagerExtensions` is AOSP's.
 
 The fork is based on upstream commit `f4622e36` (July 2026). Upstream's later changes are being
 merged in.
