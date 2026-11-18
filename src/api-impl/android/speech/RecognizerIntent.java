@@ -419,4 +419,28 @@ public class RecognizerIntent {
      *
      */
     public static final String EXTRA_PREFER_OFFLINE = "android.speech.extra.PREFER_OFFLINE";
+
+    /**
+     * Optional {@link android.os.ParcelFileDescriptor} pointing to an already opened audio
+     * source for the recognizer to use (API 33). The caller is responsible for closing it.
+     */
+    public static final String EXTRA_AUDIO_SOURCE = "android.speech.extra.AUDIO_SOURCE";
+
+    /** Optional integer: the number of channels of {@link #EXTRA_AUDIO_SOURCE} (API 33). */
+    public static final String EXTRA_AUDIO_SOURCE_CHANNEL_COUNT =
+            "android.speech.extra.AUDIO_SOURCE_CHANNEL_COUNT";
+
+    /** Optional integer: the AudioFormat encoding of {@link #EXTRA_AUDIO_SOURCE} (API 33). */
+    public static final String EXTRA_AUDIO_SOURCE_ENCODING =
+            "android.speech.extra.AUDIO_SOURCE_ENCODING";
+
+    /** Optional integer: the sampling rate of {@link #EXTRA_AUDIO_SOURCE} (API 33). */
+    public static final String EXTRA_AUDIO_SOURCE_SAMPLING_RATE =
+            "android.speech.extra.AUDIO_SOURCE_SAMPLING_RATE";
+
+    /**
+     * Optional boolean: the session is segmented (API 33), results arrive per segment through
+     * RecognitionListener.onSegmentResults and the session ends with onEndOfSegmentedSession.
+     */
+    public static final String EXTRA_SEGMENTED_SESSION = "android.speech.extra.SEGMENTED_SESSION";
 }

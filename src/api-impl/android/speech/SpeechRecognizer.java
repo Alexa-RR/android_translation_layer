@@ -28,18 +28,23 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.Locale;
 import java.util.concurrent.Executor;
 
 /**
  * This class provides access to the speech recognition service (AOSP API).
  *
  * teslalinux: AOSP binds the RecognitionService selected in Settings.Secure
- * VOICE_RECOGNITION_SERVICE (normally Google's). This device has no recognition service (and no
- * microphone), so this is AOSP's path without one: {@link #isRecognitionAvailable} is false, and
- * {@link #startListening} reports {@link RecognitionListener#onError} with
- * {@link #ERROR_CLIENT} on the main thread ("no selected voice recognition service"). An
- * explicitly named service component is bound through Context.bindService; one that cannot be
- * bound ends the same way, as in AOSP ("bind to recognition service failed").
+ * VOICE_RECOGNITION_SERVICE (normally Google's). This device has no microphone and no recognition
+ * service of its own: the default recognizer is the car page's browser, reached through
+ * {@link TlSpeechChannel} (the browser listens with its own microphone and speech recognition and
+ * sends back the text). It is available while such a page is connected; without one this is AOSP's
+ * path without a service: {@link #isRecognitionAvailable} is false, and {@link #startListening}
+ * reports {@link RecognitionListener#onError} with {@link #ERROR_CLIENT} on the main thread ("no
+ * selected voice recognition service"). An explicitly named service component is bound through
+ * Context.bindService; one that cannot be bound ends the same way, as in AOSP ("bind to
+ * recognition service failed").
  */
 public class SpeechRecognizer {
     private static final String TAG = "SpeechRecognizer";
@@ -76,15 +81,22 @@ public class SpeechRecognizer {
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private RecognitionListener mListener;
     private ServiceConnection mConnection;
+    private int mSession; /* the car page's session (TlSpeechChannel), 0: none */
 
     private SpeechRecognizer(Context context, ComponentName serviceComponent) {
         mContext = context;
         mServiceComponent = serviceComponent;
     }
 
-    /** No RecognitionService is installed on this device. */
+    /** Whether the car page's recognizer is there (a page that can recognise speech is connected). */
     public static boolean isRecognitionAvailable(@NonNull final Context context) {
-        return false;
+        TlSpeechChannel channel = TlSpeechChannel.get();
+        return channel != null && channel.available();
+    }
+
+    /** @hide teslalinux: the car page's channel starts with the app (its page connects before the first request) */
+    public static void tlStartChannel() {
+        TlSpeechChannel.get();
     }
 
     /** No on-device recognition service is installed on this device. */
@@ -126,8 +138,7 @@ public class SpeechRecognizer {
         }
         checkIsCalledFromMainThread();
         if (mServiceComponent == null) {
-            Log.e(TAG, "no selected voice recognition service");
-            postError(ERROR_CLIENT);
+            startPageSession(recognizerIntent);
             return;
         }
         Intent serviceIntent = new Intent(SERVICE_INTERFACE);
@@ -159,20 +170,135 @@ public class SpeechRecognizer {
         }
     }
 
-    /** Nothing is listening (no request reaches a service, see the class comment). */
+    /** The end of the audio: the recognizer delivers what it heard (onResults). */
     public void stopListening() {
         checkIsCalledFromMainThread();
+        TlSpeechChannel channel = TlSpeechChannel.get();
+        if (mSession != 0 && channel != null)
+            channel.stop(mSession);
     }
 
     public void cancel() {
         checkIsCalledFromMainThread();
+        cancelPageSession();
         mHandler.removeCallbacksAndMessages(null);
     }
 
     public void destroy() {
+        cancelPageSession();
         disconnect();
         mHandler.removeCallbacksAndMessages(null);
         mListener = null;
+    }
+
+    /* ---- the car page's recognizer (TlSpeechChannel) ---- */
+
+    private void startPageSession(Intent intent) {
+        TlSpeechChannel channel = TlSpeechChannel.get();
+        if (channel == null || !channel.available()) {
+            Log.e(TAG, "no selected voice recognition service");
+            postError(ERROR_CLIENT);
+            return;
+        }
+        if (mSession != 0) { /* AOSP: one session at a time per recognizer */
+            postError(ERROR_RECOGNIZER_BUSY);
+            return;
+        }
+        if (intent.hasExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE)) {
+            /* the caller's own audio (Android 13): the page listens with its microphone only */
+            Log.e(TAG, "audio from the caller (EXTRA_AUDIO_SOURCE) is not supported by this recognizer");
+            postError(ERROR_CLIENT);
+            return;
+        }
+        String lang = intent.getStringExtra(RecognizerIntent.EXTRA_LANGUAGE);
+        String tag = webLanguageTag(lang != null && !lang.isEmpty() ? lang : Locale.getDefault().toLanguageTag());
+        boolean partial = intent.getBooleanExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+        int max = intent.getIntExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5);
+        /* AOSP segmented session: the results come as one segment, then the end of the session */
+        final boolean segmented = intent.getBooleanExtra(RecognizerIntent.EXTRA_SEGMENTED_SESSION, false);
+        final int[] id = new int[1];
+        id[0] = channel.listen(tag, partial, max > 0 ? max : 5, new TlSpeechChannel.Session() {
+            private boolean current() {
+                return mSession == id[0] && mListener != null;
+            }
+
+            public void onReady() {
+                if (current())
+                    mListener.onReadyForSpeech(new Bundle());
+            }
+
+            public void onSpeechStart() {
+                if (current())
+                    mListener.onBeginningOfSpeech();
+            }
+
+            public void onSpeechEnd() {
+                if (current())
+                    mListener.onEndOfSpeech();
+            }
+
+            public void onPartial(ArrayList<String> texts) {
+                if (!current())
+                    return;
+                Bundle b = new Bundle();
+                b.putStringArrayList(RESULTS_RECOGNITION, texts);
+                mListener.onPartialResults(b);
+            }
+
+            public void onResults(ArrayList<String> texts, float[] confidences) {
+                if (mSession != id[0])
+                    return;
+                mSession = 0;
+                if (mListener == null)
+                    return;
+                Bundle b = new Bundle();
+                b.putStringArrayList(RESULTS_RECOGNITION, texts);
+                b.putFloatArray(CONFIDENCE_SCORES, confidences);
+                if (segmented) {
+                    mListener.onSegmentResults(b);
+                    if (mListener != null)
+                        mListener.onEndOfSegmentedSession();
+                } else {
+                    mListener.onResults(b);
+                }
+            }
+
+            public void onError(int error) {
+                if (mSession != id[0])
+                    return;
+                mSession = 0;
+                if (mListener != null)
+                    mListener.onError(error);
+            }
+        });
+        mSession = id[0];
+        if (mSession == 0)
+            postError(ERROR_CLIENT);
+    }
+
+    private void cancelPageSession() {
+        if (mSession == 0)
+            return;
+        TlSpeechChannel channel = TlSpeechChannel.get();
+        if (channel != null)
+            channel.cancel(mSession);
+        mSession = 0;
+    }
+
+    /**
+     * A language tag as the Web Speech API takes it (BCP 47): Java's and Android's old ISO 639
+     * codes (iw, in, ji, as RecognizerIntent callers may pass them) become the current ones.
+     */
+    static String webLanguageTag(String tag) {
+        String t = tag.replace('_', '-');
+        String lower = t.toLowerCase(Locale.ROOT);
+        if (lower.equals("iw") || lower.startsWith("iw-"))
+            return "he" + t.substring(2);
+        if (lower.equals("in") || lower.startsWith("in-"))
+            return "id" + t.substring(2);
+        if (lower.equals("ji") || lower.startsWith("ji-"))
+            return "yi" + t.substring(2);
+        return t;
     }
 
     private void disconnect() {

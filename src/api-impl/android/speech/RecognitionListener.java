@@ -96,4 +96,15 @@ public interface RecognitionListener {
      * @param params a Bundle containing the passed parameters
      */
     void onEvent(int eventType, Bundle params);
+
+    /**
+     * Called for each ready segment of a recognition request (API 33). To request segmented
+     * speech recognition use {@link RecognizerIntent#EXTRA_SEGMENTED_SESSION}.
+     *
+     * @param segmentResults the returned results, as in {@link #onResults}
+     */
+    default void onSegmentResults(Bundle segmentResults) {}
+
+    /** Called at the end of a segmented recognition request (API 33). */
+    default void onEndOfSegmentedSession() {}
 }

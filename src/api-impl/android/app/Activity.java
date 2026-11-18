@@ -1100,6 +1100,8 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 			tlResumeUptime = android.os.SystemClock.uptimeMillis();
 			/* the car host (ATL_CAR_HOST=1) connects once the app has a resumed activity */
 			android.atl.carhost.ATLCarHost.onActivityResumed();
+			/* the car page's speech recognizer channel: its page connects before the first request */
+			android.speech.SpeechRecognizer.tlStartChannel();
 		}
 	}
 	@Export
