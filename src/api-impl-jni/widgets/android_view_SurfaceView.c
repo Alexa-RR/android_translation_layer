@@ -72,6 +72,7 @@ gboolean tl_surface_offload_enabled(void); /* libandroid's egl.c */
 
 static void surface_view_widget_init(SurfaceViewWidget *surface_view_widget)
 {
+	surface_view_widget->opaque = TRUE; /* AOSP: RGB_565 until SurfaceHolder.setFormat */
 	if (!tl_surface_offload_enabled() || getenv("ATL_DIRECT_EGL"))
 		return;
 	TlSurfaceContent *content = g_object_new(TL_TYPE_SURFACE_CONTENT, NULL);
@@ -382,4 +383,13 @@ JNIEXPORT void JNICALL Java_android_view_SurfaceView_native_1postSnapshot(JNIEnv
 	g_object_unref(renderer);
 
 	surface_view_widget_set_texture(surface_view_widget, texture, FALSE);
+}
+
+/* SurfaceHolder.setFormat: whether the surface's pixel format has alpha */
+JNIEXPORT void JNICALL Java_android_view_SurfaceView_nativeSetOpaque(JNIEnv *env, jclass class, jlong widget, jboolean opaque)
+{
+	GtkWidget *wrapper = GTK_WIDGET(_PTR(widget));
+	GtkWidget *child = wrapper ? gtk_widget_get_first_child(wrapper) : NULL;
+	if (child && SURFACE_VIEW_IS_WIDGET(child))
+		SURFACE_VIEW_WIDGET(child)->opaque = opaque;
 }

@@ -66,6 +66,10 @@ public class SurfaceView extends View {
 
 	private boolean tlSurfaceCreated;
 	private int tlSurfaceWidth, tlSurfaceHeight;
+	/* AOSP: SurfaceView's surface is RGB_565 (opaque) until SurfaceHolder.setFormat */
+	private int mRequestedFormat = android.graphics.PixelFormat.RGB_565;
+
+	private static native void nativeSetOpaque(long widget, boolean opaque);
 
 	@Override
 	protected native long native_constructor(Context context, AttributeSet attrs);
@@ -121,18 +125,19 @@ public class SurfaceView extends View {
 					}*/
 		}
 
+		/**
+		 * AOSP: the surface's pixel format, opaque (RGB_565) unless the app asks for one with
+		 * alpha. teslalinux: an opaque surface's frames reach the compositor as an opaque buffer,
+		 * which GTK can place below the window under the app's views (graphics offload); a
+		 * translucent one keeps its alpha.
+		 */
 		@Override
 		public void setFormat(int format) {
-			/*
-					// for backward compatibility reason, OPAQUE always
-					// means 565 for SurfaceView
-					if (format == PixelFormat.OPAQUE)
-					format = PixelFormat.RGB_565;
-
-					mRequestedFormat = format;
-					if (mWindow != null) {
-					updateWindow(false, false);
-					}*/
+			// for backward compatibility reason, OPAQUE always means 565 for SurfaceView
+			if (format == android.graphics.PixelFormat.OPAQUE)
+				format = android.graphics.PixelFormat.RGB_565;
+			mRequestedFormat = format;
+			nativeSetOpaque(widget, !android.graphics.PixelFormat.formatHasAlpha(format));
 		}
 
 		/**
@@ -142,11 +147,15 @@ public class SurfaceView extends View {
 		@Deprecated
 		public void setType(int type) {}
 
+		/** AOSP: the SurfaceView's keepScreenOn property (View.setKeepScreenOn), on the UI thread. */
 		@Override
-		public void setKeepScreenOn(boolean screenOn) {
-			//		Message msg = mHandler.obtainMessage(KEEP_SCREEN_ON_MSG);
-			//		msg.arg1 = screenOn ? 1 : 0;
-			//		mHandler.sendMessage(msg);
+		public void setKeepScreenOn(final boolean screenOn) {
+			post(new Runnable() {
+				@Override
+				public void run() {
+					SurfaceView.this.setKeepScreenOn(screenOn);
+				}
+			});
 		}
 
 		/**

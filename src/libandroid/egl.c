@@ -515,6 +515,13 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
  * into the window: the window is not redrawn for every frame of the app, and the frame reaches the
  * compositor as it is. The GL texture path stays for when a buffer cannot be exported or GTK does
  * not offload. ATL_SURFACE_OFFLOAD=0 turns it off. */
+/* DRM fourccs (drm_fourcc.h's encoding: four characters, the first in the low byte) */
+#define TL_FOURCC(a, b, c, d) ((uint32_t)(a) | ((uint32_t)(b) << 8) | ((uint32_t)(c) << 16) | ((uint32_t)(d) << 24))
+#define DRM_FORMAT_ABGR8888 TL_FOURCC('A', 'B', '2', '4')
+#define DRM_FORMAT_XBGR8888 TL_FOURCC('X', 'B', '2', '4')
+#define DRM_FORMAT_ARGB8888 TL_FOURCC('A', 'R', '2', '4')
+#define DRM_FORMAT_XRGB8888 TL_FOURCC('X', 'R', '2', '4')
+
 gboolean tl_surface_offload_enabled(void)
 {
 	static int enabled = -1;
@@ -668,7 +675,16 @@ static gboolean queue_texture(gpointer data)
 		gdk_dmabuf_texture_builder_set_display(builder, gtk_widget_get_display(GTK_WIDGET(atl_surface->surface_view_widget)));
 		gdk_dmabuf_texture_builder_set_width(builder, atl_surface->width);
 		gdk_dmabuf_texture_builder_set_height(builder, atl_surface->height);
-		gdk_dmabuf_texture_builder_set_fourcc(builder, buffer->dmabuf_fourcc);
+		/* an opaque surface (SurfaceHolder.setFormat) goes as the same memory without alpha: GTK
+		 * places an opaque buffer below the window, under the app's views */
+		uint32_t fourcc = buffer->dmabuf_fourcc;
+		if (atl_surface->surface_view_widget->opaque) {
+			if (fourcc == DRM_FORMAT_ABGR8888)
+				fourcc = DRM_FORMAT_XBGR8888;
+			else if (fourcc == DRM_FORMAT_ARGB8888)
+				fourcc = DRM_FORMAT_XRGB8888;
+		}
+		gdk_dmabuf_texture_builder_set_fourcc(builder, fourcc);
 		gdk_dmabuf_texture_builder_set_modifier(builder, buffer->dmabuf_modifier);
 		gdk_dmabuf_texture_builder_set_premultiplied(builder, TRUE);
 		gdk_dmabuf_texture_builder_set_n_planes(builder, 1);
