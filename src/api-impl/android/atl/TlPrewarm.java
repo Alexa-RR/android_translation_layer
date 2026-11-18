@@ -17,8 +17,9 @@ import java.io.File;
  * as the user and with the environment the app runs with (the compiled code goes to that user's
  * cache). The VM opens its class path as ATL's does (api-impl.jar's own code is compiled), then this
  * builds the app's class loader as {@link ATLLoadedApp#loadFromPath} builds it (ghax.jar first, the
- * APKs in the order given, api-impl's loader as parent): the same dex files in the same contexts, so
- * dex2oat makes exactly what the app's first start would have made, and that start finds it ready.
+ * APKs in the order given, api-impl's loader as parent), and gstub.jar as ATLGStub loads it: the same
+ * dex files in the same contexts, so dex2oat makes exactly what the app's first start would have
+ * made, and that start finds it ready.
  * Exit status 0 when every APK could be opened.
  */
 public final class TlPrewarm {
@@ -45,6 +46,9 @@ public final class TlPrewarm {
 		long start = System.nanoTime();
 		/* opening the dex files is what compiles them (DexPathList, OatFileManager) */
 		ClassLoader loader = new PathClassLoader(classLoaderPath, null, TlPrewarm.class.getClassLoader());
+		/* the Google services stand-in the runtime loads for apps without them (ATLGStub's loader) */
+		if (ATLPaths.gstub_jar.isFile())
+			new PathClassLoader(ATLPaths.gstub_jar.getPath(), null, TlPrewarm.class.getClassLoader());
 		System.out.println("TlPrewarm: " + classLoaderPath + " ready in " + (System.nanoTime() - start) / 1000000 + " ms (" + loader + ")");
 		/* System.exit, not a return: dalvikvm's DestroyJavaVM runs libjavacore's JNI_OnUnload on the
 		 * runtime's shutdown thread, where JavaVM::GetEnv fails and it aborts (exit status 134) */
