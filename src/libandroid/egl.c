@@ -522,15 +522,18 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 #define DRM_FORMAT_ARGB8888 TL_FOURCC('A', 'R', '2', '4')
 #define DRM_FORMAT_XRGB8888 TL_FOURCC('X', 'R', '2', '4')
 
-/* how many frames an app may have queued but not shown (ATL_SWAP_FRAMES_AHEAD, 1 to 3; 2) */
+/* how many frames an app may have queued but not shown (ATL_SWAP_FRAMES_AHEAD, 1 to 3; 1). On a
+ * Pi 4 the GPU is the limit: a second frame queued ahead only lines more of the app's work up in
+ * front of the compositor's, which then shows fewer frames (Waze in Car mode: 24 frames/s drawn,
+ * 9.5 shown, against 24.8 shown with one) */
 static int tl_frames_ahead(void)
 {
 	static int n;
 	if (!n) {
 		const char *e = getenv("ATL_SWAP_FRAMES_AHEAD");
-		n = e ? atoi(e) : 2;
+		n = e ? atoi(e) : 1;
 		if (n < 1 || n > 3)
-			n = 2;
+			n = 1;
 	}
 	return n;
 }
@@ -594,10 +597,8 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 	ATLSurface *atl_surface = draw;
 	if (!atl_surface->unused_buffers) {
 		atl_surface->vsync = g_async_queue_new();
-		/* tl_frames_ahead: eglSwapBuffers waits for a frame shown TL_FRAMES_AHEAD frames back. With
-		 * one, every frame waited for the previous one on the screen (shown on the compositor's
-		 * tick), so a frame a little over one tick long took two: 30 frames/s at 60 Hz. AOSP's
-		 * buffer queue lets an app queue a frame ahead the same way (triple buffering). */
+		/* tl_frames_ahead: eglSwapBuffers waits for the frame shown tl_frames_ahead() frames back
+		 * (AOSP's buffer queue lets an app queue frames ahead the same way) */
 		for (int i = 0; i < tl_frames_ahead(); i++)
 			g_async_queue_push(atl_surface->vsync, GINT_TO_POINTER(1));
 		atl_surface->unused_buffers = g_async_queue_new();
