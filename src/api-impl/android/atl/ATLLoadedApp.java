@@ -101,7 +101,7 @@ public final class ATLLoadedApp {
 		try {
 			primary_application = loadFromPath(
 				   pathsIndex == -1 ? classLoaderPath : classLoaderPath.substring(0, pathsIndex),
-				   nativePath, classLoaderPath);
+				   nativePath, classLoaderPath, appClassOverrides());
 			/* a car app on an automotive device gets the car app library's activity */
 			ATLCarAppLibrary.mergeInto(primary_application);
 			return primary_application;
@@ -111,14 +111,53 @@ public final class ATLLoadedApp {
 		}
 	}
 
+	/**
+	 * ATL_APP_CLASS_OVERRIDES: dex files or jars (path-separated) that go in front of the primary
+	 * app's own on its class loader, so a class in them is found before the app's class of the same
+	 * name, as ghax.jar's are. teslalinux uses it for a class changed on the device, from the
+	 * installed APK itself, for one verified app version (the APK stays untouched: Google APIs check
+	 * its signing block). Class loading only: the files carry no resources and stay off the
+	 * AssetManager's path. A file that does not exist is left out, with a warning.
+	 */
+	private static String appClassOverrides() {
+		String env = System.getenv("ATL_APP_CLASS_OVERRIDES");
+		if (env == null || env.isEmpty())
+			return null;
+		StringBuilder sb = new StringBuilder();
+		for (String path : env.split(File.pathSeparator)) {
+			if (path.isEmpty())
+				continue;
+			if (!new File(path).isFile()) {
+				Slog.w(TAG, "ATL_APP_CLASS_OVERRIDES: " + path + " is not a file, left out");
+				continue;
+			}
+			if (sb.length() > 0)
+				sb.append(File.pathSeparator);
+			sb.append(path);
+		}
+		if (sb.length() == 0)
+			return null;
+		Slog.i(TAG, "app class overrides in front of the app's classes: " + sb);
+		return sb.toString();
+	}
+
 	@NonNull
 	public static ATLLoadedApp loadFromPath(String mainApk, String nativePath, String classLoaderPath) throws IOException {
+		return loadFromPath(mainApk, nativePath, classLoaderPath, null);
+	}
+
+	/* overrides: dex files or jars in front of the app's own on its class loader (the primary app's
+	 * ATL_APP_CLASS_OVERRIDES), or null */
+	private static ATLLoadedApp loadFromPath(String mainApk, String nativePath, String classLoaderPath, String overrides) throws IOException {
 		if (ATLToggles.ATL_GHAX) {
 			// Always load ghax.jar as the first element to override application library classes
 			classLoaderPath = ATLPaths.ghax_jar.getPath() + File.pathSeparator + classLoaderPath;
 		}
+		String dexPath = classLoaderPath;
+		if (overrides != null)
+			dexPath = overrides + File.pathSeparator + dexPath;
 		BaseDexClassLoader classLoader = new PathClassLoader(
-		    classLoaderPath, nativePath, ATLLoadedApp.class.getClassLoader());
+		    dexPath, nativePath, ATLLoadedApp.class.getClassLoader());
 		AssetManager assetManager = new AssetManager(classLoaderPath + ":" + System.getProperty("java.class.path"));
 		PackageParser packageParser = new PackageParser(mainApk);
 		Resources resources = new Resources(assetManager, new DisplayMetrics(), Context.sys_config);
