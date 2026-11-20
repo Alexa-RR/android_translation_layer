@@ -122,6 +122,7 @@ libandroid_so = shared_library('android', [
                                           	'src/libandroid/bitmap.c',
                                           	'src/libandroid/configuration.c',
                                           	'src/libandroid/egl.c',
+                                          	'src/libandroid/gl_passes.c',
                                           	'src/libandroid/input.c',
                                           	'src/libandroid/looper.c',
                                           	'src/libandroid/media.c',

@@ -4,6 +4,7 @@
 #include <jni.h>
 #include <stdint.h>
 
+#include "../libandroid/gl_passes.h"
 #include "../libandroid/native_window.h"
 
 #include "generated_headers/com_google_android_gles_jni_GLImpl.h"
@@ -70,7 +71,7 @@ JNIEXPORT void JNICALL Java_com_google_android_gles_1jni_GLImpl_glColorPointerBo
 
 JNIEXPORT void JNICALL Java_com_google_android_gles_1jni_GLImpl_glDrawArrays(JNIEnv *env, jclass this, jint mode, jint first, jint count)
 {
-	glDrawArrays((GLenum)mode, (GLint)first, (GLsizei)count);
+	bionic_glDrawArrays((GLenum)mode, (GLint)first, (GLsizei)count);
 }
 
 JNIEXPORT void JNICALL Java_com_google_android_gles_1jni_GLImpl_glDisableClientState(JNIEnv *env, jobject this, jint array)

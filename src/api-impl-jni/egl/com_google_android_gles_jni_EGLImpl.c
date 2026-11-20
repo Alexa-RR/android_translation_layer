@@ -173,7 +173,7 @@ JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1egl
 JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglCreateContext(JNIEnv *env, jobject this, jlong egl_display, jlong egl_config, jlong share_context, jintArray attrib_list)
 {
 	jint *attrib_base = get_int_array_crit(env, attrib_list);
-	EGLContext egl_context = eglCreateContext(_PTR(egl_display), _PTR(egl_config), _PTR(share_context), attrib_base);
+	EGLContext egl_context = bionic_eglCreateContext(_PTR(egl_display), _PTR(egl_config), _PTR(share_context), attrib_base);
 	if (!egl_context) {
 		/* GLES1 (explicit EGL_CONTEXT_CLIENT_VERSION=1, or the legacy default of no
 		 * version at all) is no longer available: since Mesa 23.1.0 (May 2023) builds
@@ -196,7 +196,7 @@ JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglCre
 			printf("HACK: eglCreateContext failed for GLES1; Creating desktop GL compatibility context instead, which should be mostly compatible. If possible switch to a GLES1 supporting driver. (eg. Mesa build with '-D gles1=enabled')\n");
 			EGLenum prev_api = eglQueryAPI();
 			eglBindAPI(EGL_OPENGL_API);
-			egl_context = eglCreateContext(_PTR(egl_display), (EGLConfig)0, _PTR(share_context), NULL);
+			egl_context = bionic_eglCreateContext(_PTR(egl_display), (EGLConfig)0, _PTR(share_context), NULL);
 			eglBindAPI(prev_api);
 		}
 	}
@@ -208,7 +208,7 @@ JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglCre
 
 JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglDestroyContext(JNIEnv *env, jobject this, jlong display, jlong context)
 {
-	return eglDestroyContext(_PTR(display), _PTR(context));
+	return bionic_eglDestroyContext(_PTR(display), _PTR(context));
 }
 
 JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglQueryContext(JNIEnv *env, jobject this, jlong display, jlong context, jint attribute, jintArray _value)
@@ -244,7 +244,7 @@ JNIEXPORT jlong JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGet
 
 JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglReleaseThread(JNIEnv *env, jobject this)
 {
-	return eglReleaseThread();
+	return bionic_eglReleaseThread();
 }
 
 /* ---- surfaces ----------------------------------------------------------------------------------- */
@@ -294,7 +294,7 @@ JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1egl
 
 JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglWaitGL(JNIEnv *env, jobject this)
 {
-	return eglWaitGL();
+	return bionic_eglWaitGL();
 }
 
 JNIEXPORT jboolean JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglWaitNative(JNIEnv *env, jobject this, jint engine)

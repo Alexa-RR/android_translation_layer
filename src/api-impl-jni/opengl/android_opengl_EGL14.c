@@ -364,12 +364,12 @@ JNIEXPORT jint JNICALL Java_android_opengl_EGL14_eglQueryAPI(JNIEnv *env, jclass
 
 JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglWaitClient(JNIEnv *env, jclass this)
 {
-	return eglWaitClient();
+	return bionic_eglWaitClient();
 }
 
 JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglReleaseThread(JNIEnv *env, jclass this)
 {
-	return eglReleaseThread();
+	return bionic_eglReleaseThread();
 }
 
 static jobject create_pbuffer_from_client_buffer(JNIEnv *env, jobject dpy, jint buftype, EGLClientBuffer buffer, jobject config, jintArray attrib_list_ref, jint offset)
@@ -443,7 +443,7 @@ JNIEXPORT jobject JNICALL Java_android_opengl_EGL14_eglCreateContext(JNIEnv *env
 		return NULL;
 	jint *attrib_base;
 	EGLint *attrib_list = get_int_attribs(env, attrib_list_ref, offset, &attrib_base);
-	EGLContext ret = eglCreateContext(dpy_native, config_native, share_context_native, attrib_list);
+	EGLContext ret = bionic_eglCreateContext(dpy_native, config_native, share_context_native, attrib_list);
 	release_int_attribs(env, attrib_list_ref, attrib_base);
 	return toEGLHandle(env, eglcontextClass, eglcontextConstructor, ret);
 }
@@ -454,7 +454,7 @@ JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglDestroyContext(JNIEnv *e
 	EGLContext ctx_native = (EGLContext)fromEGLHandle(env, eglcontextGetHandleID, ctx);
 	if ((*env)->ExceptionCheck(env))
 		return JNI_FALSE;
-	return eglDestroyContext(dpy_native, ctx_native);
+	return bionic_eglDestroyContext(dpy_native, ctx_native);
 }
 
 JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglMakeCurrent(JNIEnv *env, jclass this, jobject dpy, jobject draw, jobject read, jobject ctx)
@@ -499,7 +499,7 @@ JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglQueryContext(JNIEnv *env
 
 JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglWaitGL(JNIEnv *env, jclass this)
 {
-	return eglWaitGL();
+	return bionic_eglWaitGL();
 }
 
 JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglWaitNative(JNIEnv *env, jclass this, jint engine)

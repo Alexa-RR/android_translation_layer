@@ -1,7 +1,9 @@
+#define _GNU_SOURCE /* RTLD_DEFAULT */
 #include <gdk/wayland/gdkwayland.h>
 #include <gdk/x11/gdkx.h>
 #include <gtk/gtk.h>
 
+#include <dlfcn.h>
 #include <unistd.h>
 #include <wayland-egl.h>
 
@@ -15,6 +17,7 @@
 #include "../api-impl-jni/defines.h"
 #include "../api-impl-jni/widgets/android_view_SurfaceView.h"
 
+#include "gl_passes.h"
 #include "native_window.h"
 
 extern GtkWindow *window; // TODO: how do we get rid of this? the app won't pass anything useful to eglGetDisplay
@@ -136,14 +139,61 @@ void bionic_glBufferData(GLenum target, GLsizeiptr size, const void *data, GLenu
 	glBufferData(target, size, data, usage);
 }
 
+/* the same entry points an app's direct calls reach: bionic_translation resolves an import or a
+ * dlsym() of NAME to bionic_NAME when one is loaded (ATL's here, or a preloaded one), and so does
+ * this; before, a pointer from here skipped ATL's wrappers (the default framebuffer of
+ * bionic_glBindFramebuffer, gl_passes.c's tracking) */
 void (*bionic_eglGetProcAddress(char const *procname))(void)
 {
-	if (__unlikely__(!strcmp(procname, "glBufferData")))
-		return (void (*)(void))bionic_glBufferData;
-	if (__unlikely__(!strcmp(procname, "eglPresentationTimeANDROID")))
-		return (void (*)(void))bionic_eglPresentationTimeANDROID;
-
+	void *wrapper = NULL;
+	if (procname) {
+		char name[256];
+		if (snprintf(name, sizeof name, "bionic_%s", procname) < (int)sizeof name)
+			wrapper = dlsym(RTLD_DEFAULT, name);
+	}
+	tl_gl_proc_requested(procname, wrapper);
+	if (wrapper)
+		return (void (*)(void))wrapper;
 	return eglGetProcAddress(procname);
+}
+
+EGLContext bionic_eglCreateContext(EGLDisplay display, EGLConfig config, EGLContext share_context, const EGLint *attrib_list)
+{
+	EGLContext context = eglCreateContext(display, config, share_context, attrib_list);
+	if (context != EGL_NO_CONTEXT)
+		tl_gl_context_created(context, share_context);
+	return context;
+}
+
+static void tl_forget_context(EGLContext context);
+EGLBoolean bionic_eglDestroyContext(EGLDisplay display, EGLContext context)
+{
+	EGLBoolean ret = eglDestroyContext(display, context);
+	if (ret) {
+		tl_gl_context_destroyed(context);
+		tl_forget_context(context); /* a later context can get the same handle */
+	}
+	return ret;
+}
+
+EGLBoolean bionic_eglReleaseThread(void)
+{
+	tl_gl_before_make_current();
+	EGLBoolean ret = eglReleaseThread();
+	tl_gl_after_make_current(eglGetCurrentContext());
+	return ret;
+}
+
+EGLBoolean bionic_eglWaitGL(void)
+{
+	tl_gl_flush_point();
+	return eglWaitGL();
+}
+
+EGLBoolean bionic_eglWaitClient(void)
+{
+	tl_gl_flush_point();
+	return eglWaitClient();
 }
 
 EGLDisplay bionic_eglGetDisplay(EGLNativeDisplayType native_display)
@@ -656,7 +706,17 @@ static void tl_export_dmabuf(EGLDisplay display, struct atl_surface_buffer *buff
 }
 
 static GLuint tl_surface_back_buffer(ATLSurface *atl_surface); /* tl_makecurrent_nowait */
+static EGLBoolean tl_make_current(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context);
 EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context)
+{
+	/* gl_passes.c: the context that stops being current puts its deferred fences in first */
+	tl_gl_before_make_current();
+	EGLBoolean ret = tl_make_current(display, draw, read, context);
+	tl_gl_after_make_current(eglGetCurrentContext());
+	return ret;
+}
+
+static EGLBoolean tl_make_current(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context)
 {
 	if (tl_direct_egl())
 		return eglMakeCurrent(display, draw, read, context);
@@ -890,6 +950,7 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 		if ((++swaps % 50) == 1)
 			fprintf(stderr, "[surface] eglSwapBuffers #%d surface=%p\n", swaps, (void *)surface);
 	}
+	tl_gl_flush_point(); /* gl_passes.c: the app's deferred fences go in before the frame's flush */
 	if (tl_direct_egl())
 		return eglSwapBuffers(display, surface);
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
@@ -897,6 +958,14 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 		return eglSwapBuffers(display, surface);
 	}
 	ATLSurface *atl_surface = surface;
+	/* eglSwapBuffers leaves the context's framebuffer bindings alone (EGL 1.5, 3.10.1): only when the
+	 * app has the default framebuffer bound (one of this surface's buffers, or 0) does the next buffer
+	 * take its place below. GL_FRAMEBUFFER_BINDING is GL_DRAW_FRAMEBUFFER_BINDING, in GLES 2 too */
+	GLint app_framebuffer = 0;
+	glGetIntegerv(GL_FRAMEBUFFER_BINDING, &app_framebuffer);
+	gboolean app_default_framebuffer = app_framebuffer == 0;
+	for (int i = 0; i < NUM_BUFFERS; i++)
+		app_default_framebuffer |= atl_surface->buffers[i].gl_framebuffer && (GLint)atl_surface->buffers[i].gl_framebuffer == app_framebuffer;
 
 	if (atl_surface->back_buffer) { /* native-egl-import-fence.sh */
 		struct atl_surface_buffer *b = atl_surface->back_buffer;
@@ -933,6 +1002,8 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	 * (as dequeueBuffer's release fence wait) */
 	tl_swap_gpu_throttle(atl_surface, gpu_fence_display, gpu_fence);
 	atl_surface->back_buffer = g_async_queue_timeout_pop(atl_surface->unused_buffers, 100000); // 100ms
+	if (!app_default_framebuffer)
+		return EGL_TRUE; /* the app's own framebuffer stays bound; binding 0 later gets the new buffer */
 	if (atl_surface->back_buffer)
 		glBindFramebuffer(GL_FRAMEBUFFER, atl_surface->back_buffer->gl_framebuffer);
 	else

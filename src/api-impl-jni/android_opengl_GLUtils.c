@@ -4,6 +4,7 @@
 #include "../api-impl-jni/defines.h"
 #include "generated_headers/android_opengl_GLUtils.h"
 #include "../libandroid/bitmap.h"
+#include "../libandroid/gl_passes.h"
 
 int get_internal_format(int32_t bitmapformat)
 {
@@ -72,7 +73,7 @@ JNIEXPORT jint JNICALL Java_android_opengl_GLUtils_native_1texImage2D(
 	GLsizei width = bitmap_info.width;
 	GLsizei height = bitmap_info.height;
 	GLenum format = get_pixel_format_from_internal_format(internalformat);
-	glTexImage2D(target, level, internalformat, width, height, border, format,
+	bionic_glTexImage2D(target, level, internalformat, width, height, border, format,
 	             type, _PTR(_GET_LONG_FIELD(bitmap, "bytes")));
 	return 0;
 }
