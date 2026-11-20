@@ -22,6 +22,25 @@ extern GtkWindow *window; // TODO: how do we get rid of this? the app won't pass
 static GHashTable *egl_surface_hashtable;
 #define tl_table_lookup(table, key) ((table) ? g_hash_table_lookup((table), (key)) : NULL)
 
+/* environment switches read on every swap and framebuffer bind: read once (getenv walks the whole
+ * environment, and a map frame binds framebuffer 0 many times) */
+static int tl_env_flag(const char *name, int *cache)
+{
+	if (*cache < 0)
+		*cache = getenv(name) != NULL;
+	return *cache;
+}
+static int tl_direct_egl(void)
+{
+	static int cache = -1;
+	return tl_env_flag("ATL_DIRECT_EGL", &cache);
+}
+static int tl_debug_surface(void)
+{
+	static int cache = -1;
+	return tl_env_flag("ATL_DEBUG_SURFACE", &cache);
+}
+
 /* Wayland has no pbuffers: bionic_eglCreatePbufferSurface makes a window surface on a wl_surface that
  * is never given a role (never shown); these are kept per pbuffer to be destroyed with it */
 struct tl_pbuffer_window {
@@ -252,6 +271,7 @@ static void tl_destroy_pbuffer_window(EGLSurface surface)
 }
 
 #define NUM_BUFFERS 4 /* teslalinux: GTK holds two frames, the app draws one ahead (native-egl-swapchain.sh) */
+#define TL_MAX_GPU_FRAMES 3 /* tl_swap_gpu_throttle */
 
 struct _ATLSurface {
 	GObject parent;
@@ -279,6 +299,11 @@ struct _ATLSurface {
 	} buffers[NUM_BUFFERS];
 	struct atl_surface_buffer *back_buffer;
 	struct atl_surface_buffer *front_buffer;
+	/* tl_swap_gpu_throttle: fences of the frames queued whose GPU work may still run, oldest first;
+	 * only the thread that swaps touches them */
+	EGLSync tl_gpu_fences[TL_MAX_GPU_FRAMES + 1];
+	EGLDisplay tl_gpu_fence_display;
+	int tl_gpu_fence_count;
 	GAsyncQueue *vsync;
 	GAsyncQueue *unused_buffers;
 	gboolean destroyed;
@@ -395,7 +420,7 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 
 	PrintConfigAttributes(display, config);
 	EGLSurface surface;
-	if (getenv("ATL_DIRECT_EGL")) {
+	if (tl_direct_egl()) {
 		surface = eglCreateWindowSurface(display, config, native_window->egl_window, attrib_list);
 	} else {
 		ATLSurface *atl_surface = g_object_new(atl_surface_get_type(), NULL);
@@ -470,6 +495,7 @@ static void tl_forget_context(EGLContext context)
 		g_hash_table_remove(read_surface_hashtable, context);
 }
 
+static void tl_swap_gpu_fences_destroy(ATLSurface *atl_surface);
 EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 {
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
@@ -482,12 +508,13 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 	}
 
 	EGLBoolean ret = EGL_TRUE;
-	if (getenv("ATL_DIRECT_EGL")) {
+	if (tl_direct_egl()) {
 		ret = eglDestroySurface(display, surface);
 	} else {
 		ATLSurface *atl_surface = surface;
 		tl_forget_surface(surface);
 		atl_surface->destroyed = TRUE;
+		tl_swap_gpu_fences_destroy(atl_surface);
 		for (int i = 0; i < NUM_BUFFERS; i++) {
 			if (atl_surface->buffers[i].egl_image)
 				eglDestroyImage(display, atl_surface->buffers[i].egl_image);
@@ -538,6 +565,60 @@ static int tl_frames_ahead(void)
 	return n;
 }
 
+/* tl_swap_gpu_throttle: how many of an app's frames may still be on the GPU when eglSwapBuffers
+ * returns (ATL_SWAP_GPU_FRAMES, 0 to TL_MAX_GPU_FRAMES; 0 turns the wait off). On Android a producer
+ * cannot run further ahead of the GPU than its buffer queue allows: SurfaceFlinger latches a buffer
+ * only once its acquire fence has signalled, and dequeueBuffer hands out a buffer only with the
+ * release fence of the frame that used it before, which EGL waits on (Mesa's platform_android:
+ * droid_window_dequeue_buffer). Here a frame replaced before it was shown gives its buffer and its
+ * vsync token back at once, so nothing else stops an app whose frames take the GPU longer than its
+ * CPU from queueing frame after frame behind the GPU: each frame then reaches the screen several GPU
+ * frames after it was drawn, and the compositor's own GPU work waits behind the queue. */
+static int tl_gpu_frames(void)
+{
+	static int n = -1;
+	if (n < 0) {
+		const char *e = getenv("ATL_SWAP_GPU_FRAMES");
+		n = e ? atoi(e) : 1;
+		if (n < 0 || n > TL_MAX_GPU_FRAMES)
+			n = 1;
+	}
+	return n;
+}
+
+/* the fence of the frame just flushed goes in; then the oldest frames are waited for until at most
+ * tl_gpu_frames() remain (a kernel wait on the GPU's fence, not a spin). A fence that does not signal
+ * within a second (a GPU hang) is given up on, as the other bounded waits here are. */
+static void tl_swap_gpu_throttle(ATLSurface *atl_surface, EGLDisplay display, EGLSync fence)
+{
+	if (fence == EGL_NO_SYNC)
+		return;
+	if (atl_surface->tl_gpu_fence_count > 0 && atl_surface->tl_gpu_fence_display != display) {
+		for (int i = 0; i < atl_surface->tl_gpu_fence_count; i++) /* a new display: the old fences belong to the old one */
+			eglDestroySync(atl_surface->tl_gpu_fence_display, atl_surface->tl_gpu_fences[i]);
+		atl_surface->tl_gpu_fence_count = 0;
+	}
+	atl_surface->tl_gpu_fence_display = display;
+	atl_surface->tl_gpu_fences[atl_surface->tl_gpu_fence_count++] = fence;
+	while (atl_surface->tl_gpu_fence_count > tl_gpu_frames()) {
+		EGLSync oldest = atl_surface->tl_gpu_fences[0];
+		if (eglClientWaitSync(display, oldest, 0, 1000000000) == EGL_TIMEOUT_EXPIRED) { /* 1 s */
+			static int warned;
+			if (!warned++)
+				fprintf(stderr, "[egl] a frame's GPU work did not finish within 1 s; not waiting for it\n");
+		}
+		eglDestroySync(display, oldest);
+		memmove(&atl_surface->tl_gpu_fences[0], &atl_surface->tl_gpu_fences[1], --atl_surface->tl_gpu_fence_count * sizeof(EGLSync));
+	}
+}
+
+static void tl_swap_gpu_fences_destroy(ATLSurface *atl_surface)
+{
+	for (int i = 0; i < atl_surface->tl_gpu_fence_count; i++)
+		eglDestroySync(atl_surface->tl_gpu_fence_display, atl_surface->tl_gpu_fences[i]);
+	atl_surface->tl_gpu_fence_count = 0;
+}
+
 gboolean tl_surface_offload_enabled(void)
 {
 	static int enabled = -1;
@@ -577,7 +658,7 @@ static void tl_export_dmabuf(EGLDisplay display, struct atl_surface_buffer *buff
 static GLuint tl_surface_back_buffer(ATLSurface *atl_surface); /* tl_makecurrent_nowait */
 EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context)
 {
-	if (getenv("ATL_DIRECT_EGL"))
+	if (tl_direct_egl())
 		return eglMakeCurrent(display, draw, read, context);
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, draw);
 	if (!native_window) {
@@ -804,12 +885,12 @@ static gboolean queue_texture(gpointer data)
 
 EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
-	if (getenv("ATL_DEBUG_SURFACE")) {
+	if (tl_debug_surface()) {
 		static int swaps = 0;
 		if ((++swaps % 50) == 1)
 			fprintf(stderr, "[surface] eglSwapBuffers #%d surface=%p\n", swaps, (void *)surface);
 	}
-	if (getenv("ATL_DIRECT_EGL"))
+	if (tl_direct_egl())
 		return eglSwapBuffers(display, surface);
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
 	if (!native_window) {
@@ -826,8 +907,12 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 		if (b->tl_frame_fence == EGL_NO_SYNC)
 			b->tl_frame_fence = NULL;
 	}
+	/* tl_swap_gpu_throttle: this frame's own fence (the buffer's one above is the compositor side's,
+	 * used and destroyed on the main thread) */
+	EGLDisplay gpu_fence_display = eglGetCurrentDisplay();
+	EGLSync gpu_fence = (atl_surface->back_buffer && tl_gpu_frames() > 0) ? eglCreateSync(gpu_fence_display, EGL_SYNC_FENCE, NULL) : EGL_NO_SYNC;
 	glFlush();
-	if (getenv("ATL_DEBUG_SURFACE")) { /* tl_frame_probe */
+	if (tl_debug_surface()) { /* tl_frame_probe */
 		static int probes = 0;
 		if ((++probes % 100) == 1 && atl_surface->back_buffer) {
 			unsigned char c[4] = {0}, e[4] = {0};
@@ -844,6 +929,9 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 		atl_surface->back_buffer = NULL;
 		g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, queue_texture, g_object_ref(atl_surface), NULL);
 	}
+	/* the frame is queued; before the next buffer goes to the app, its earlier frames' GPU work
+	 * (as dequeueBuffer's release fence wait) */
+	tl_swap_gpu_throttle(atl_surface, gpu_fence_display, gpu_fence);
 	atl_surface->back_buffer = g_async_queue_timeout_pop(atl_surface->unused_buffers, 100000); // 100ms
 	if (atl_surface->back_buffer)
 		glBindFramebuffer(GL_FRAMEBUFFER, atl_surface->back_buffer->gl_framebuffer);
@@ -855,7 +943,7 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 
 EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint attribute, EGLint *value)
 {
-	if (getenv("ATL_DIRECT_EGL"))
+	if (tl_direct_egl())
 		return eglQuerySurface(display, surface, attribute, value);
 	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
 	if (!native_window)
@@ -873,7 +961,7 @@ EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint
 
 EGLSurface bionic_eglGetCurrentSurface(EGLint readdraw)
 {
-	if (getenv("ATL_DIRECT_EGL"))
+	if (tl_direct_egl())
 		return eglGetCurrentSurface(readdraw);
 	EGLContext current_context = eglGetCurrentContext();
 	EGLSurface surface = NULL; /* tl_current_surface_fallback */
@@ -904,7 +992,7 @@ static GLuint tl_surface_back_buffer(ATLSurface *atl_surface)
 
 void bionic_glBindFramebuffer(GLenum target, GLuint framebuffer)
 {
-	if (getenv("ATL_DIRECT_EGL") || framebuffer != 0)
+	if (tl_direct_egl() || framebuffer != 0)
 		return glBindFramebuffer(target, framebuffer);
 	ATLSurface *atl_surface = tl_table_lookup(draw_surface_hashtable, eglGetCurrentContext());
 	return glBindFramebuffer(target, atl_surface ? tl_surface_back_buffer(atl_surface) : 0);
