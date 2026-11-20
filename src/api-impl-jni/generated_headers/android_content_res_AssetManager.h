@@ -381,6 +381,14 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_init
 
 /*
  * Class:     android_content_res_AssetManager
+ * Method:    nativeDestroy
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_android_content_res_AssetManager_nativeDestroy
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     android_content_res_AssetManager
  * Method:    native_setApkAssets
  * Signature: ([Ljava/lang/Object;I)V
  */

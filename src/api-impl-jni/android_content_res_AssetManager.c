@@ -39,6 +39,47 @@ void _AssetManager_unlock(struct AssetManager **asset_manager)
 	AssetManager_lock(asset_manager); \
 	__attribute__((__cleanup__(_AssetManager_unlock))) struct AssetManager *_RESERVED_am = asset_manager;
 
+/* Freeing what androidfw's C API hands out: AssetManager_delete and ApkAssets_release (art_standalone
+ * with teslalinux's tools/debvm/patches/art_standalone-androidfw-free.py). Weak, so ATL still runs on
+ * an androidfw without them: managers and their APKs are then kept for the life of the process, as
+ * they were before AssetManager.destroy() freed them, and the log says so once. */
+void AssetManager_delete(struct AssetManager *asset_manager) __attribute__((weak));
+void ApkAssets_release(const struct ApkAssets *apk_assets) __attribute__((weak));
+
+static void tl_free_unavailable(void)
+{
+	static gsize logged = 0;
+	if (g_once_init_enter(&logged)) {
+		android_log_printf(ANDROID_LOG_WARN, "AssetManager",
+		                   "this androidfw has no AssetManager_delete/ApkAssets_release: asset managers and their APKs stay loaded\n");
+		g_once_init_leave(&logged, 1);
+	}
+}
+
+/* The ApkAssets one native_setApkAssets loaded, shared by the managers AssetManager.tlNewSharing makes
+ * from it (each over its own configuration and caches, as AOSP gives each ResourcesImpl its own
+ * AssetManager over shared ApkAssets). It owns the strong reference ApkAssets_load returned; an
+ * AssetManager2 holds its ApkAssets only weakly between operations, so that reference is what keeps
+ * them loaded, and it is dropped when the last manager using the set is destroyed. */
+struct tl_apk_set {
+	gint refs;
+	int count;
+	const struct ApkAssets *assets[];
+};
+
+static void tl_apk_set_unref(struct tl_apk_set *set)
+{
+	if (!set || !g_atomic_int_dec_and_test(&set->refs))
+		return;
+	if (ApkAssets_release) {
+		for (int i = 0; i < set->count; i++)
+			ApkAssets_release(set->assets[i]);
+	} else {
+		tl_free_unavailable();
+	}
+	free(set);
+}
+
 JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_openAsset(JNIEnv *env, jobject this, jstring _file_name, jint mode)
 {
 	const char *file_name = _CSTRING(_file_name);
@@ -179,22 +220,56 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAsset
 	}
 	if (actual_count > 0)
 		AssetManager_setApkAssets(asset_manager, apk_assets, actual_count, true, true);
-	/* tl_assets_share: keep the loaded ApkAssets so sibling managers can share them */
-	const struct ApkAssets **keep = malloc(sizeof(*keep) * (actual_count > 0 ? actual_count : 1));
-	memcpy(keep, apk_assets, sizeof(*keep) * actual_count);
-	_SET_LONG_FIELD(this, "tlApkAssets", _INTPTR(keep));
+	/* the loaded ApkAssets, kept for the managers that will share them; a set this manager had
+	 * before (addAssetPath loads every path again) is let go, and stays with the managers sharing it */
+	struct tl_apk_set *set = malloc(sizeof(*set) + sizeof(set->assets[0]) * actual_count);
+	set->refs = 1;
+	set->count = actual_count;
+	memcpy(set->assets, apk_assets, sizeof(set->assets[0]) * actual_count);
+	struct tl_apk_set *old = _PTR(_GET_LONG_FIELD(this, "tlApkAssets"));
+	_SET_LONG_FIELD(this, "tlApkAssets", _INTPTR(set));
 	_SET_INT_FIELD(this, "tlApkAssetsCount", actual_count);
+	tl_apk_set_unref(old);
 }
 
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1shareApkAssets(JNIEnv *env, jobject this, jlong apk_assets_ptr, jint num_assets)
 {
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
-	const struct ApkAssets **apk_assets = _PTR(apk_assets_ptr);
-	if (num_assets > 0)
-		AssetManager_setApkAssets(asset_manager, apk_assets, num_assets, true, true);
+	struct tl_apk_set *set = _PTR(apk_assets_ptr);
+	if (!set)
+		return;
+	g_atomic_int_inc(&set->refs);
+	if (set->count > 0)
+		AssetManager_setApkAssets(asset_manager, set->assets, set->count, true, true);
+	struct tl_apk_set *old = _PTR(_GET_LONG_FIELD(this, "tlApkAssets"));
 	_SET_LONG_FIELD(this, "tlApkAssets", apk_assets_ptr);
-	_SET_INT_FIELD(this, "tlApkAssetsCount", num_assets);
+	_SET_INT_FIELD(this, "tlApkAssetsCount", set->count);
+	tl_apk_set_unref(old);
+}
+
+/* AOSP AssetManager.destroy: the native manager goes once nothing uses it (AssetManager.java calls
+ * this when its last reference is dropped, or from finalize, at most once: mObject is 0 after it). Its
+ * themes are deleted on their own (deleteTheme), which needs no manager. */
+JNIEXPORT void JNICALL Java_android_content_res_AssetManager_nativeDestroy(JNIEnv *env, jobject this)
+{
+	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
+	struct tl_apk_set *set = _PTR(_GET_LONG_FIELD(this, "tlApkAssets"));
+	_SET_LONG_FIELD(this, "mObject", 0);
+	_SET_LONG_FIELD(this, "tlApkAssets", 0);
+	_SET_INT_FIELD(this, "tlApkAssetsCount", 0);
+	if (asset_manager) {
+		if (AssetManager_delete) {
+			/* taken and released first: a call still inside it finishes before it goes */
+			AssetManager_lock(asset_manager);
+			AssetManager_unlock(asset_manager);
+			AssetManager_delete(asset_manager);
+		} else {
+			tl_free_unavailable();
+		}
+	}
+	/* after the manager: its last operation has let go of the ApkAssets it locked */
+	tl_apk_set_unref(set);
 }
 
 JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_loadResourceValue(JNIEnv *env, jobject this, jint ident, jshort density, jobject outValue, jboolean resolve)
@@ -308,6 +383,12 @@ JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_newTheme(JNIEnv *e
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_deleteTheme(JNIEnv *env, jobject this, jlong theme_ptr)
 {
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
+	/* a theme can outlive its manager (both finalized in one collection, in any order): deleting it
+	 * does not touch the manager (android::Theme's destructor frees only its own entries) */
+	if (!asset_manager) {
+		Theme_delete(_PTR(theme_ptr));
+		return;
+	}
 	AM_SCOPEDLOCK(asset_manager)
 
 	Theme_delete(_PTR(theme_ptr));

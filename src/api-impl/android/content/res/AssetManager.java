@@ -24,7 +24,6 @@ import android.os.Environment;
 import android.os.ParcelFileDescriptor;
 import android.util.AttributeSet;
 import android.util.Log;
-import android.util.Slog;
 import android.util.TypedValue;
 import java.io.*;
 import java.net.URL;
@@ -325,10 +324,19 @@ public final class AssetManager {
 	 * @see #list
 	 */
 	public final InputStream open(String fileName, int accessMode) throws IOException {
-		long asset = openAsset("assets/" + fileName, accessMode);
-		if (asset == 0)
-			throw new FileNotFoundException("file: " + fileName);
-		return new AssetInputStream(asset);
+		/* AOSP: an open stream holds a reference to the manager (its close() drops it) */
+		synchronized (this) {
+			if (!mOpen) {
+				throw new RuntimeException("Assetmanager has been closed");
+			}
+			long asset = openAsset("assets/" + fileName, accessMode);
+			if (asset != 0) {
+				AssetInputStream res = new AssetInputStream(asset);
+				incRefsLocked(res.hashCode());
+				return res;
+			}
+		}
+		throw new FileNotFoundException("file: " + fileName);
 	}
 
 	public final AssetFileDescriptor openFd(String fileName) throws IOException {
@@ -398,10 +406,18 @@ public final class AssetManager {
 	 * @param accessMode Desired access mode for retrieving the data.
 	 */
 	public final InputStream openNonAsset(int cookie, String fileName, int accessMode) throws IOException {
-		long asset = openAsset(fileName, accessMode);
-		if (asset == 0)
-			throw new FileNotFoundException("file: " + fileName);
-		return new AssetInputStream(asset);
+		synchronized (this) {
+			if (!mOpen) {
+				throw new RuntimeException("Assetmanager has been closed");
+			}
+			long asset = openAsset(fileName, accessMode);
+			if (asset != 0) {
+				AssetInputStream res = new AssetInputStream(asset);
+				incRefsLocked(res.hashCode());
+				return res;
+			}
+		}
+		throw new FileNotFoundException("file: " + fileName);
 	}
 
 	public final AssetFileDescriptor openNonAssetFd(String fileName)
@@ -529,7 +545,7 @@ public final class AssetManager {
 
 	/*package*/ final void releaseTheme(long theme) {
 		synchronized (this) {
-			// deleteTheme(theme);
+			deleteTheme(theme);
 			decRefsLocked(new Long(theme).hashCode());
 		}
 	}
@@ -818,9 +834,18 @@ public final class AssetManager {
 	}
 
 	private native final void init(int sdk_version);
-	private /*native*/ final void destroy() {
-		Slog.w(TAG, "AssetManager.destroy(): STUB");
+
+	/* AOSP: frees the native manager when its last reference is dropped (decRefsLocked) or the object
+	 * is finalized; the second of those does nothing. The APKs it shares with its siblings
+	 * (tlNewSharing) stay loaded while any of them lives. */
+	private final void destroy() {
+		synchronized (this) {
+			if (mObject != 0)
+				nativeDestroy();
+		}
 	}
+
+	private native final void nativeDestroy();
 
 	private final void incRefsLocked(int id) {
 		if (DEBUG_REFS) {
