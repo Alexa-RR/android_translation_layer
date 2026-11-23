@@ -708,15 +708,39 @@ public class BitmapDrawable extends Drawable {
 			Bitmap bitmap = null;
 			final TypedValue value = new TypedValue();
 			try {
-				r.getValue(srcResId, value, true);
+				r.getValueForDensity(srcResId, srcDensityOverride, value, true);
+				// Pretend the requested density is actually the display density. If
+				// the drawable returned is not the requested density, then force it
+				// to be scaled later by dividing its density by the ratio of
+				// requested density to actual device density. Drawables that have
+				// undefined density or no density don't need to be handled here.
+				if (srcDensityOverride > 0 && value.density > 0 && value.density != TypedValue.DENSITY_NONE) {
+					if (value.density == srcDensityOverride) {
+						value.density = r.getDisplayMetrics().densityDpi;
+					} else {
+						value.density = (value.density * r.getDisplayMetrics().densityDpi) / srcDensityOverride;
+					}
+				}
+				int density = Bitmap.DENSITY_NONE;
+				if (value.density == TypedValue.DENSITY_DEFAULT) {
+					density = DisplayMetrics.DENSITY_DEFAULT;
+				} else if (value.density != TypedValue.DENSITY_NONE) {
+					density = value.density;
+				}
 				final String file = value.string != null ? value.string.toString() : null;
 				if (file != null && file.endsWith(".xml")) {
 					/* AOSP decodes the source with ImageDecoder, which rejects anything but an
 					 * image file; a <bitmap> pointing at XML is the same error as a missing src */
 					bitmap = null;
 				} else {
+					/* AOSP's ImageDecoder source carries this density and decodes for the display
+					 * density: the bitmap is scaled when they differ (BitmapFactory's inDensity and
+					 * inTargetDensity do the same) */
 					try (InputStream is = r.openRawResource(srcResId, value)) {
-						bitmap = BitmapFactory.decodeStream(is);
+						final BitmapFactory.Options opts = new BitmapFactory.Options();
+						opts.inDensity = density;
+						opts.inTargetDensity = r.getDisplayMetrics().densityDpi;
+						bitmap = BitmapFactory.decodeStream(is, null, opts);
 					}
 				}
 			} catch (Exception e) {

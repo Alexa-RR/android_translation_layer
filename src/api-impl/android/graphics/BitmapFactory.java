@@ -444,15 +444,36 @@ public class BitmapFactory {
 	 *         decoded, or, if opts is non-null, if opts requested only the
 	 *         size be returned (in opts.outWidth and opts.outHeight)
 	 */
-	public static Bitmap decodeResource(Resources res, int id, Options opts) throws NotFoundException {
-		Bitmap bitmap = decodeStreamInternal(res.openRawResource(id), null, opts);
-		if (bitmap == null && opts != null && opts.inBitmap != null) {
+	public static Bitmap decodeResource(Resources res, int id, Options opts) {
+		Bitmap bm = null;
+		InputStream is = null;
+
+		try {
+			/* AOSP: the resource's density (its drawable-<density> directory) goes with the stream,
+			 * so the bitmap is scaled to the display density as on a device */
+			final TypedValue value = new TypedValue();
+			is = res.openRawResource(id, value);
+
+			bm = decodeResourceStream(res, value, is, null, opts);
+		} catch (Exception e) {
+			/*  do nothing.
+			    If the exception happened on open, bm will be null.
+			    If it happened on close, bm is still valid.
+			*/
+		} finally {
+			try {
+				if (is != null)
+					is.close();
+			} catch (IOException e) {
+				// Ignore
+			}
+		}
+
+		if (bm == null && opts != null && opts.inBitmap != null) {
 			throw new IllegalArgumentException("Problem decoding into existing bitmap");
 		}
-		if (bitmap != null && opts != null && opts.inScaled == false) {
-			bitmap.mutable = false;
-		}
-		return bitmap;
+
+		return bm;
 	}
 
 	/**
@@ -855,7 +876,10 @@ public class BitmapFactory {
 			opts.outConfig = Bitmap.Config.ARGB_8888;
 			return null;
 		}
-		Bitmap bm = decodeStreamInternal(new ByteArrayInputStream(data), outPadding, opts);
+		/* decoded into a new bitmap first: sampling and density scaling make another one, and with
+		 * inBitmap the final pixels (not the unscaled decode) go into the caller's bitmap, as AOSP's
+		 * decoder writes its scaled output there */
+		Bitmap bm = decodeStreamInternal(new ByteArrayInputStream(data), outPadding, null);
 		if (bm == null) {
 			opts.outWidth = opts.outHeight = -1;
 			if (opts.inBitmap != null)
@@ -869,13 +893,22 @@ public class BitmapFactory {
 			bm.recycle();
 			bm = scaled;
 		}
+		final boolean reused = opts.inBitmap != null;
+		if (reused) {
+			opts.inBitmap.transferFrom(bm);
+			bm = opts.inBitmap;
+		}
 		// AOSP setDensityFromOptions (nine-patches keep the display density: their chunk is not rescaled)
 		if (opts.inDensity != 0 && !ninePatch) {
 			bm.setDensity(opts.inDensity);
 			if (opts.inTargetDensity != 0 && opts.inDensity != opts.inTargetDensity && opts.inDensity != opts.inScreenDensity && opts.inScaled)
 				bm.setDensity(opts.inTargetDensity);
+		} else if (reused) {
+			// AOSP: the reused bitmap's density is reset
+			bm.setDensity(Bitmap.getDefaultDensity());
 		}
-		bm.mutable = opts.inMutable;
+		// a reused bitmap stays mutable (AOSP requires inBitmap to be mutable and returns it)
+		bm.mutable = reused || opts.inMutable;
 		opts.outWidth = bm.getWidth();
 		opts.outHeight = bm.getHeight();
 		opts.outConfig = Bitmap.Config.ARGB_8888;

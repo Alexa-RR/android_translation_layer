@@ -4,7 +4,6 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.content.res.TypedArray;
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.ColorFilter;
 import android.graphics.Matrix;
 import android.graphics.PorterDuff;
@@ -73,12 +72,16 @@ public class ImageView extends View {
 			setImageDrawable(null);
 			return;
 		}
-		if (this.getResources().getString(resid).endsWith(".xml")) {
-			setImageDrawable(getContext().getDrawable(resid));
-			return;
+		/* AOSP resolveUri: the context's drawable for the id, whatever its kind (an XML drawable, a
+		 * bitmap scaled from its density directory to the display's, a nine-patch); a missing
+		 * resource is logged and leaves no image */
+		Drawable d = null;
+		try {
+			d = getContext().getDrawable(resid);
+		} catch (Exception e) {
+			android.util.Log.w("ImageView", "Unable to find resource: " + resid, e);
 		}
-		final Bitmap b = BitmapFactory.decodeResource(this.getResources(), resid);
-		setImageDrawable(b != null ? new android.graphics.drawable.BitmapDrawable(getResources(), b) : null);
+		setImageDrawable(d);
 	}
 	/** AOSP: keep the drawable's aspect ratio when measuring; implies FIT_CENTER (teslalinux +text) */
 	public void setAdjustViewBounds(boolean adjustViewBounds) {

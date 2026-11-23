@@ -701,8 +701,13 @@ public final class Bitmap implements Parcelable {
 
 	public int getDensity() {
 		if (tlDensity < 0)
-			tlDensity = android.content.res.Resources.getSystem().getDisplayMetrics().densityDpi;
+			tlDensity = getDefaultDensity();
 		return tlDensity;
+	}
+
+	/** AOSP (hidden): the density new bitmaps get, the device's (DENSITY_DEVICE). */
+	static int getDefaultDensity() {
+		return android.content.res.Resources.getSystem().getDisplayMetrics().densityDpi;
 	}
 
 	/** AOSP: same size, config and pixels. */

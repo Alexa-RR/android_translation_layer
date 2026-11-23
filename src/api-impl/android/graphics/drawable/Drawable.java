@@ -532,7 +532,14 @@ public class Drawable {
 		if (is == null)
 			return null;
 		if (file == null || !file.endsWith(".9.png")) {
-			final Bitmap bm = BitmapFactory.decodeStream(is);
+			/* AOSP: decoded with the resource's density (the value's, from its drawable-<density>
+			 * directory) for the display density, so a drawable-xxhdpi PNG on a 245 dpi display is
+			 * scaled to about half its pixel size, as on a device */
+			BitmapFactory.Options opts = object instanceof BitmapFactory.Options ? (BitmapFactory.Options) object : null;
+			if (opts == null)
+				opts = new BitmapFactory.Options();
+			opts.inScreenDensity = Drawable.resolveDensity(resources, 0);
+			final Bitmap bm = BitmapFactory.decodeResourceStream(resources, value, is, null, opts);
 			if (bm == null)
 				return null;
 			return new BitmapDrawable(resources, bm);
@@ -854,10 +861,7 @@ public class Drawable {
 	private boolean mSetTintModeInvoked;
 	private boolean mSetBlendModeInvoked;
 
-	/**
-	 * AOSP: the BitmapFactory.Options variant (deprecated in AOSP). ATL's decoder takes no options
-	 * here (the drawable is decoded at the asset's own size, as the null-options path does).
-	 */
+	/** AOSP: the BitmapFactory.Options variant (deprecated in AOSP): the bitmap is decoded with them. */
 	public static Drawable createFromResourceStream(Resources res, TypedValue value, InputStream is, String srcName, BitmapFactory.Options opts) {
 		return createFromResourceStream(res, value, is, srcName, (Object) opts);
 	}
