@@ -411,6 +411,7 @@ srcs = [
 	'android/atl/TlPrewarm.java',
 	'android/atl/carhost/ATLCarSurface.java',
 	'android/atl/carhost/CarModelDump.java',
+	'android/atl/carhost/ATLCarSpeedometer.java',
 	'android/atl/carhost/ATLCarVehicle.java',
 	'android/atl/carhost/CarModelJson.java',
 	'android/atl/carhost/IConstraintHost.java',

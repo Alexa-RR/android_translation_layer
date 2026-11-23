@@ -30,8 +30,10 @@ import java.util.Map;
  *     surface the templates are laid out on (D the display's density, M the one the app's map is
  *     drawn at), {"type":"icon","id":N,"png":BASE64} for each icon before the first template
  *     that uses it, {"type":"template","seq":N,"template":{...}} (CarModelJson), and state such as
- *     {"type":"dayNight","night":B} (the car's night mode) and {"type":"mapScale","scale":S,"set":B}
- *     (the map's scale, and whether a renderer chose it since the app started);</li>
+ *     {"type":"dayNight","night":B} (the car's night mode), {"type":"mapScale","scale":S,"set":B}
+ *     (the map's scale, and whether a renderer chose it since the app started) and
+ *     {"type":"speedometer","speed":S,"units":U,"speedLimit":L,"speedKph":K,"miles":B} (the app's
+ *     speedometer, ATLCarSpeedometer, when the app reports one);</li>
  * <li>from the renderer: {"type":"click","cb":ID}, {"type":"selected","cb":ID,"index":I},
  *     {"type":"checked","cb":ID,"checked":B}, {"type":"search","cb":ID,"text":T,"submit":B},
  *     {"type":"back"}, {"type":"mapScale","scale":S}, {"type":"renderScale","scale":S} (the map
@@ -185,6 +187,23 @@ final class ATLCarAppChannel {
 	private String mapScaleMessage;
 
 	/**
+	 * Tells the renderers the app's speedometer (ATLCarSpeedometer.toJson: speed, unit, the road's
+	 * speed limit; state: new renderers get the latest reading too), for a renderer that draws the
+	 * speedometer the app would otherwise draw into its map. A reading equal to the last is not
+	 * sent again.
+	 */
+	void sendSpeedometer(String msg) {
+		synchronized (this) {
+			if (msg.equals(speedometerMessage))
+				return;
+			speedometerMessage = msg;
+		}
+		broadcast(msg);
+	}
+
+	private String speedometerMessage;
+
+	/**
 	 * Sends the map surface's size, the display's density (the renderer lays the templates out
 	 * with it) and the density the app's map is drawn at.
 	 */
@@ -295,6 +314,8 @@ final class ATLCarAppChannel {
 					initial.add(dayNightMessage);
 				if (mapScaleMessage != null)
 					initial.add(mapScaleMessage);
+				if (speedometerMessage != null)
+					initial.add(speedometerMessage);
 				initial.addAll(iconMessages.values());
 				if (templateMessage != null)
 					initial.add(templateMessage);

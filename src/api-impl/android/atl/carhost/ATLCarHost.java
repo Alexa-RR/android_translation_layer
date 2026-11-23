@@ -85,11 +85,15 @@ public final class ATLCarHost {
 
 	private static final Object sLock = new Object();
 	private static ATLCarHost sInstance;
+	/* the app's latest speedometer reading (ATLCarSpeedometer), and whether the host thread has
+	 * one to send queued already (under sLock) */
+	private static ATLCarSpeedometer sSpeedometer;
+	private static boolean sSpeedometerQueued;
 	private static volatile int sConnectionType = ATLCarConnectionProvider.CONNECTION_TYPE_NOT_CONNECTED;
 
 	private final ATLLoadedApp app;
 	private final ClassLoader appClassLoader;
-	private Handler handler;
+	private volatile Handler handler;
 
 	/* host thread */
 	private CarHost carHost;
@@ -163,6 +167,8 @@ public final class ATLCarHost {
 					}
 				});
 				channel.start();
+				/* a reading the app made before the channel was there */
+				sendSpeedometer();
 				vehicle = new ATLCarVehicle(handler, new ATLCarVehicle.Listener() {
 					@Override
 					public void onRestrictionsChanged(android.car.drivingstate.CarUxRestrictions r) {
@@ -231,6 +237,42 @@ public final class ATLCarHost {
 				connect();
 			}
 		}, delay);
+	}
+
+	/**
+	 * A speedometer reading the app made (the ATLCarSpeedometer constructor, on whatever thread the
+	 * app makes it; Waze's location thread): the host sends the latest to the renderers from its
+	 * own thread, so the app's thread never waits on a socket. Readings that arrive while one is
+	 * queued replace it. Without the car host (ATL_CAR_HOST unset) readings go nowhere.
+	 */
+	static void onSpeedometer(ATLCarSpeedometer reading) {
+		if (!isEnabled())
+			return;
+		ATLCarHost host;
+		synchronized (sLock) {
+			sSpeedometer = reading;
+			host = sInstance;
+			if (host == null || host.handler == null || sSpeedometerQueued)
+				return; /* the host sends it when its channel starts, or with the queued one */
+			sSpeedometerQueued = true;
+		}
+		host.handler.post(new Runnable() {
+			@Override
+			public void run() {
+				host.sendSpeedometer();
+			}
+		});
+	}
+
+	/* host thread: the latest reading to the renderers (the channel leaves out a repeat) */
+	private void sendSpeedometer() {
+		ATLCarSpeedometer reading;
+		synchronized (sLock) {
+			sSpeedometerQueued = false;
+			reading = sSpeedometer;
+		}
+		if (reading != null && channel != null)
+			channel.sendSpeedometer(reading.toJson());
 	}
 
 	/* ---- logging ---- */
