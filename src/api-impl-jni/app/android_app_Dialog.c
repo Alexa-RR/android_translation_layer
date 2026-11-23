@@ -105,6 +105,14 @@ JNIEXPORT void JNICALL Java_android_app_Dialog_nativeShow(JNIEnv *env, jobject t
 		gtk_overlay_add_overlay(GTK_OVERLAY(tl_main_overlay), layer);
 		gtk_overlay_set_measure_overlay(GTK_OVERLAY(tl_main_overlay), layer, FALSE);
 		gtk_overlay_set_clip_overlay(GTK_OVERLAY(tl_main_overlay), layer, TRUE);
+		/* a dialog is an application window: AOSP stacks the IME window above it, so the layer goes
+		 * below the on-screen keyboard layer when that is in the overlay (as app windows do) */
+		for (GtkWidget *c = gtk_widget_get_first_child(tl_main_overlay); c; c = gtk_widget_get_next_sibling(c)) {
+			if (gtk_widget_has_css_class(c, "tl-osk")) {
+				gtk_widget_insert_before(layer, tl_main_overlay, c);
+				break;
+			}
+		}
 	}
 	gtk_widget_set_visible(layer, TRUE);
 	tl_dialog_stack = g_list_append(g_list_remove(tl_dialog_stack, layer), layer);

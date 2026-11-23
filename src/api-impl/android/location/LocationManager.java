@@ -244,29 +244,146 @@ public class LocationManager {
 		Log.w(TAG, "requestLocationUpdates(PendingIntent) is not supported: no intent delivery service in this runtime");
 	}
 
-	public void requestSingleUpdate(String provider, LocationListener listener, Looper looper) {
-		requestLocationUpdates(provider, 0, 0, listener, looper);
+	/** The one-shot listeners of requestSingleUpdate, by the app's listener (removeUpdates finds them). */
+	private static final Map<LocationListener, LocationListener> sSingleUpdates = Collections.synchronizedMap(new HashMap<LocationListener, LocationListener>());
+
+	/** AOSP: one location, then the request ends by itself. */
+	public void requestSingleUpdate(String provider, final LocationListener listener, Looper looper) {
+		if (listener == null)
+			throw new IllegalArgumentException("invalid null listener");
+		LocationListener once = new LocationListener() {
+			@Override
+			public void onLocationChanged(Location location) {
+				if (sSingleUpdates.remove(listener) == null)
+					return; /* removed or already delivered */
+				removeUpdates(this);
+				listener.onLocationChanged(location);
+			}
+
+			@Override
+			public void onProviderEnabled(String p) {
+				listener.onProviderEnabled(p);
+			}
+
+			@Override
+			public void onProviderDisabled(String p) {
+				listener.onProviderDisabled(p);
+			}
+
+			@Override
+			public void onStatusChanged(String p, int status, Bundle extras) {
+				listener.onStatusChanged(p, status, extras);
+			}
+		};
+		sSingleUpdates.put(listener, once);
+		requestLocationUpdates(provider, 0, 0, once, looper);
 	}
 
 	public void requestSingleUpdate(Criteria criteria, LocationListener listener, Looper looper) {
 		requestSingleUpdate(getBestProvider(criteria, true), listener, looper);
 	}
 
+	/** AOSP LocationManagerService: a last location this recent is the current one. */
+	private static final long MAX_CURRENT_LOCATION_AGE_MS = 30 * 1000;
+	/** AOSP: the longest a current-location request waits for a fix. */
+	private static final long GET_CURRENT_LOCATION_MAX_TIMEOUT_MS = 30 * 1000;
+
 	public void getCurrentLocation(String provider, CancellationSignal signal, Executor executor, final Consumer<Location> consumer) {
-		final Location l = getLastKnownLocation(provider);
-		executor.execute(new Runnable() {
-			@Override
-			public void run() {
-				consumer.accept(l);
-			}
-		});
+		getCurrentLocation(provider, null, signal, executor, consumer);
 	}
 
-	public void getCurrentLocation(String provider, LocationRequest request, CancellationSignal signal, Executor executor, Consumer<Location> consumer) {
-		getCurrentLocation(provider, signal, executor, consumer);
+	/**
+	 * AOSP: the provider's location now: its last one if it is at most 30 s old, else the next fix it
+	 * reports within the request's duration (at most 30 s), else null; null at once when the provider
+	 * is disabled. A cancelled request delivers nothing.
+	 */
+	public void getCurrentLocation(final String provider, LocationRequest request, CancellationSignal signal, final Executor executor, final Consumer<Location> consumer) {
+		if (provider == null)
+			throw new IllegalArgumentException("invalid null provider");
+		if (executor == null)
+			throw new IllegalArgumentException("invalid null executor");
+		if (consumer == null)
+			throw new IllegalArgumentException("invalid null consumer");
+		if (signal != null && signal.isCanceled())
+			return;
+		final Object lock = new Object();
+		final boolean[] done = { false };
+		final Handler handler = new Handler(Looper.getMainLooper());
+		final LocationListener[] listener = { null };
+		final Runnable[] timeout = { null };
+		final Consumer<Location> finish = new Consumer<Location>() {
+			@Override
+			public void accept(final Location l) {
+				synchronized (lock) {
+					if (done[0])
+						return;
+					done[0] = true;
+				}
+				if (listener[0] != null)
+					removeUpdates(listener[0]);
+				if (timeout[0] != null)
+					handler.removeCallbacks(timeout[0]);
+				executor.execute(new Runnable() {
+					@Override
+					public void run() {
+						consumer.accept(l);
+					}
+				});
+			}
+		};
+		if (signal != null) {
+			signal.setOnCancelListener(new CancellationSignal.OnCancelListener() {
+				@Override
+				public void onCancel() {
+					synchronized (lock) {
+						done[0] = true;
+					}
+					if (listener[0] != null)
+						removeUpdates(listener[0]);
+					if (timeout[0] != null)
+						handler.removeCallbacks(timeout[0]);
+				}
+			});
+		}
+		if (!hasProvider(provider) || !isProviderEnabled(provider)) {
+			finish.accept(null);
+			return;
+		}
+		Location last = getLastKnownLocation(provider);
+		if (last != null && (SystemClock.elapsedRealtimeNanos() - last.getElapsedRealtimeNanos()) / 1000000 <= MAX_CURRENT_LOCATION_AGE_MS) {
+			finish.accept(last);
+			return;
+		}
+		long duration = GET_CURRENT_LOCATION_MAX_TIMEOUT_MS;
+		if (request != null && request.getDurationMillis() > 0)
+			duration = Math.min(duration, request.getDurationMillis());
+		listener[0] = new LocationListener() {
+			@Override
+			public void onLocationChanged(Location location) {
+				finish.accept(location);
+			}
+
+			@Override
+			public void onProviderDisabled(String p) {
+				finish.accept(null);
+			}
+		};
+		timeout[0] = new Runnable() {
+			@Override
+			public void run() {
+				finish.accept(null);
+			}
+		};
+		handler.postDelayed(timeout[0], duration);
+		addRequest(new Request(provider, 0, 0, listener[0], null, Looper.getMainLooper()), false);
 	}
 
 	private void addRequest(Request r) {
+		addRequest(r, true);
+	}
+
+	/** deliverLast: the provider's last location goes to the new request straight away (AOSP listeners). */
+	private void addRequest(Request r, boolean deliverLast) {
 		if (r.listener == null)
 			throw new IllegalArgumentException("invalid null listener");
 		if (!hasProvider(r.provider))
@@ -274,6 +391,8 @@ public class LocationManager {
 		sRequests.add(r);
 		startSources();
 		updateGnssEngine();
+		if (!deliverLast)
+			return;
 		// AOSP delivers the last known location of the provider straight away when it is fresh
 		Location last = getLastKnownLocation(r.provider);
 		if (last != null)
@@ -281,8 +400,10 @@ public class LocationManager {
 	}
 
 	public void removeUpdates(LocationListener listener) {
+		/* a single update the app cancels before it arrived */
+		LocationListener once = sSingleUpdates.remove(listener);
 		for (Request r : sRequests) {
-			if (r.listener == listener)
+			if (r.listener == listener || (once != null && r.listener == once))
 				sRequests.remove(r);
 		}
 		updateGnssEngine();
