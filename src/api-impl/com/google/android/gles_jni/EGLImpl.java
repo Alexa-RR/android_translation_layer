@@ -305,9 +305,17 @@ public class EGLImpl implements EGL10 {
 		if (sur != null) {
 			eglSurfaceId = native_eglCreateWindowSurface(dpy, cfg, sur, attrib_list);
 		} else if (native_window instanceof SurfaceTexture) {
-			// AOSP takes the SurfaceTexture's buffer producer (SurfaceTexture_getProducer) and fails this way
-			// when there is none. ATL's SurfaceTexture has no producer side yet (see TODO-real.md).
-			throw new IllegalArgumentException("Make sure the SurfaceTexture is valid");
+			// AOSP: the SurfaceTexture's buffer producer (SurfaceTexture_getProducer); a released
+			// SurfaceTexture has none
+			SurfaceTexture st = (SurfaceTexture) native_window;
+			if (st.isReleased())
+				throw new IllegalArgumentException("Make sure the SurfaceTexture is valid");
+			Surface producer = new Surface(st);
+			try {
+				eglSurfaceId = native_eglCreateWindowSurface(dpy, cfg, producer, attrib_list);
+			} finally {
+				producer.release(); /* the EGL surface keeps a window of its own */
+			}
 		} else {
 			throw new java.lang.UnsupportedOperationException(
 			    "eglCreateWindowSurface() can only be called with an instance of "

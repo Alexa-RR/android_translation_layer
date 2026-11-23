@@ -20,6 +20,7 @@
 
 #include "gl_passes.h"
 #include "native_window.h"
+#include "surface_texture.h"
 
 extern GtkWindow *window; // TODO: how do we get rid of this? the app won't pass anything useful to eglGetDisplay
 
@@ -111,11 +112,8 @@ static void PrintConfigAttributes(EGLDisplay display, EGLConfig config)
 	printf("-------------------------------------------------------------------------------\n");
 }
 
-// this is an extension that only android implements, we can hopefully get away with just stubbing it
-EGLBoolean bionic_eglPresentationTimeANDROID(EGLDisplay dpy, EGLSurface surface, EGLnsecsANDROID time)
-{
-	return EGL_TRUE;
-}
+/* EGL_ANDROID_presentation_time (bionic_eglPresentationTimeANDROID) is defined with the window
+ * surfaces' frame queue below */
 
 /* teslalinux (native-egl-swapchain.sh): glBufferData without llvmpipe's rasterizer wait */
 static int tl_gl_is_llvmpipe(void)
@@ -347,6 +345,10 @@ struct _ATLSurface {
 		EGLSync tl_frame_fence;          /* native-egl-import-fence.sh: the app's commands for this frame */
 		EGLDisplay tl_frame_fence_display;
 		void *tl_gtk_sync;               /* the GLsync GTK waits on (import context) */
+		/* tl_present_time: when the frame is to be shown (CLOCK_MONOTONIC ns): the time
+		 * eglPresentationTimeANDROID gave it, else the time it was queued (auto timestamp) */
+		gint64 present_ns;
+		gboolean auto_timestamp;
 	} buffers[NUM_BUFFERS];
 	struct atl_surface_buffer *back_buffer;
 	struct atl_surface_buffer *front_buffer;
@@ -359,6 +361,19 @@ struct _ATLSurface {
 	GAsyncQueue *unused_buffers;
 	gboolean destroyed;
 	GdkGLContext *tl_import_context; /* native-egl-import-context.sh */
+	/* tl_present_time: the frames queued for the widget, oldest first (BufferQueue's mQueue),
+	 * shared by the thread that swaps and the main thread that latches; the presentation time
+	 * eglPresentationTimeANDROID set for the next frame (0: none); the timer that latches a frame
+	 * held until its time */
+	GMutex tl_queue_lock;
+	GQueue tl_queue;
+	gint64 tl_next_present_ns;
+	guint tl_present_timer;
+	/* tl_surface_texture: the consumer of a surface made on a SurfaceTexture's window (no widget
+	 * then): frames go to its queue instead of GTK; its frames keep the buffers' EGLImages, which
+	 * are destroyed with the surface object (on the display they were made on) */
+	struct tl_surface_texture *surface_texture;
+	EGLDisplay tl_image_display;
 };
 G_DECLARE_FINAL_TYPE(ATLSurface, atl_surface, ATL, SURFACE, GObject);
 
@@ -428,9 +443,25 @@ static void atl_surface_dispose(GObject *object)
 	}
 	tl_import_context_end(previous);
 	g_clear_object(&atl_surface->tl_import_context);
-	g_async_queue_unref(atl_surface->unused_buffers);
-	g_async_queue_unref(atl_surface->vsync);
-	g_object_unref(atl_surface->surface_view_widget);
+	g_mutex_lock(&atl_surface->tl_queue_lock);
+	g_queue_clear(&atl_surface->tl_queue);
+	g_mutex_unlock(&atl_surface->tl_queue_lock);
+	if (atl_surface->surface_texture) {
+		/* tl_surface_texture: the consumer has given every frame back (each held a reference) */
+		for (int i = 0; i < NUM_BUFFERS; i++) {
+			if (atl_surface->buffers[i].egl_image && atl_surface->tl_image_display)
+				eglDestroyImage(atl_surface->tl_image_display, atl_surface->buffers[i].egl_image);
+			atl_surface->buffers[i].egl_image = NULL;
+		}
+		tl_surface_texture_unref(atl_surface->surface_texture);
+		atl_surface->surface_texture = NULL;
+	}
+	if (atl_surface->unused_buffers)
+		g_async_queue_unref(atl_surface->unused_buffers);
+	if (atl_surface->vsync)
+		g_async_queue_unref(atl_surface->vsync);
+	if (atl_surface->surface_view_widget)
+		g_object_unref(atl_surface->surface_view_widget);
 }
 static void atl_surface_class_init(ATLSurfaceClass *class)
 {
@@ -440,6 +471,8 @@ static void atl_surface_init(ATLSurface *self)
 {
 	for (int i = 0; i < NUM_BUFFERS; i++)
 		self->buffers[i].dmabuf_fd = -1; /* tl_surface_offload: no dmabuf until the buffer exists */
+	g_mutex_init(&self->tl_queue_lock);
+	g_queue_init(&self->tl_queue);
 }
 G_DEFINE_TYPE(ATLSurface, atl_surface, G_TYPE_OBJECT)
 
@@ -470,6 +503,13 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 	ANativeWindow_acquire(native_window);
 
 	PrintConfigAttributes(display, config);
+	/* tl_surface_texture: AOSP connects the surface as the queue's producer, which fails when
+	 * another producer is connected or the SurfaceTexture was released (EGL_BAD_ALLOC) */
+	if (native_window->surface_texture && (tl_direct_egl() /* the driver has no SurfaceTexture windows */
+	                                       || !tl_surface_texture_connect(native_window->surface_texture))) {
+		ANativeWindow_release(native_window);
+		return EGL_NO_SURFACE;
+	}
 	EGLSurface surface;
 	if (tl_direct_egl()) {
 		surface = eglCreateWindowSurface(display, config, native_window->egl_window, attrib_list);
@@ -477,7 +517,10 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 		ATLSurface *atl_surface = g_object_new(atl_surface_get_type(), NULL);
 		atl_surface->width = native_window->width;
 		atl_surface->height = native_window->height;
-		atl_surface->surface_view_widget = SURFACE_VIEW_WIDGET(g_object_ref(native_window->surface_view_widget));
+		if (native_window->surface_texture) /* tl_surface_texture: a SurfaceTexture consumes the frames */
+			atl_surface->surface_texture = tl_surface_texture_ref(native_window->surface_texture);
+		else
+			atl_surface->surface_view_widget = SURFACE_VIEW_WIDGET(g_object_ref(native_window->surface_view_widget));
 		EGLint alpha_size = 0;
 		EGLint depth_size = 0;
 		EGLint stencil_size = 0;
@@ -563,13 +606,18 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 		ret = eglDestroySurface(display, surface);
 	} else {
 		ATLSurface *atl_surface = surface;
+		if (atl_surface->surface_texture) /* AOSP: eglDestroySurface disconnects the producer */
+			tl_surface_texture_disconnect(atl_surface->surface_texture);
 		tl_forget_surface(surface);
 		atl_surface->destroyed = TRUE;
 		tl_swap_gpu_fences_destroy(atl_surface);
+		atl_surface->tl_image_display = display;
 		for (int i = 0; i < NUM_BUFFERS; i++) {
-			if (atl_surface->buffers[i].egl_image)
+			/* tl_surface_texture: a frame the consumer holds keeps its image (until dispose) */
+			if (atl_surface->buffers[i].egl_image && !atl_surface->surface_texture) {
 				eglDestroyImage(display, atl_surface->buffers[i].egl_image);
-			atl_surface->buffers[i].egl_image = 0;
+				atl_surface->buffers[i].egl_image = 0;
+			}
 			if (atl_surface->buffers[i].dmabuf_fd >= 0)
 				close(atl_surface->buffers[i].dmabuf_fd);
 			atl_surface->buffers[i].dmabuf_fd = -1;
@@ -773,7 +821,8 @@ static EGLBoolean tl_make_current(EGLDisplay display, EGLSurface draw, EGLSurfac
 			glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, atl_surface->buffers[i].gl_texture, 0);
 			if (atl_surface->renderbuffer)
 				glFramebufferRenderbuffer(GL_FRAMEBUFFER, atl_surface->renderbuffer_attachment, GL_RENDERBUFFER, atl_surface->renderbuffer);
-			tl_export_dmabuf(eglGetCurrentDisplay(), &atl_surface->buffers[i]);
+			if (atl_surface->surface_view_widget) /* frames for GTK only; a SurfaceTexture binds the image */
+				tl_export_dmabuf(eglGetCurrentDisplay(), &atl_surface->buffers[i]);
 			g_async_queue_push(atl_surface->unused_buffers, &atl_surface->buffers[i]);
 		}
 		glBindTexture(GL_TEXTURE_2D, previousTexture);
@@ -852,6 +901,120 @@ static void tl_set_frame_callback(ATLSurface *atl_surface)
 	widget->frame_callback = frame_callback;
 }
 
+/* ---- tl_present_time: the frame queue and EGL_ANDROID_presentation_time ---- */
+
+/* BufferQueueCore: a presentation time more than this far from the expected one is garbage */
+#define TL_MAX_REASONABLE_NSEC 1000000000LL
+
+/* when a frame latched now is shown: the widget's frame clock's next predicted presentation (the
+ * last presentation time and refresh interval it knows, else 60 Hz from now), as SurfaceFlinger's
+ * expectedPresentTime */
+static gint64 tl_expected_present_ns(ATLSurface *atl_surface, gint64 *interval_ns)
+{
+	GdkFrameClock *clock = gtk_widget_get_frame_clock(GTK_WIDGET(atl_surface->surface_view_widget));
+	gint64 now = g_get_monotonic_time();
+	gint64 interval = 0, present = 0;
+	if (clock)
+		gdk_frame_clock_get_refresh_info(clock, now, &interval, &present);
+	if (interval <= 0)
+		interval = 16667;
+	if (present <= now)
+		present = now + interval;
+	if (interval_ns)
+		*interval_ns = interval * 1000;
+	return present * 1000;
+}
+
+static gboolean queue_texture(gpointer data);
+
+static gboolean tl_present_timer_fired(gpointer data)
+{
+	ATLSurface *atl_surface = data;
+	atl_surface->tl_present_timer = 0;
+	return queue_texture(data); /* takes over the timer's reference */
+}
+
+/*
+ * The frame to show now, or NULL (main thread): BufferQueueConsumer::acquireBuffer with the
+ * expected presentation time. A frame that has a presentation time is dropped when the next one is
+ * due too; the oldest frame is due when it has no presentation time of its own, when its time has
+ * come by the expected presentation, or when the time is unreasonably far (over a second) ahead;
+ * a frame that is not due stays queued, and a timer latches it when it is. Dropped frames go back
+ * to the producer as released buffers (with the frame token a shown frame gives).
+ */
+static struct atl_surface_buffer *tl_latch_frame(ATLSurface *atl_surface)
+{
+	gint64 interval_ns;
+	gint64 expected = tl_expected_present_ns(atl_surface, &interval_ns);
+	struct atl_surface_buffer *due = NULL;
+	GSList *dropped = NULL;
+	g_mutex_lock(&atl_surface->tl_queue_lock);
+	while (g_queue_get_length(&atl_surface->tl_queue) > 1) {
+		struct atl_surface_buffer *front = g_queue_peek_head(&atl_surface->tl_queue);
+		if (front->auto_timestamp)
+			break;
+		struct atl_surface_buffer *next = g_queue_peek_nth(&atl_surface->tl_queue, 1);
+		gint64 desired = next->present_ns;
+		if (desired < expected - TL_MAX_REASONABLE_NSEC || desired > expected)
+			break; /* the next one is for later (or its time is garbage): keep this one */
+		dropped = g_slist_prepend(dropped, g_queue_pop_head(&atl_surface->tl_queue));
+	}
+	struct atl_surface_buffer *front = g_queue_peek_head(&atl_surface->tl_queue);
+	if (front) {
+		gint64 desired = front->present_ns;
+		gboolean is_due = front->auto_timestamp || desired <= expected || desired > expected + TL_MAX_REASONABLE_NSEC;
+		if (is_due) {
+			due = g_queue_pop_head(&atl_surface->tl_queue);
+			if (tl_debug_surface() && !due->auto_timestamp)
+				fprintf(stderr, "[surface] latched a frame for %lld at %lld (expected presentation %lld)\n",
+				        (long long)due->present_ns, (long long)g_get_monotonic_time() * 1000, (long long)expected);
+		} else if (!atl_surface->tl_present_timer) {
+			guint delay_ms = (guint)((desired - expected + 999999) / 1000000);
+			atl_surface->tl_present_timer = g_timeout_add_full(G_PRIORITY_HIGH_IDLE + 20, delay_ms ? delay_ms : 1,
+			                                                   tl_present_timer_fired, g_object_ref(atl_surface), NULL);
+		}
+	}
+	g_mutex_unlock(&atl_surface->tl_queue_lock);
+	for (GSList *l = dropped; l; l = l->next) {
+		g_async_queue_push(atl_surface->unused_buffers, l->data);
+		g_async_queue_push(atl_surface->vsync, GINT_TO_POINTER(1));
+	}
+	if (dropped && tl_debug_surface())
+		fprintf(stderr, "[surface] %u frame(s) dropped for a newer one that is due\n", g_slist_length(dropped));
+	g_slist_free(dropped);
+	return due;
+}
+
+/*
+ * EGL_ANDROID_presentation_time: the time (CLOCK_MONOTONIC ns) the next frame queued on the surface
+ * (its next eglSwapBuffers) is to be shown, no earlier; the frame waits in the surface's queue
+ * until then (tl_latch_frame). AOSP: native_window_set_buffers_timestamp on the surface's window.
+ */
+EGLBoolean bionic_eglPresentationTimeANDROID(EGLDisplay dpy, EGLSurface surface, EGLnsecsANDROID time)
+{
+	if (surface == EGL_NO_SURFACE)
+		return EGL_FALSE;
+	if (!tl_direct_egl() && tl_table_lookup(egl_surface_hashtable, surface)) {
+		ATLSurface *atl_surface = surface;
+		g_mutex_lock(&atl_surface->tl_queue_lock);
+		atl_surface->tl_next_present_ns = time;
+		g_mutex_unlock(&atl_surface->tl_queue_lock);
+		return EGL_TRUE;
+	}
+	/* a surface without ATL's frame queue (a pbuffer, the driver's own window surface with
+	 * ATL_DIRECT_EGL): the driver's extension where it has one; AOSP fails such a surface with
+	 * EGL_BAD_SURFACE */
+	static EGLBoolean (*driver_presentation_time)(EGLDisplay, EGLSurface, EGLnsecsANDROID);
+	static gboolean looked_up;
+	if (!looked_up) {
+		looked_up = TRUE;
+		const char *exts = eglQueryString(dpy, EGL_EXTENSIONS);
+		if (exts && strstr(exts, "EGL_ANDROID_presentation_time"))
+			driver_presentation_time = (void *)eglGetProcAddress("eglPresentationTimeANDROID");
+	}
+	return driver_presentation_time ? driver_presentation_time(dpy, surface, time) : EGL_FALSE;
+}
+
 static gboolean queue_texture(gpointer data)
 {
 	static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC glEGLImageTargetTexture2DOES = NULL;
@@ -860,7 +1023,13 @@ static gboolean queue_texture(gpointer data)
 		g_object_unref(atl_surface);
 		return G_SOURCE_REMOVE;
 	}
-	struct atl_surface_buffer *buffer = atl_surface->front_buffer;
+	struct atl_surface_buffer *buffer = tl_latch_frame(atl_surface);
+	if (!buffer) {
+		/* nothing due (held for its presentation time, or latched by an earlier call) */
+		g_object_unref(atl_surface);
+		return G_SOURCE_REMOVE;
+	}
+	atl_surface->front_buffer = buffer;
 	int frame_fd = buffer->dmabuf_fd >= 0 ? fcntl(buffer->dmabuf_fd, F_DUPFD_CLOEXEC, 0) : -1;
 	if (frame_fd >= 0) {
 		/* tl_surface_offload: the dmabuf itself; the GPU work that drew it is waited for through the
@@ -972,6 +1141,15 @@ static gboolean queue_texture(gpointer data)
 	return G_SOURCE_REMOVE;
 }
 
+/* tl_surface_texture: the consumer gave a frame's buffer back (any thread) */
+static void tl_st_buffer_released(void *owner, void *buffer)
+{
+	ATLSurface *atl_surface = owner;
+	if (atl_surface->unused_buffers)
+		g_async_queue_push(atl_surface->unused_buffers, buffer);
+	g_object_unref(atl_surface);
+}
+
 EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 {
 	if (tl_debug_surface()) {
@@ -1021,9 +1199,46 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 			        atl_surface->back_buffer->gl_framebuffer, c[0], c[1], c[2], c[3], e[0], e[1], e[2], e[3], glGetError());
 		}
 	}
-	if (atl_surface->back_buffer) {
+	gboolean tl_abandoned = FALSE;
+	if (atl_surface->back_buffer && atl_surface->surface_texture) {
+		/* tl_surface_texture: the frame goes to the SurfaceTexture's queue with its fence and
+		 * timestamp; its buffer comes back when the consumer latches a newer frame (no vsync:
+		 * the consumer, not the screen, paces it) */
+		struct atl_surface_buffer *queued = atl_surface->back_buffer;
+		struct tl_st_frame frame = {
+			.image = queued->egl_image,
+			.display = queued->tl_frame_fence ? queued->tl_frame_fence_display : eglGetCurrentDisplay(),
+			.fence = queued->tl_frame_fence ? queued->tl_frame_fence : EGL_NO_SYNC,
+			.width = atl_surface->width,
+			.height = atl_surface->height,
+			.release = tl_st_buffer_released,
+			.owner = g_object_ref(atl_surface),
+			.buffer = queued,
+		};
+		queued->tl_frame_fence = NULL; /* the SurfaceTexture owns it now */
+		g_mutex_lock(&atl_surface->tl_queue_lock);
+		/* AOSP Surface::queueBuffer: the auto timestamp is systemTime(SYSTEM_TIME_MONOTONIC) */
+		frame.timestamp_ns = atl_surface->tl_next_present_ns ? atl_surface->tl_next_present_ns : g_get_monotonic_time() * 1000;
+		atl_surface->tl_next_present_ns = 0;
+		g_mutex_unlock(&atl_surface->tl_queue_lock);
+		atl_surface->back_buffer = NULL;
+		tl_abandoned = !tl_surface_texture_queue(atl_surface->surface_texture, &frame);
+	} else if (atl_surface->back_buffer) {
 		g_async_queue_timeout_pop(atl_surface->vsync, 50000); // 50ms
-		atl_surface->front_buffer = atl_surface->back_buffer;
+		/* tl_present_time: the frame joins the queue with its presentation time (or the time it
+		 * was queued: BufferQueue's auto timestamp); the main thread latches it */
+		struct atl_surface_buffer *queued = atl_surface->back_buffer;
+		g_mutex_lock(&atl_surface->tl_queue_lock);
+		if (atl_surface->tl_next_present_ns) {
+			queued->present_ns = atl_surface->tl_next_present_ns;
+			queued->auto_timestamp = FALSE;
+		} else {
+			queued->present_ns = g_get_monotonic_time() * 1000;
+			queued->auto_timestamp = TRUE;
+		}
+		atl_surface->tl_next_present_ns = 0;
+		g_queue_push_tail(&atl_surface->tl_queue, queued);
+		g_mutex_unlock(&atl_surface->tl_queue_lock);
 		atl_surface->back_buffer = NULL;
 		g_idle_add_full(G_PRIORITY_HIGH_IDLE + 20, queue_texture, g_object_ref(atl_surface), NULL);
 	}
@@ -1031,14 +1246,16 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	 * (as dequeueBuffer's release fence wait) */
 	tl_swap_gpu_throttle(atl_surface, gpu_fence_display, gpu_fence);
 	atl_surface->back_buffer = g_async_queue_timeout_pop(atl_surface->unused_buffers, 100000); // 100ms
+	/* AOSP: a frame for a released SurfaceTexture fails the swap (EGL_BAD_SURFACE) */
+	EGLBoolean swapped = tl_abandoned ? EGL_FALSE : EGL_TRUE;
 	if (!app_default_framebuffer)
-		return EGL_TRUE; /* the app's own framebuffer stays bound; binding 0 later gets the new buffer */
+		return swapped; /* the app's own framebuffer stays bound; binding 0 later gets the new buffer */
 	if (atl_surface->back_buffer)
 		glBindFramebuffer(GL_FRAMEBUFFER, atl_surface->back_buffer->gl_framebuffer);
 	else
 		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-	return EGL_TRUE;
+	return swapped;
 }
 
 EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint attribute, EGLint *value)

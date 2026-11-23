@@ -299,12 +299,29 @@ JNIEXPORT jobject JNICALL Java_android_opengl_EGL14__1eglCreateWindowSurface(JNI
 	return toEGLHandle(env, eglsurfaceClass, eglsurfaceConstructor, ret);
 }
 
+/* AOSP: an EGL window surface on the SurfaceTexture's buffer producer; ANativeWindow_fromSurface
+ * gives the SurfaceTexture's producer window (libandroid surface_texture.c) for it */
 JNIEXPORT jobject JNICALL Java_android_opengl_EGL14__1eglCreateWindowSurfaceTexture(JNIEnv *env, jclass this, jobject dpy, jobject config, jobject win, jintArray attrib_list_ref, jint offset)
 {
-	/* On Android a SurfaceTexture is a GL consumer the producer side can render into; ATL has no
-	 * SurfaceTexture streaming implementation, so this cannot produce a usable surface. */
-	throw_exc(env, "java/lang/UnsupportedOperationException", "eglCreateWindowSurface(SurfaceTexture): SurfaceTexture is not implemented in this runtime");
-	return NULL;
+	EGLDisplay dpy_native = (EGLDisplay)fromEGLHandle(env, egldisplayGetHandleID, dpy);
+	EGLConfig config_native = (EGLConfig)fromEGLHandle(env, eglconfigGetHandleID, config);
+	if ((*env)->ExceptionCheck(env))
+		return NULL;
+	if (!check_array(env, attrib_list_ref, offset, 0, "attrib_list", "offset", "attrib_list too short"))
+		return NULL;
+	struct ANativeWindow *window = win ? ANativeWindow_fromSurface(env, win) : NULL;
+	if (window == NULL || !window->surface_texture) {
+		if (window)
+			ANativeWindow_release(window);
+		throw_exc(env, "java/lang/IllegalArgumentException", "Make sure the SurfaceTexture is valid");
+		return NULL;
+	}
+	jint *attrib_base;
+	EGLint *attrib_list = get_int_attribs(env, attrib_list_ref, offset, &attrib_base);
+	EGLSurface ret = bionic_eglCreateWindowSurface(dpy_native, config_native, window, attrib_list);
+	release_int_attribs(env, attrib_list_ref, attrib_base);
+	ANativeWindow_release(window); /* the EGL surface holds its own reference */
+	return toEGLHandle(env, eglsurfaceClass, eglsurfaceConstructor, ret);
 }
 
 JNIEXPORT jobject JNICALL Java_android_opengl_EGL14_eglCreatePbufferSurface(JNIEnv *env, jclass this, jobject dpy, jobject config, jintArray attrib_list_ref, jint offset)

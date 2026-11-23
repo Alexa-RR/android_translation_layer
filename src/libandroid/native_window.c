@@ -48,6 +48,8 @@
 #include <assert.h>
 #include <dlfcn.h>
 
+#include "surface_texture.h"
+
 #include <jni.h>
 
 // FIXME: put the header in a common place
@@ -120,7 +122,9 @@ void ANativeWindow_release(struct ANativeWindow *native_window)
 	native_window->refcount--;
 	if (native_window->refcount == 0) {
 		g_clear_signal_handler(&native_window->resize_handler, native_window->surface_view_widget);
-		if (native_window->wayland_display) {
+		if (native_window->surface_texture) {
+			tl_surface_texture_window_gone(native_window->surface_texture, native_window);
+		} else if (native_window->wayland_display) {
 			wl_egl_window_destroy((struct wl_egl_window *)native_window->egl_window);
 			wl_surface_destroy(native_window->wayland_surface);
 		} else if (native_window->x11_display) {
@@ -132,11 +136,15 @@ void ANativeWindow_release(struct ANativeWindow *native_window)
 
 int32_t ANativeWindow_getWidth(struct ANativeWindow *native_window)
 {
+	if (!native_window->surface_view_widget) /* a SurfaceTexture's window: its buffer size */
+		return native_window->width;
 	return gtk_widget_get_width(native_window->surface_view_widget);
 }
 
 int32_t ANativeWindow_getHeight(struct ANativeWindow *native_window)
 {
+	if (!native_window->surface_view_widget)
+		return native_window->height;
 	return gtk_widget_get_height(native_window->surface_view_widget);
 }
 
@@ -251,12 +259,37 @@ static void on_resize(GtkWidget *self, gint width, gint height, ANativeWindow *n
 }
 
 extern GThread *main_thread_id;
+
+/* tl_surface_texture: a Surface made on a SurfaceTexture (Surface(SurfaceTexture)) or the
+ * SurfaceTexture itself: its producer window, else NULL */
+static ANativeWindow *tl_surface_texture_window_of(JNIEnv *env, jobject object)
+{
+	jclass cls = (*env)->GetObjectClass(env, object);
+	jfieldID field = (*env)->GetFieldID(env, cls, "tlSurfaceTexture", "J");
+	if (!field) {
+		(*env)->ExceptionClear(env);
+		field = (*env)->GetFieldID(env, cls, "mSurfaceTexture", "J");
+	}
+	if (!field) {
+		(*env)->ExceptionClear(env);
+		return NULL;
+	}
+	struct tl_surface_texture *st = (struct tl_surface_texture *)(intptr_t)(*env)->GetLongField(env, object, field);
+	if (!st)
+		return NULL;
+	return tl_surface_texture_get_window(st);
+}
+
 ANativeWindow *ANativeWindow_fromSurface(JNIEnv *env, jobject surface)
 {
 	int width;
 	int height;
 
 	int ret;
+
+	ANativeWindow *texture_window = tl_surface_texture_window_of(env, surface);
+	if (texture_window)
+		return texture_window;
 
 	graphene_point_t pos;
 	double off_x;

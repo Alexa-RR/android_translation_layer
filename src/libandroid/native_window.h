@@ -5,6 +5,8 @@
 #include <gtk/gtk.h>
 #include <jni.h>
 
+struct tl_surface_texture;
+
 struct ANativeWindow {
 	EGLNativeWindowType egl_window;
 	GtkWidget *surface_view_widget;
@@ -15,7 +17,11 @@ struct ANativeWindow {
 	int refcount;
 	int width;
 	int height;
+	/* a SurfaceTexture's producer window (surface_texture.c): no widget, the frames go to it */
+	struct tl_surface_texture *surface_texture;
 };
+
+void tl_surface_texture_window_gone(struct tl_surface_texture *st, struct ANativeWindow *window);
 
 struct ANativeWindow *ANativeWindow_fromSurface(JNIEnv *env, jobject surface);
 EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, struct ANativeWindow *native_window, EGLint const *attrib_list);
