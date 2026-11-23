@@ -51,6 +51,14 @@ public class AndroidKeyStoreKeyFactorySpi extends KeyFactorySpi {
 			AndroidKeyStorePublicKey.EC e = (AndroidKeyStorePublicKey.EC) k;
 			return (T) new ECPublicKeySpec(e.getW(), e.getParams());
 		}
+		if (java.security.spec.XECPublicKeySpec.class.equals(keySpecClass) && k instanceof AndroidKeyStorePublicKey.XDH) {
+			AndroidKeyStorePublicKey.XDH x = (AndroidKeyStorePublicKey.XDH) k;
+			return (T) new java.security.spec.XECPublicKeySpec(x.getParams(), x.getU());
+		}
+		if (java.security.spec.EdECPublicKeySpec.class.equals(keySpecClass) && k instanceof AndroidKeyStorePublicKey.EdEC) {
+			AndroidKeyStorePublicKey.EdEC e = (AndroidKeyStorePublicKey.EdEC) k;
+			return (T) new java.security.spec.EdECPublicKeySpec(e.getParams(), e.getPoint());
+		}
 		throw new InvalidKeySpecException("Unsupported key spec: " + keySpecClass.getName());
 	}
 

@@ -63,6 +63,11 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
 		public EC() { super(KeyProperties.KEY_ALGORITHM_EC); }
 	}
 
+	/** AOSP: XDH represents the Curve 25519 providers; it is treated as EC */
+	public static class XDH extends AndroidKeyStoreKeyPairGeneratorSpi {
+		public XDH() { super(KeyProperties.KEY_ALGORITHM_EC); }
+	}
+
 	private static final int EC_DEFAULT_KEY_SIZE = 256;
 	private static final int RSA_DEFAULT_KEY_SIZE = 2048;
 	private static final int RSA_MIN_KEY_SIZE = 512;
@@ -82,6 +87,9 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
 		SUPPORTED_EC_CURVE_NAME_TO_SIZE.put("secp384r1", 384);
 		SUPPORTED_EC_CURVE_NAME_TO_SIZE.put("p-521", 521);
 		SUPPORTED_EC_CURVE_NAME_TO_SIZE.put("secp521r1", 521);
+		// Aliases for Curve 25519
+		SUPPORTED_EC_CURVE_NAME_TO_SIZE.put(KeyStoreCurve25519.CURVE_X25519, 256);
+		SUPPORTED_EC_CURVE_NAME_TO_SIZE.put(KeyStoreCurve25519.CURVE_ED25519, 256);
 		SUPPORTED_EC_CURVE_NAMES.addAll(SUPPORTED_EC_CURVE_NAME_TO_SIZE.keySet());
 		Collections.sort(SUPPORTED_EC_CURVE_NAMES);
 		SUPPORTED_EC_CURVE_SIZES.addAll(new HashSet<Integer>(SUPPORTED_EC_CURVE_NAME_TO_SIZE.values()));
@@ -131,6 +139,18 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
 				} catch (NullPointerException | IllegalArgumentException e) {
 					throw new InvalidAlgorithmParameterException(e);
 				}
+			} else if (params instanceof java.security.spec.NamedParameterSpec) {
+				java.security.spec.NamedParameterSpec namedSpec = (java.security.spec.NamedParameterSpec) params;
+				// Android Keystore cannot support initialization from a NamedParameterSpec
+				// because an alias for the key is needed (a KeyGenParameterSpec cannot be
+				// constructed).
+				if (namedSpec.getName().equalsIgnoreCase(java.security.spec.NamedParameterSpec.X25519.getName())
+				    || namedSpec.getName().equalsIgnoreCase(java.security.spec.NamedParameterSpec.ED25519.getName())) {
+					throw new IllegalArgumentException("This KeyPairGenerator cannot be initialized using NamedParameterSpec."
+					    + " use " + KeyGenParameterSpec.class.getName() + " or " + KeyPairGeneratorSpec.class.getName());
+				} else {
+					throw new InvalidAlgorithmParameterException("Unsupported algorithm specified via NamedParameterSpec: " + namedSpec.getName());
+				}
 			} else {
 				throw new InvalidAlgorithmParameterException("Unsupported params class: " + params.getClass().getName()
 				    + ". Supported: " + KeyGenParameterSpec.class.getName() + ", " + KeyPairGeneratorSpec.class.getName());
@@ -139,6 +159,7 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
 			algorithm = alg;
 			keySizeBits = s.getKeySize();
 			initAlgorithmSpecificParameters();
+			checkCorrectKeyPurposeForCurve(s);
 			if (keySizeBits == -1)
 				keySizeBits = KeyProperties.KEY_ALGORITHM_EC.equals(alg) ? EC_DEFAULT_KEY_SIZE : RSA_DEFAULT_KEY_SIZE;
 			checkValidKeySize(alg, keySizeBits, s.isStrongBoxBacked());
@@ -269,12 +290,50 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
 		}
 	}
 
+	/* AOSP checkCorrectKeyPurposeForCurve: x25519 is for key agreement only, ed25519 for signing
+	 * and attesting */
+	private void checkCorrectKeyPurposeForCurve(KeyGenParameterSpec s) throws InvalidAlgorithmParameterException {
+		if (!KeyStoreCurve25519.isCurve25519(ecCurveName))
+			return;
+		if (ecCurveName.equalsIgnoreCase(KeyStoreCurve25519.CURVE_X25519) && s.getPurposes() != KeyProperties.PURPOSE_AGREE_KEY) {
+			throw new InvalidAlgorithmParameterException("x25519 may only be used for key agreement.");
+		} else if (ecCurveName.equalsIgnoreCase(KeyStoreCurve25519.CURVE_ED25519) && !hasOnlyAllowedPurposeForEd25519(s.getPurposes())) {
+			throw new InvalidAlgorithmParameterException("ed25519 may not be used for key agreement.");
+		}
+	}
+
+	private static boolean hasOnlyAllowedPurposeForEd25519(int purpose) {
+		final int allowedPurposes = KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY | KeyProperties.PURPOSE_ATTEST_KEY;
+		boolean hasAllowedPurpose = (purpose & allowedPurposes) != 0;
+		boolean hasDisallowedPurpose = (purpose & ~allowedPurposes) != 0;
+		return hasAllowedPurpose && !hasDisallowedPurpose;
+	}
+
 	private static String curveName(int bits) {
 		switch (bits) {
 			case 224: return "secp224r1";
 			case 384: return "secp384r1";
 			case 521: return "secp521r1";
 			default: return "secp256r1";
+		}
+	}
+
+	/* an x25519 or ed25519 key pair (KeyStoreCurve25519), with its certificate */
+	private KeyPair generateCurve25519KeyPair(KeyGenParameterSpec s) {
+		String storage = KeyStoreCurve25519.storageAlgorithm(ecCurveName);
+		byte[][] pair = KeyStoreCurve25519.generate(ecCurveName, rng);
+		KeyAuthorizations a = KeyAuthorizations.of(keySizeBits, KeyProperties.ORIGIN_GENERATED, s.getPurposes(), s.getBlockModes(),
+		    s.getEncryptionPaddings(), s.getSignaturePaddings(), s.isDigestsSpecified() ? s.getDigests() : new String[0],
+		    s.isRandomizedEncryptionRequired(), s.getKeyValidityStart(), s.getKeyValidityForOriginationEnd(),
+		    s.getKeyValidityForConsumptionEnd(), s.getMaxUsageCount());
+		X509Certificate cert = SelfSignedCertificate.makeCurve25519(storage, pair[1], pair[0], s.getPurposes(),
+		    s.getCertificateSubject(), s.getCertificateSerialNumber(), s.getCertificateNotBefore(), s.getCertificateNotAfter());
+		try {
+			AndroidKeyStorePrivateKey priv = KeyStoreStorage.putKeyPair(s.getKeystoreAlias(), storage, pair[0], a,
+			    Collections.singletonList(cert.getEncoded()));
+			return new KeyPair(priv.getPublicKey(), priv);
+		} catch (IOException | CertificateEncodingException e) {
+			throw new ProviderException("Failed to generate key pair.", e);
 		}
 	}
 
@@ -290,6 +349,9 @@ public abstract class AndroidKeyStoreKeyPairGeneratorSpi extends KeyPairGenerato
 			throw new ProviderException("Failed to generate key pair.", new KeyStoreException("Attestation keys are not provisioned on this device (ATTESTATION_KEYS_NOT_PROVISIONED)"));
 		if (s.isUserPresenceRequired() || s.isUserConfirmationRequired())
 			throw new ProviderException("Failed to generate key pair.", new KeyStoreException("Unsupported tag (" + (s.isUserPresenceRequired() ? "TRUSTED_USER_PRESENCE_REQUIRED" : "TRUSTED_CONFIRMATION_REQUIRED") + ")"));
+
+		if (KeyStoreCurve25519.isCurve25519(ecCurveName))
+			return generateCurve25519KeyPair(s);
 
 		KeyPair platform;
 		try {

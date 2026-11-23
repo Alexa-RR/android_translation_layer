@@ -196,6 +196,36 @@ final class SelfSignedCertificate {
 	}
 
 	/**
+	 * The certificate of a new Curve 25519 key pair: an Ed25519 key that may sign signs it itself
+	 * (RFC 8410: the Ed25519 algorithm identifier, no parameters), an X25519 key, which cannot sign,
+	 * gets the fake signature of an EC key.
+	 */
+	static X509Certificate makeCurve25519(String storageAlgorithm, byte[] spki, byte[] pkcs8, int purposes,
+	                                      X500Principal subject, BigInteger serial, Date notBefore, Date notAfter) {
+		boolean ed25519 = KeyStoreCurve25519.ED25519.equalsIgnoreCase(storageAlgorithm);
+		boolean signs = ed25519 && (purposes & KeyProperties.PURPOSE_SIGN) != 0;
+		byte[] sigAlg = signs ? sequence(oid(KeyStoreCurve25519.ED25519_OID)) : sequence(oid(OID_ECDSA_SHA256));
+		byte[] name = subject.getEncoded();
+		byte[] ext = keyUsageExtension(purposes);
+		byte[] tbs = sequence(
+		    tlv(0xa0, integer(BigInteger.valueOf(2))), /* v3 */
+		    integer(serial),
+		    sigAlg,
+		    name,
+		    sequence(time(notBefore), time(notAfter)),
+		    name,
+		    spki,
+		    ext != null ? ext : new byte[0]);
+		byte[] signature = signs ? TlEd25519.sign(TlEd25519.secretFromPkcs8(pkcs8), tbs) : sequence();
+		byte[] cert = sequence(tbs, sigAlg, bitString(signature, 0));
+		try {
+			return (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(new ByteArrayInputStream(cert));
+		} catch (GeneralSecurityException e) {
+			throw new ProviderException("Failed to make the key pair's certificate", e);
+		}
+	}
+
+	/**
 	 * The certificate of a new key pair.
 	 *
 	 * @param digest the digest to self-sign with (certificateDigest), or null for the fake signature

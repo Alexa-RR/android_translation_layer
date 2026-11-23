@@ -1,0 +1,92 @@
+diff --git a/tools/debian/atl-tests/platform/PlatformTest.java b/tools/debian/atl-tests/platform/PlatformTest.java
+index b942ea0..7d6fecf 100644
+--- a/tools/debian/atl-tests/platform/PlatformTest.java
++++ b/tools/debian/atl-tests/platform/PlatformTest.java
+@@ -498,6 +498,13 @@ public class PlatformTest {
+ 		}
+ 	}
+ 
++	static byte[] hexBytes(String hex) {
++		byte[] out = new byte[hex.length() / 2];
++		for (int i = 0; i < out.length; i++)
++			out[i] = (byte) Integer.parseInt(hex.substring(2 * i, 2 * i + 2), 16);
++		return out;
++	}
++
+ 	static boolean verifies(String algorithm, java.security.PublicKey pub, byte[] data, byte[] sig) throws Exception {
+ 		java.security.Signature v = java.security.Signature.getInstance(algorithm);
+ 		v.initVerify(pub);
+@@ -631,6 +638,73 @@ public class PlatformTest {
+ 		    && agreeCert.getKeyUsage() != null && agreeCert.getKeyUsage()[4] && !agreeCert.getKeyUsage()[0], agreeCert.getSigAlgName());
+ 		refused("ECDH with a signing key is refused (purpose)", InvalidKeyException.class, () -> javax.crypto.KeyAgreement.getInstance("ECDH", "AndroidKeyStore").init(ec.getPrivate()));
+ 
++		/* Curve 25519 (API 33): x25519 for key agreement, ed25519 for signing */
++		final java.security.KeyPair xk = keyPair("EC", new KeyGenParameterSpec.Builder("t-x25519", KeyProperties.PURPOSE_AGREE_KEY)
++		    .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("x25519")).build());
++		check("an x25519 key pair: XECPublicKey/XECPrivateKey on X25519", xk.getPublic() instanceof java.security.interfaces.XECPublicKey
++		    && "XDH".equals(xk.getPublic().getAlgorithm()) && xk.getPrivate() instanceof java.security.interfaces.XECPrivateKey
++		    && "X25519".equals(((java.security.spec.NamedParameterSpec) ((java.security.interfaces.XECKey) xk.getPrivate()).getParams()).getName()), xk.getPublic().getAlgorithm());
++		java.security.KeyPairGenerator xg = java.security.KeyPairGenerator.getInstance("XDH");
++		java.security.KeyPair xpeer = xg.generateKeyPair();
++		javax.crypto.KeyAgreement xmine = javax.crypto.KeyAgreement.getInstance("XDH", "AndroidKeyStore");
++		xmine.init(xk.getPrivate());
++		xmine.doPhase(xpeer.getPublic(), true);
++		javax.crypto.KeyAgreement xtheirs = javax.crypto.KeyAgreement.getInstance("XDH");
++		xtheirs.init(xpeer.getPrivate());
++		xtheirs.doPhase(java.security.KeyFactory.getInstance("XDH").generatePublic(new java.security.spec.X509EncodedKeySpec(xk.getPublic().getEncoded())), true);
++		check("KeyAgreement XDH with a keystore x25519 key: the same secret as the peer's", Arrays.equals(xmine.generateSecret(), xtheirs.generateSecret()), "");
++		java.security.KeyPair x2 = keyPair("XDH", new KeyGenParameterSpec.Builder("t-x25519b", KeyProperties.PURPOSE_AGREE_KEY)
++		    .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("x25519")).build());
++		javax.crypto.KeyAgreement xa = javax.crypto.KeyAgreement.getInstance("XDH", "AndroidKeyStore");
++		xa.init(xk.getPrivate());
++		xa.doPhase(x2.getPublic(), true);
++		javax.crypto.KeyAgreement xb = javax.crypto.KeyAgreement.getInstance("XDH", "AndroidKeyStore");
++		xb.init(x2.getPrivate());
++		xb.doPhase(xk.getPublic(), true);
++		check("KeyPairGenerator XDH; two keystore x25519 keys agree", Arrays.equals(xa.generateSecret(), xb.generateSecret()), "");
++		refused("x25519 for signing is refused", InvalidAlgorithmParameterException.class, () -> keyPair("EC", new KeyGenParameterSpec.Builder("t-x", KeyProperties.PURPOSE_SIGN)
++		    .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("x25519")).build()));
++		refused("ed25519 for key agreement is refused", InvalidAlgorithmParameterException.class, () -> keyPair("EC", new KeyGenParameterSpec.Builder("t-x", KeyProperties.PURPOSE_AGREE_KEY)
++		    .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("ed25519")).build()));
++		final java.security.KeyPair ed = keyPair("EC", new KeyGenParameterSpec.Builder("t-ed25519", KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY)
++		    .setAlgorithmParameterSpec(new java.security.spec.ECGenParameterSpec("ed25519")).setDigests(KeyProperties.DIGEST_NONE).build());
++		check("an ed25519 key pair: EdECPublicKey on Ed25519", ed.getPublic() instanceof java.security.interfaces.EdECPublicKey
++		    && "Ed25519".equals(((java.security.interfaces.EdECKey) ed.getPublic()).getParams().getName()), ed.getPublic().getAlgorithm());
++		java.security.Signature es = java.security.Signature.getInstance("Ed25519");
++		es.initSign(ed.getPrivate());
++		es.update(data);
++		byte[] esig = es.sign();
++		java.security.Signature ev = java.security.Signature.getInstance("Ed25519");
++		ev.initVerify(ed.getPublic());
++		ev.update(data);
++		boolean edOk = ev.verify(esig);
++		ev.initVerify(ed.getPublic());
++		ev.update(new byte[] {1, 2, 3});
++		check("Signature Ed25519: a 64-byte signature that verifies, and not for other data", esig.length == 64 && edOk && !ev.verify(esig), "" + esig.length);
++		/* RFC 8032 7.1 TEST 1: the empty message's signature with the given secret */
++		byte[] rfcSecret = hexBytes("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60");
++		byte[] rfcPkcs8 = new byte[48];
++		System.arraycopy(hexBytes("302e020100300506032b657004220420"), 0, rfcPkcs8, 0, 16);
++		System.arraycopy(rfcSecret, 0, rfcPkcs8, 16, 32);
++		/* the algorithm the certificate's public key reports (KeyStore.PrivateKeyEntry checks they match) */
++		final String edAlgorithm = ks.getCertificate("t-ed25519").getPublicKey().getAlgorithm();
++		java.security.PrivateKey rfcKey = new java.security.PrivateKey() {
++			public String getAlgorithm() { return edAlgorithm; }
++			public String getFormat() { return "PKCS#8"; }
++			public byte[] getEncoded() { return rfcPkcs8.clone(); }
++		};
++		ks.setEntry("t-ed-import", new KeyStore.PrivateKeyEntry(rfcKey, new java.security.cert.Certificate[] {ks.getCertificate("t-ed25519")}),
++		    new android.security.keystore.KeyProtection.Builder(KeyProperties.PURPOSE_SIGN).setDigests(KeyProperties.DIGEST_NONE).build());
++		java.security.PrivateKey imported = (java.security.PrivateKey) ks.getKey("t-ed-import", null);
++		java.security.Signature ri = java.security.Signature.getInstance("Ed25519");
++		ri.initSign(imported);
++		byte[] rfcSig = ri.sign();
++		check("an imported Ed25519 key signs as RFC 8032 test 1", Arrays.equals(rfcSig, hexBytes("e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e06522490155"
++		    + "5fb8821590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b")), "");
++		java.security.cert.X509Certificate edCert = (java.security.cert.X509Certificate) ks.getCertificate("t-ed25519");
++		check("the ed25519 key's certificate is self-signed with Ed25519", edCert != null && "1.3.101.112".equals(edCert.getSigAlgOID()), edCert != null ? edCert.getSigAlgOID() : null);
++		refused("Ed25519 with an EC key is refused", InvalidKeyException.class, () -> java.security.Signature.getInstance("Ed25519").initSign(ec.getPrivate()));
++
+ 		/* KeyGenParameterSpec checks and what this device has not */
+ 		refused("RSA key size 256 is refused", InvalidAlgorithmParameterException.class,
+ 		    () -> keyPair("RSA", new KeyGenParameterSpec.Builder("t-x", KeyProperties.PURPOSE_SIGN).setKeySize(256).build()));

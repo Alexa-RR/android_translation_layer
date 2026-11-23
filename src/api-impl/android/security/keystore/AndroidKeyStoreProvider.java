@@ -32,9 +32,13 @@ public final class AndroidKeyStoreProvider extends Provider {
 		}
 		put("KeyPairGenerator.EC", PACKAGE_NAME + ".AndroidKeyStoreKeyPairGeneratorSpi$EC");
 		put("KeyPairGenerator.RSA", PACKAGE_NAME + ".AndroidKeyStoreKeyPairGeneratorSpi$RSA");
+		/* AOSP (API 33): the Curve 25519 keys, generated as EC keys (x25519, ed25519) or through XDH */
+		put("KeyPairGenerator.XDH", PACKAGE_NAME + ".AndroidKeyStoreKeyPairGeneratorSpi$XDH");
 		putKeyFactoryImpl("EC");
 		putKeyFactoryImpl("RSA");
+		putKeyFactoryImpl("XDH");
 		put("KeyAgreement.ECDH", PACKAGE_NAME + ".AndroidKeyStoreKeyAgreementSpi$ECDH");
+		put("KeyAgreement.XDH", PACKAGE_NAME + ".AndroidKeyStoreKeyAgreementSpi$XDH");
 	}
 
 	/* AOSP: keystore key factories only take keystore keys */
@@ -112,6 +116,11 @@ public final class AndroidKeyStoreProvider extends Provider {
 				put("Alg.Alias.Signature." + e[1], name);
 				put("Alg.Alias.Signature." + e[2] + "with1.2.840.10045.2.1", name);
 			}
+			/* AOSP: Ed25519 (keystore keys sign; the platform has no Ed25519 here, so Ed25519
+			 * public keys verify through this implementation too) */
+			put("Signature.Ed25519", PACKAGE_NAME + ".AndroidKeyStoreEd25519SignatureSpi");
+			put("Alg.Alias.Signature.EdDSA", "Ed25519");
+			put("Alg.Alias.Signature." + KeyStoreCurve25519.ED25519_OID, "Ed25519");
 		}
 
 		private void putSymmetricCipherImpl(String transformation, String impl) {

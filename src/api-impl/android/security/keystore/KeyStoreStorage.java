@@ -88,8 +88,13 @@ final class KeyStoreStorage {
 	private static AndroidKeyStorePrivateKey keyPair(String alias, String algorithm, byte[] pkcs8, KeyAuthorizations auth, byte[] leaf) {
 		byte[] spki;
 		try {
-			spki = parseCertificate(leaf).getPublicKey().getEncoded();
-		} catch (java.security.cert.CertificateException e) {
+			/* Curve 25519: the certificate's key info as it is (the platform's certificate has no
+			 * PublicKey for Ed25519) */
+			if (KeyProperties.KEY_ALGORITHM_XDH.equalsIgnoreCase(algorithm) || KeyStoreCurve25519.ED25519.equalsIgnoreCase(algorithm))
+				spki = KeyStoreCurve25519.spkiOfCertificate(leaf);
+			else
+				spki = parseCertificate(leaf).getPublicKey().getEncoded();
+		} catch (java.security.cert.CertificateException | RuntimeException e) {
 			throw new IllegalArgumentException("unreadable certificate of " + alias, e);
 		}
 		return AndroidKeyStorePrivateKey.create(alias, algorithm, pkcs8, auth, AndroidKeyStorePublicKey.create(alias, algorithm, spki, auth));

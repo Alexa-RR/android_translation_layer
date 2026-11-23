@@ -209,12 +209,19 @@ public class AndroidKeyStore extends KeyStoreSpi {
 		if (pkcs8 == null)
 			throw new KeyStoreException("Private key did not export any key material");
 		String algorithm = key.getAlgorithm().toUpperCase(Locale.ROOT);
-		if (!KeyProperties.KEY_ALGORITHM_RSA.equals(algorithm) && !KeyProperties.KEY_ALGORITHM_EC.equals(algorithm))
+		/* AOSP (API 33): X25519 ("XDH") and Ed25519 keys are imported as EC keys on Curve 25519 */
+		String storage = algorithm;
+		if ("XDH".equals(algorithm) || "X25519".equals(algorithm))
+			storage = KeyProperties.KEY_ALGORITHM_XDH;
+		else if (TlEd25519.secretFromPkcs8(pkcs8) != null)
+			storage = KeyStoreCurve25519.ED25519;
+		else if (!KeyProperties.KEY_ALGORITHM_RSA.equals(algorithm) && !KeyProperties.KEY_ALGORITHM_EC.equals(algorithm))
 			throw new KeyStoreException("Unsupported key algorithm: " + key.getAlgorithm());
-		int bits = keySize(key, chain[0]);
+		final boolean curve25519 = !storage.equals(algorithm);
+		int bits = curve25519 ? 256 : keySize(key, chain[0]);
 		KeyAuthorizations a;
 		if (param == null) {
-			a = KeyAuthorizations.legacyKeyPair(algorithm, bits, KeyProperties.ORIGIN_IMPORTED);
+			a = KeyAuthorizations.legacyKeyPair(curve25519 ? KeyProperties.KEY_ALGORITHM_EC : algorithm, bits, KeyProperties.ORIGIN_IMPORTED);
 		} else {
 			KeyProtection p = (KeyProtection) param;
 			checkProtection(p);
@@ -231,8 +238,9 @@ public class AndroidKeyStore extends KeyStoreSpi {
 		}
 		try {
 			/* the key must be one KeyMint can read */
-			java.security.KeyFactory.getInstance(algorithm).generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(pkcs8));
-			KeyStoreStorage.putKeyPair(alias, algorithm, pkcs8, a, ders);
+			if (!KeyStoreCurve25519.ED25519.equals(storage))
+				java.security.KeyFactory.getInstance(storage).generatePrivate(new java.security.spec.PKCS8EncodedKeySpec(pkcs8));
+			KeyStoreStorage.putKeyPair(alias, storage, pkcs8, a, ders);
 		} catch (IOException | java.security.GeneralSecurityException | RuntimeException e) {
 			throw new KeyStoreException("Failed to store private key", e);
 		}

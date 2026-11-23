@@ -26,6 +26,15 @@ public abstract class AndroidKeyStoreKeyAgreementSpi extends KeyAgreementSpi {
 		public ECDH() { super("ECDH"); }
 	}
 
+	/** AOSP: X25519 key agreement (a keystore x25519 key, the peer's X25519 public key) */
+	public static final class XDH extends AndroidKeyStoreKeyAgreementSpi {
+		public XDH() { super("XDH"); }
+	}
+
+	private boolean isXdh() {
+		return "XDH".equals(algorithm);
+	}
+
 	private final String algorithm;
 	private AndroidKeyStorePrivateKey key;
 	private KeyAgreement delegate;
@@ -45,8 +54,8 @@ public abstract class AndroidKeyStoreKeyAgreementSpi extends KeyAgreementSpi {
 		if (!(key instanceof AndroidKeyStorePrivateKey))
 			throw new InvalidKeyException("Only Android KeyStore private keys supported. Key: " + key);
 		AndroidKeyStorePrivateKey k = (AndroidKeyStorePrivateKey) key;
-		if (!KeyProperties.KEY_ALGORITHM_EC.equalsIgnoreCase(k.getAlgorithm()))
-			throw new InvalidKeyException("Unsupported key algorithm: " + k.getAlgorithm() + ". Only EC supported");
+		if (isXdh() ? !(k instanceof AndroidKeyStorePrivateKey.XDH) : !KeyProperties.KEY_ALGORITHM_EC.equalsIgnoreCase(k.getAlgorithm()))
+			throw new InvalidKeyException("Unsupported key algorithm: " + k.getAlgorithm() + ". Only " + (isXdh() ? "XDH" : "EC") + " supported");
 		k.auth.checkBeginAsymmetric(KeyProperties.PURPOSE_AGREE_KEY, null, null, null);
 		try {
 			KeyStoreStorage.consumeUse(k);
@@ -76,6 +85,26 @@ public abstract class AndroidKeyStoreKeyAgreementSpi extends KeyAgreementSpi {
 			throw new InvalidKeyException("key == null");
 		if (!lastPhase)
 			throw new IllegalStateException("Only one other party allowed");
+		if (isXdh()) {
+			/* AOSP XDH: an X25519 public key (an XECPublicKey, or the platform's own X25519 key,
+			 * which is none); the platform's agreement takes it in its own form */
+			if (!(peerKey instanceof PublicKey) || !("XDH".equalsIgnoreCase(peerKey.getAlgorithm()) || "X25519".equalsIgnoreCase(peerKey.getAlgorithm())))
+				throw new InvalidKeyException("Only XDH public keys supported. Key: " + peerKey);
+			if (peerKey instanceof java.security.interfaces.XECKey && ((java.security.interfaces.XECKey) peerKey).getParams() instanceof java.security.spec.NamedParameterSpec
+			    && !"X25519".equalsIgnoreCase(((java.security.spec.NamedParameterSpec) ((java.security.interfaces.XECKey) peerKey).getParams()).getName()))
+				throw new InvalidKeyException("Public and Private key parameters are different.");
+			Key platformPeer = peerKey;
+			if (peerKey instanceof AndroidKeyStoreKey || peerKey instanceof java.security.interfaces.XECKey) {
+				try {
+					platformPeer = java.security.KeyFactory.getInstance("XDH").generatePublic(new java.security.spec.X509EncodedKeySpec(peerKey.getEncoded()));
+				} catch (NoSuchAlgorithmException | java.security.spec.InvalidKeySpecException e) {
+					throw new InvalidKeyException("Unreadable X25519 public key", e);
+				}
+			}
+			delegate.doPhase(platformPeer, true);
+			secret = delegate.generateSecret();
+			return null;
+		}
 		if (!(peerKey instanceof PublicKey) || !(peerKey instanceof ECKey))
 			throw new InvalidKeyException("Only public keys supported. Key: " + peerKey);
 		if (((ECKey) peerKey).getParams().getCurve().getField().getFieldSize() != ((ECKey) key).getParams().getCurve().getField().getFieldSize())

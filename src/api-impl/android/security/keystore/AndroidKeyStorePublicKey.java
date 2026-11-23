@@ -29,6 +29,12 @@ public abstract class AndroidKeyStorePublicKey extends AndroidKeyStoreKey implem
 
 	/** the public key of a stored pair from its SubjectPublicKeyInfo (the certificate's) */
 	static AndroidKeyStorePublicKey create(String alias, String algorithm, byte[] spki, KeyAuthorizations auth) {
+		/* Curve 25519 (AOSP keystore2 AndroidKeyStoreXDHPublicKey / AndroidKeyStoreEdECPublicKey):
+		 * made from the encoding itself, as AOSP does */
+		if (KeyStoreCurve25519.ED25519.equalsIgnoreCase(algorithm))
+			return new EdEC(alias, spki, auth);
+		if (KeyProperties.KEY_ALGORITHM_XDH.equalsIgnoreCase(algorithm))
+			return new XDH(alias, spki, auth);
 		PublicKey platform;
 		try {
 			platform = KeyFactory.getInstance(algorithm).generatePublic(new X509EncodedKeySpec(spki));
@@ -74,5 +80,51 @@ public abstract class AndroidKeyStorePublicKey extends AndroidKeyStoreKey implem
 		@Override public ECParameterSpec getParams() { return params; }
 		@Override public ECPoint getW() { return w; }
 		@Override public String toString() { return "AndroidKeyStoreECPublicKey{" + getAlias() + "}"; }
+	}
+
+	/* Copyright (C) 2021 The Android Open Source Project (AOSP keystore2 AndroidKeyStoreXDHPublicKey) */
+	public static final class XDH extends AndroidKeyStorePublicKey implements java.security.interfaces.XECPublicKey {
+		private final int preambleLength;
+
+		XDH(String alias, byte[] spki, KeyAuthorizations auth) {
+			super(alias, KeyProperties.KEY_ALGORITHM_XDH, spki, auth);
+			preambleLength = KeyStoreCurve25519.x25519PreambleLength(spki);
+			if (preambleLength == 0)
+				throw new IllegalArgumentException("Key size is not correct size");
+		}
+
+		/* AOSP: the encoded key's bytes as a big-endian integer */
+		@Override public BigInteger getU() { return new BigInteger(Arrays.copyOfRange(getEncoded(), preambleLength, getEncoded().length)); }
+		@Override public java.security.spec.AlgorithmParameterSpec getParams() { return java.security.spec.NamedParameterSpec.X25519; }
+		@Override public String getFormat() { return "x.509"; }
+		@Override public String toString() { return "AndroidKeyStoreXDHPublicKey{" + getAlias() + "}"; }
+	}
+
+	/* Copyright (C) 2022 The Android Open Source Project (AOSP keystore2 AndroidKeyStoreEdECPublicKey) */
+	public static final class EdEC extends AndroidKeyStorePublicKey implements java.security.interfaces.EdECPublicKey {
+		private final java.security.spec.EdECPoint point;
+
+		EdEC(String alias, byte[] spki, KeyAuthorizations auth) {
+			super(alias, KeyStoreCurve25519.ED25519_OID, spki, auth);
+			byte[] coordinates = TlEd25519.publicFromSpki(spki);
+			if (coordinates == null)
+				throw new IllegalArgumentException("Key size is not correct size");
+			// Oddity of the key is the most-significant bit of the last byte.
+			boolean isOdd = (0x80 & coordinates[coordinates.length - 1]) != 0;
+			coordinates[coordinates.length - 1] &= (byte) 0x7f;
+			// Representation of Y is in little-endian, according to rfc8032 section-3.1.
+			for (int i = 0, j = coordinates.length - 1; i < j; i++, j--) {
+				byte t = coordinates[i];
+				coordinates[i] = coordinates[j];
+				coordinates[j] = t;
+			}
+			point = new java.security.spec.EdECPoint(isOdd, new BigInteger(1, coordinates));
+		}
+
+		/** the 32-byte RFC 8032 encoding of the key */
+		byte[] raw() { return TlEd25519.publicFromSpki(getEncoded()); }
+		@Override public java.security.spec.NamedParameterSpec getParams() { return java.security.spec.NamedParameterSpec.ED25519; }
+		@Override public java.security.spec.EdECPoint getPoint() { return point; }
+		@Override public String toString() { return "AndroidKeyStoreEdECPublicKey{" + getAlias() + "}"; }
 	}
 }
