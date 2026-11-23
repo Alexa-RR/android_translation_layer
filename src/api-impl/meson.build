@@ -356,6 +356,7 @@ srcs = [
 	'android/atl/ATLPackageSettings.java',
 	'android/atl/car/ATLCarService.java',
 	'android/atl/car/CarServicePermissions.java',
+	'android/atl/car/UxRestrictionsConfigStore.java',
 	'android/car/Car.java',
 	'android/car/CarAppFocusManager.java',
 	'android/car/CarFeatures.java',

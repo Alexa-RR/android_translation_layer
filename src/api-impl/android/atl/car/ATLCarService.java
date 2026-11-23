@@ -100,10 +100,17 @@ public final class ATLCarService extends ICar.Stub {
 		mHandler.post(mDrivingState::start);
 	}
 
+	/*
+	 * AOSP CarServiceUtils.assertPermission: the caller must hold the permission. The car service's
+	 * binders are local objects here, so a call from the app reaches them without a transaction
+	 * and checkCallingOrSelfPermission would check the car service's own (system) context; the
+	 * caller is Binder's calling identity, which is the app's uid on its own threads.
+	 */
 	private void enforcePermission(String permission) {
-		if (Binder.getCallingUid() == Process.SYSTEM_UID)
+		int uid = Binder.getCallingUid();
+		if (uid == Process.SYSTEM_UID)
 			return;
-		if (mContext.checkCallingOrSelfPermission(permission) != PackageManager.PERMISSION_GRANTED)
+		if (mContext.checkPermission(permission, Binder.getCallingPid(), uid) != PackageManager.PERMISSION_GRANTED)
 			throw new SecurityException("requires " + permission);
 	}
 
@@ -320,17 +327,72 @@ public final class ATLCarService extends ICar.Stub {
 	}
 
 	private final class UxRestrictionsService extends ICarUxRestrictionsManager.Stub {
-		/* AOSP service/res/xml/car_ux_restrictions_map.xml */
-		private final CarUxRestrictionsConfiguration mConfig;
+		private final UxRestrictionsConfigStore mStore = UxRestrictionsConfigStore.forSystem();
+		/* AOSP loadConfig: the production file, else service/res/xml/car_ux_restrictions_map.xml */
+		private List<CarUxRestrictionsConfiguration> mConfigs;
+		/* the configuration of the one physical display */
+		private CarUxRestrictionsConfiguration mConfig;
+		/* whether this start has decided on promoting the staged configuration */
+		private boolean mPromotionDecided;
 		private final ArrayList<ICarUxRestrictionsChangeListener> mListeners = new ArrayList<>();
 		private final HashMap<Integer, Integer> mVirtualToPhysical = new HashMap<>();
 		private String mMode = CarUxRestrictionsManagerModes.BASELINE;
 		private CarUxRestrictions mCurrent;
 
 		UxRestrictionsService() {
-			mConfig = defaultUxRestrictionsConfiguration();
+			applyConfigs(loadConfigs());
 			/* AOSP: until the driving state is known, the restrictions are fully restricted */
 			mCurrent = createUnrestricted(false);
+		}
+
+		private List<CarUxRestrictionsConfiguration> loadConfigs() {
+			List<CarUxRestrictionsConfiguration> configs;
+			synchronized (mStore) {
+				configs = mStore.readProductionConfig();
+			}
+			if (configs != null && !configs.isEmpty())
+				return configs;
+			return new ArrayList<>(Collections.singletonList(defaultUxRestrictionsConfiguration()));
+		}
+
+		/* AOSP CarUxRestrictionsManagerService.init: one configuration per display port; the
+		 * single display of this device takes the configuration without a port, else the first */
+		private synchronized void applyConfigs(List<CarUxRestrictionsConfiguration> configs) {
+			mConfigs = configs;
+			CarUxRestrictionsConfiguration chosen = null;
+			for (CarUxRestrictionsConfiguration c : configs) {
+				if (c.getPhysicalPort() == null) {
+					chosen = c;
+					break;
+				}
+			}
+			mConfig = chosen != null ? chosen : configs.get(0);
+		}
+
+		/*
+		 * AOSP promoteStagedConfig runs in loadConfig at boot and only while the car is parked, so
+		 * the restrictions never change during a drive. Here the car service starts with the
+		 * runtime, before the first speed reading, and the vehicle has no gear signal (it is never
+		 * known to be PARKED): the staged configuration is promoted at the first known driving
+		 * state of a start if the vehicle is standing (IDLING or PARKED), and stays staged for the
+		 * next start otherwise.
+		 */
+		private void promoteStagedConfigOnce(int drivingState) {
+			synchronized (this) {
+				if (mPromotionDecided || drivingState == CarDrivingStateEvent.DRIVING_STATE_UNKNOWN)
+					return;
+				mPromotionDecided = true;
+			}
+			if (drivingState != CarDrivingStateEvent.DRIVING_STATE_PARKED && drivingState != CarDrivingStateEvent.DRIVING_STATE_IDLING)
+				return;
+			boolean promoted;
+			synchronized (mStore) {
+				promoted = mStore.promoteStagedConfig();
+			}
+			if (!promoted)
+				return;
+			Slog.i(TAG, "promoted the staged UX restrictions configuration");
+			applyConfigs(loadConfigs());
 		}
 
 		/* AOSP CarUxRestrictionsManagerService: fully restricted while the state is unknown */
@@ -339,6 +401,7 @@ public final class ATLCarService extends ICar.Stub {
 		}
 
 		void update(int drivingState, float speed) {
+			promoteStagedConfigOnce(drivingState);
 			CarUxRestrictions next;
 			synchronized (this) {
 				next = drivingState == CarDrivingStateEvent.DRIVING_STATE_UNKNOWN ? createUnrestricted(false)
@@ -392,21 +455,27 @@ public final class ATLCarService extends ICar.Stub {
 		@Override
 		public boolean saveUxRestrictionsConfigurationForNextBoot(List<CarUxRestrictionsConfiguration> configs) {
 			enforcePermission(Car.PERMISSION_CAR_UX_RESTRICTIONS_CONFIGURATION);
-			/* AOSP writes a staged config file; this device's restrictions are the AOSP defaults
-			 * and there is no persistent staging area, so nothing is staged */
-			return false;
+			/* AOSP: validated, then written to the staged file; promoted at the next start */
+			synchronized (mStore) {
+				return mStore.saveForNextBoot(configs);
+			}
 		}
 
 		@Override
 		public List<CarUxRestrictionsConfiguration> getStagedConfigs() {
 			enforcePermission(Car.PERMISSION_CAR_UX_RESTRICTIONS_CONFIGURATION);
-			return new ArrayList<>();
+			/* AOSP: null when nothing is staged */
+			synchronized (mStore) {
+				return mStore.getStagedConfigs();
+			}
 		}
 
 		@Override
 		public List<CarUxRestrictionsConfiguration> getConfigs() {
 			enforcePermission(Car.PERMISSION_CAR_UX_RESTRICTIONS_CONFIGURATION);
-			return new ArrayList<>(Collections.singletonList(mConfig));
+			synchronized (this) {
+				return new ArrayList<>(mConfigs);
+			}
 		}
 
 		@Override
