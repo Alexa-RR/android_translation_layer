@@ -264,6 +264,7 @@ srcs = [
 	'android/os/NetworkOnMainThreadException.java',
 	'android/os/DeadSystemException.java',
 	'android/content/AttributionSource.java',
+	'android/app/usage/ExternalStorageStats.java',
 	'android/app/usage/StorageStatsManager.java',
 	'android/app/usage/StorageStats.java',
 	'android/Manifest.java',

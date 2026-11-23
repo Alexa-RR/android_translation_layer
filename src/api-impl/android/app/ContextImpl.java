@@ -213,7 +213,9 @@ public final class ContextImpl extends Context {
 			case "jobscheduler":
 				return job_scheduler;
 			case "appops":
-				return new AppOpsManager();
+				return new AppOpsManager(this);
+			case "storagestats":
+				return new android.app.usage.StorageStatsManager(this);
 			case "user":
 				return new UserManager();
 			case "captioning":
@@ -293,6 +295,7 @@ public final class ContextImpl extends Context {
 			case "android.hardware.display.DisplayManager": return "display";
 			case "android.os.UserManager": return "user";
 			case "android.app.AppOpsManager": return "appops";
+			case "android.app.usage.StorageStatsManager": return "storagestats";
 			case "android.hardware.camera2.CameraManager": return "camera";
 			case "android.view.accessibility.AccessibilityManager": return "accessibility";
 			case "android.bluetooth.BluetoothManager": return "bluetooth";
