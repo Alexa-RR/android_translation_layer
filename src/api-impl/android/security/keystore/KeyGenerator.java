@@ -133,10 +133,15 @@ public abstract class KeyGenerator extends KeyGeneratorSpi {
 	 * false, GateKeeper has no secure user id), so a key bound to user authentication cannot be
 	 * made.
 	 */
-	private static void addUserAuthArgs(KeyGenParameterSpec s) {
-		if (!s.isUserAuthenticationRequired())
+	static void addUserAuthArgs(KeyGenParameterSpec s) {
+		addUserAuthArgs(s.isUserAuthenticationRequired(), s.getUserAuthenticationValidityDurationSeconds());
+	}
+
+	/** the same for a key being imported (KeyProtection) */
+	static void addUserAuthArgs(boolean userAuthenticationRequired, int validityDurationSeconds) {
+		if (!userAuthenticationRequired)
 			return;
-		if (s.getUserAuthenticationValidityDurationSeconds() == 0)
+		if (validityDurationSeconds == 0)
 			throw new IllegalStateException("At least one biometric must be enrolled to create keys requiring user authentication for every use");
 		throw new IllegalStateException("Secure lock screen must be enabled to create keys requiring user authentication");
 	}

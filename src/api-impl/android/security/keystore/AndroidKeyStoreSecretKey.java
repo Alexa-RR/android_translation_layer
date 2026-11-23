@@ -6,24 +6,12 @@ import javax.crypto.SecretKey;
  * handed to the application: getEncoded()/getFormat() return null, so only the keystore's own
  * Cipher/Mac implementations (which read it package-privately) can use it. The authorization list
  * the key was made with travels with it (KeyMint keeps it in the key blob). */
-public final class AndroidKeyStoreSecretKey implements SecretKey {
-	private final String alias;
-	private final String algorithm;
-	final byte[] material;
-	final KeyAuthorizations auth;
-
+public final class AndroidKeyStoreSecretKey extends AndroidKeyStoreKey implements SecretKey {
 	AndroidKeyStoreSecretKey(String alias, String algorithm, byte[] material, KeyAuthorizations auth) {
-		this.alias = alias;
-		this.algorithm = algorithm;
-		this.material = material;
-		this.auth = auth;
+		super(alias, algorithm, material, auth);
 	}
 
-	public String getAlias() { return alias; }
-	@Override public String getAlgorithm() { return algorithm; }
-	@Override public String getFormat() { return null; }
-	@Override public byte[] getEncoded() { return null; }
-	@Override public int hashCode() { return alias.hashCode(); }
-	@Override public boolean equals(Object o) { return o instanceof AndroidKeyStoreSecretKey && ((AndroidKeyStoreSecretKey) o).alias.equals(alias); }
-	@Override public String toString() { return "AndroidKeyStoreSecretKey{" + alias + ", " + algorithm + "}"; }
+	@Override public int hashCode() { return getAlias().hashCode(); }
+	@Override public boolean equals(Object o) { return o instanceof AndroidKeyStoreSecretKey && ((AndroidKeyStoreSecretKey) o).getAlias().equals(getAlias()); }
+	@Override public String toString() { return "AndroidKeyStoreSecretKey{" + getAlias() + ", " + getAlgorithm() + "}"; }
 }

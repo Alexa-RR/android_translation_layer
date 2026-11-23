@@ -25,6 +25,8 @@ final class KeyAuthorizations {
 	int purposes;
 	String[] blockModes = new String[0];
 	String[] encryptionPaddings = new String[0];
+	/** RSA key pairs: PKCS1, PSS */
+	String[] signaturePaddings = new String[0];
 	String[] digests = new String[0];
 	/** KM_TAG_CALLER_NONCE: set when the key was made without randomized encryption */
 	boolean callerNonce;
@@ -35,10 +37,40 @@ final class KeyAuthorizations {
 	int remainingUsages = KeyProperties.UNRESTRICTED_USAGE_COUNT;
 	int origin = KeyProperties.ORIGIN_GENERATED;
 	/**
-	 * A key stored before this list existed, or imported without a KeyProtection: no restrictions
-	 * were recorded for it, so it keeps working for every purpose, mode and padding.
+	 * A secret key stored before this list existed (the file has only its algorithm and material):
+	 * no restrictions were recorded for it, so it is used as AOSP uses its legacy keys (keys of
+	 * the pre-M KeyPairGeneratorSpec, and private keys imported without a KeyProtection:
+	 * AndroidKeyStoreSpi.getLegacyKeyProtectionParameter): every purpose, digest, block mode and
+	 * padding, a caller IV allowed (no randomized encryption requirement), no validity period or
+	 * usage limit. KeyInfo lists no block modes or paddings for it.
 	 */
 	boolean unrestricted;
+
+	/**
+	 * AOSP's legacy authorizations of a key pair (AndroidKeyStoreSpi.getLegacyKeyProtectionParameter,
+	 * AndroidKeyStoreKeyPairGeneratorSpi.buildKeyGenParameterSpecFromLegacy): EC keys sign and
+	 * verify with any digest; RSA keys also encrypt and decrypt, with any digest, every encryption
+	 * padding (none, PKCS#1, OAEP) and signature padding (PKCS#1, PSS), without the randomized
+	 * encryption requirement.
+	 */
+	static KeyAuthorizations legacyKeyPair(String algorithm, int keySize, int origin) {
+		KeyAuthorizations a = new KeyAuthorizations();
+		a.keySize = keySize;
+		a.origin = origin;
+		if (KeyProperties.KEY_ALGORITHM_EC.equalsIgnoreCase(algorithm)) {
+			a.purposes = KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY;
+			a.digests = new String[] {KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_SHA1, KeyProperties.DIGEST_SHA224,
+			                          KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512};
+		} else {
+			a.purposes = KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT | KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY;
+			a.digests = new String[] {KeyProperties.DIGEST_NONE, KeyProperties.DIGEST_MD5, KeyProperties.DIGEST_SHA1, KeyProperties.DIGEST_SHA224,
+			                          KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA384, KeyProperties.DIGEST_SHA512};
+			a.encryptionPaddings = new String[] {KeyProperties.ENCRYPTION_PADDING_NONE, KeyProperties.ENCRYPTION_PADDING_RSA_PKCS1, KeyProperties.ENCRYPTION_PADDING_RSA_OAEP};
+			a.signaturePaddings = new String[] {KeyProperties.SIGNATURE_PADDING_RSA_PKCS1, KeyProperties.SIGNATURE_PADDING_RSA_PSS};
+			a.callerNonce = true;
+		}
+		return a;
+	}
 
 	static KeyAuthorizations unrestricted(int keySize, int origin) {
 		KeyAuthorizations a = new KeyAuthorizations();
@@ -47,6 +79,32 @@ final class KeyAuthorizations {
 		a.origin = origin;
 		a.purposes = KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT | KeyProperties.PURPOSE_SIGN | KeyProperties.PURPOSE_VERIFY;
 		a.callerNonce = true;
+		return a;
+	}
+
+	/**
+	 * The list KeyMint keeps for a key made or imported with these parameters (a
+	 * KeyGenParameterSpec's or KeyProtection's); encryption paddings are normalized (PKCS5Padding
+	 * is PKCS7Padding), and KM_TAG_CALLER_NONCE goes with encryption without randomized encryption.
+	 */
+	static KeyAuthorizations of(int keySize, int origin, int purposes, String[] blockModes, String[] encryptionPaddings, String[] signaturePaddings,
+	                            String[] digests, boolean randomizedEncryptionRequired, Date validityStart, Date originationEnd, Date consumptionEnd,
+	                            int maxUsageCount) {
+		KeyAuthorizations a = new KeyAuthorizations();
+		a.keySize = keySize;
+		a.origin = origin;
+		a.purposes = purposes;
+		a.blockModes = blockModes.clone();
+		a.encryptionPaddings = encryptionPaddings.clone();
+		for (int i = 0; i < a.encryptionPaddings.length; i++)
+			a.encryptionPaddings[i] = normalizePadding(a.encryptionPaddings[i]);
+		a.signaturePaddings = signaturePaddings.clone();
+		a.digests = digests.clone();
+		a.callerNonce = (purposes & KeyProperties.PURPOSE_ENCRYPT) != 0 && !randomizedEncryptionRequired;
+		a.validityStart = validityStart;
+		a.originationEnd = originationEnd;
+		a.consumptionEnd = consumptionEnd;
+		a.remainingUsages = maxUsageCount;
 		return a;
 	}
 
@@ -66,6 +124,7 @@ final class KeyAuthorizations {
 		lines.add("purposes=" + purposes);
 		lines.add("blockModes=" + join(blockModes));
 		lines.add("encryptionPaddings=" + join(encryptionPaddings));
+		lines.add("signaturePaddings=" + join(signaturePaddings));
 		lines.add("digests=" + join(digests));
 		lines.add("callerNonce=" + (callerNonce ? 1 : 0));
 		if (validityStart != null)
@@ -96,6 +155,7 @@ final class KeyAuthorizations {
 				case "purposes": a.purposes = Integer.parseInt(value); break;
 				case "blockModes": a.blockModes = split(value); break;
 				case "encryptionPaddings": a.encryptionPaddings = split(value); break;
+				case "signaturePaddings": a.signaturePaddings = split(value); break;
 				case "digests": a.digests = split(value); break;
 				case "callerNonce": a.callerNonce = "1".equals(value); break;
 				case "validityStart": a.validityStart = new Date(Long.parseLong(value)); break;
@@ -161,11 +221,34 @@ final class KeyAuthorizations {
 			throw new InvalidAlgorithmParameterException("Caller-provided IV not permitted");
 	}
 
+	/**
+	 * KeyMint begin() for a key pair's private key operation.
+	 *
+	 * @param purpose PURPOSE_SIGN (signatures, raw RSA with the private key), PURPOSE_DECRYPT or
+	 *     PURPOSE_AGREE_KEY
+	 * @param encryptionPadding the cipher's padding, or null
+	 * @param signaturePadding PKCS1 / PSS for RSA signatures, or null
+	 * @param digest the operation's digest (NONE for raw), or null when the operation has none
+	 */
+	void checkBeginAsymmetric(int purpose, String encryptionPadding, String signaturePadding, String digest) throws InvalidKeyException {
+		checkBegin(purpose, null, null, null);
+		if (unrestricted)
+			return;
+		if (encryptionPadding != null && !containsIgnoreCase(encryptionPaddings, encryptionPadding))
+			throw failed("Incompatible padding mode");
+		if (signaturePadding != null && !containsIgnoreCase(signaturePaddings, signaturePadding))
+			throw failed("Incompatible padding mode");
+		/* KeyMint: an asymmetric operation's digest must be one the key authorizes */
+		if (digest != null && !containsIgnoreCase(digests, digest))
+			throw failed("Incompatible digest");
+	}
+
 	KeyInfo toKeyInfo(String alias) {
 		String[] modes = unrestricted ? new String[0] : blockModes;
 		String[] paddings = unrestricted ? new String[0] : encryptionPaddings;
+		String[] sigPaddings = unrestricted ? new String[0] : signaturePaddings;
 		return new KeyInfo(alias, false /* not inside secure hardware: this device has none */, origin, keySize,
-		    validityStart, originationEnd, consumptionEnd, purposes, paddings, new String[0], digests, modes,
+		    validityStart, originationEnd, consumptionEnd, purposes, paddings, sigPaddings, digests, modes,
 		    false, 0, 0, false, false, false, false, false,
 		    KeyProperties.SECURITY_LEVEL_SOFTWARE, remainingUsages);
 	}
