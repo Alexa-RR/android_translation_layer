@@ -17,6 +17,7 @@
 package android.content.res;
 
 import android.atl.ATLLoadedApp;
+import android.atl.ATLPaths;
 import android.atl.annotation.Export;
 import android.content.Context;
 import android.os.Build;
@@ -94,13 +95,35 @@ public final class AssetManager {
 	private long mObject;
 	private int mNObject; // used by the NDK
 
-	private StringBlock mStringBlocks[] = null;
-
 	private int mNumRefs = 1;
 	private boolean mOpen = true;
 	private HashMap<Integer, RuntimeException> mRefStacks;
 
+	/* the loaded asset paths in the native manager's order: the cookie of asset_paths[i] is i + 1;
+	 * tlModTimes[i] is the path's modification time when it was loaded (AOSP ApkAssets.isUpToDate) */
 	private ArrayList<String> asset_paths = new ArrayList<String>();
+	private ArrayList<Long> tlModTimes = new ArrayList<Long>();
+
+	/** native_setApkAssets over asset_paths; the paths that did not load are dropped (they have no cookie) */
+	private void tlSetApkAssets() {
+		Object[] asset_paths_arr = asset_paths.toArray();
+		boolean[] loaded = native_setApkAssets(asset_paths_arr, asset_paths_arr.length);
+		ArrayList<String> paths = new ArrayList<String>();
+		ArrayList<Long> times = new ArrayList<Long>();
+		for (int i = 0; i < asset_paths_arr.length; i++) {
+			if (loaded != null && i < loaded.length && loaded[i]) {
+				String p = (String)asset_paths_arr[i];
+				paths.add(p);
+				times.add(new File(p).lastModified());
+			}
+		}
+		asset_paths = paths;
+		tlModTimes = times;
+		synchronized (tlStyledBlocks) {
+			tlStyledBlocks.clear(); // cookies may name other APKs now
+			tlStyleCounts.clear();
+		}
+	}
 
 	/**
 	 * Create a new AssetManager containing only the basic system assets.
@@ -136,31 +159,33 @@ public final class AssetManager {
 			for (int i = paths.length - 1; i >= 0; i--)
 				asset_paths.add(paths[i]);
 			asset_paths.add(android.os.Environment.getExternalStorageDirectory().getAbsolutePath() + "/");
-			/*String*/ Object[] asset_paths_arr = asset_paths.toArray();
-			native_setApkAssets(asset_paths_arr, asset_paths_arr.length);
+			tlSetApkAssets();
 		}
 	}
 
 	private static void ensureSystemAssets() {
 		synchronized (sSync) {
 			if (sSystem == null) {
-				AssetManager system = new AssetManager(true);
-				system.makeStringBlocks(false);
-				sSystem = system;
+				sSystem = new AssetManager(true);
 			}
 		}
 	}
 
+	/* AOSP createSystemAssetsInZygoteLocked: a manager over the framework's APK only (string pools
+	 * are read through the manager here: no per-manager string blocks to make) */
 	private AssetManager(boolean isSystem) {
-		if (DEBUG_REFS) {
-			synchronized (this) {
+		synchronized (this) {
+			if (DEBUG_REFS) {
 				mNumRefs = 0;
 				incRefsLocked(this.hashCode());
 			}
+			init(android.os.Build.VERSION.RESOURCES_SDK_INT);
+			if (localLOGV)
+				Log.v(TAG, "New asset manager: " + this);
+			if (ATLPaths.framework_res_apk != null)
+				asset_paths.add(ATLPaths.framework_res_apk.getPath());
+			tlSetApkAssets();
 		}
-		init(android.os.Build.VERSION.RESOURCES_SDK_INT);
-		if (localLOGV)
-			Log.v(TAG, "New asset manager: " + this);
 	}
 
 	/**
@@ -201,6 +226,7 @@ public final class AssetManager {
 		TypedValue value = new TypedValue();
 		if (loadResourceValue(id, (short)0, value, true) < 0)
 			return null;
+		tlStyleValue(value);
 		return value.coerceToString();
 	}
 
@@ -212,6 +238,7 @@ public final class AssetManager {
 		TypedValue value = new TypedValue();
 		int block = loadResourceBagValue(ident, bagEntryId, value, true);
 		if (block >= 0) {
+			tlStyleValue(value);
 			return value.coerceToString();
 		}
 		return null;
@@ -231,6 +258,8 @@ public final class AssetManager {
 	                                           TypedValue outValue,
 	                                           boolean resolveRefs) {
 		int block = loadResourceValue(ident, (short)density, outValue, resolveRefs);
+		if (block >= 0)
+			tlStyleValue(outValue);
 		return block >= 0;
 	}
 
@@ -243,7 +272,7 @@ public final class AssetManager {
 		int n = getArraySize(id);
 		int[] valueArray = new int[n * STYLE_NUM_ENTRIES];
 		retrieveArray(id, valueArray);
-		CharSequence[] values = new String[n];
+		CharSequence[] values = new CharSequence[n]; // styled strings too (AOSP)
 		TypedValue value = new TypedValue();
 		for (int i = 0; i < n; i++) {
 			value.data = valueArray[i * STYLE_NUM_ENTRIES + STYLE_DATA];
@@ -261,35 +290,109 @@ public final class AssetManager {
 	/*package*/ final boolean getThemeValue(long style, int ident,
 	                                        TypedValue outValue, boolean resolveRefs) {
 		int block = loadThemeAttributeValue(style, ident, outValue, resolveRefs);
+		if (block >= 0)
+			tlStyleValue(outValue);
 		return block >= 0;
 	}
 
-	/*package*/ final void ensureStringBlocks() {
-		if (mStringBlocks == null) {
+	/**
+	 * A string of a cookie's pool (AOSP getPooledStringForCookie), with its style spans when it has
+	 * some (<b>, <i>, <font color=...>, annotations...). AOSP keeps a StringBlock per ApkAssets over
+	 * the resource table's string pool; here the native manager reads the strings, and only an APK
+	 * whose pool has styles gets a StringBlock (over a copy of that pool) for them.
+	 */
+	/*package*/ final CharSequence getPooledString(int cookie, int id) {
+		StringBlock styled = tlStyledBlock(cookie);
+		if (styled != null && id >= 0 && id < tlStyleCounts.get(cookie)) {
+			CharSequence seq = styled.getSequence(id);
+			if (seq != null)
+				return seq;
+		}
+		return nativeGetPooledString(cookie, id);
+	}
+
+	private native final CharSequence nativeGetPooledString(int cookie, int id);
+
+	/** a TYPE_STRING value's string with its styles (the native side sets the plain text) */
+	private void tlStyleValue(TypedValue value) {
+		if (value.type != TypedValue.TYPE_STRING || value.assetCookie <= 0)
+			return;
+		if (tlStyledBlock(value.assetCookie) != null && value.data >= 0 && value.data < tlStyleCounts.get(value.assetCookie)) {
+			CharSequence seq = tlStyledBlock(value.assetCookie).getSequence(value.data);
+			if (seq != null)
+				value.string = seq;
+		}
+	}
+
+	/* per cookie: the StringBlock over its resource table's string pool when the pool has styles
+	 * (null: none), and the pool's style count (the strings that may have spans come first) */
+	private final android.util.SparseArray<StringBlock> tlStyledBlocks = new android.util.SparseArray<>();
+	private final android.util.SparseIntArray tlStyleCounts = new android.util.SparseIntArray();
+
+	private StringBlock tlStyledBlock(int cookie) {
+		synchronized (tlStyledBlocks) {
+			int idx = tlStyledBlocks.indexOfKey(cookie);
+			if (idx >= 0)
+				return tlStyledBlocks.valueAt(idx);
+			StringBlock block = null;
+			String path = null;
 			synchronized (this) {
-				if (mStringBlocks == null) {
-					makeStringBlocks(true);
-				}
+				if (cookie >= 1 && cookie <= asset_paths.size())
+					path = asset_paths.get(cookie - 1);
 			}
+			if (path != null && !path.endsWith("/"))
+				block = tlReadStyledPool(path, cookie);
+			tlStyledBlocks.put(cookie, block);
+			return block;
 		}
 	}
 
-	/*package*/ final void makeStringBlocks(boolean copyFromSystem) {
-		final int sysNum = copyFromSystem ? sSystem.mStringBlocks.length : 0;
-		final int num = getStringBlockCount();
-		mStringBlocks = new StringBlock[num];
-		if (localLOGV)
-			Log.v(TAG, "Making string blocks for " + this + ": " + num);
-		for (int i = 0; i < num; i++) {
-			if (i < sysNum) {
-				mStringBlocks[i] = sSystem.mStringBlocks[i];
-			} else {
-				mStringBlocks[i] = new StringBlock(getNativeStringBlock(i), true);
+	private static int tlLe32(byte[] d, int o) {
+		return (d[o] & 0xff) | ((d[o + 1] & 0xff) << 8) | ((d[o + 2] & 0xff) << 16) | ((d[o + 3] & 0xff) << 24);
+	}
+
+	/* resources.arsc: ResTable_header (type 0x0002), then the global string pool (type 0x0001) */
+	private StringBlock tlReadStyledPool(String apkPath, int cookie) {
+		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(apkPath)) {
+			java.util.zip.ZipEntry entry = zip.getEntry("resources.arsc");
+			if (entry == null)
+				return null;
+			try (InputStream in = new BufferedInputStream(zip.getInputStream(entry))) {
+				byte[] head = new byte[12 + 28];
+				if (tlReadFully(in, head, 0, head.length) < head.length)
+					return null;
+				int tableHeaderSize = head[2] & 0xff | (head[3] & 0xff) << 8;
+				if ((head[0] & 0xff | (head[1] & 0xff) << 8) != 0x0002 || tableHeaderSize != 12)
+					return null;
+				if ((head[12] & 0xff | (head[13] & 0xff) << 8) != 0x0001)
+					return null;
+				int poolSize = tlLe32(head, 16);
+				int styleCount = tlLe32(head, 12 + 12);
+				if (styleCount <= 0 || poolSize < 28)
+					return null;
+				byte[] pool = new byte[poolSize];
+				System.arraycopy(head, 12, pool, 0, 28);
+				if (tlReadFully(in, pool, 28, poolSize - 28) < poolSize - 28)
+					return null;
+				tlStyleCounts.put(cookie, styleCount);
+				return new StringBlock(pool, true);
 			}
+		} catch (IOException | RuntimeException e) {
+			Log.w(TAG, "no styled strings from " + apkPath + ": " + e);
+			return null;
 		}
 	}
 
-	/*package*/ native final CharSequence getPooledString(int block, int id);
+	private static int tlReadFully(InputStream in, byte[] b, int off, int len) throws IOException {
+		int done = 0;
+		while (done < len) {
+			int n = in.read(b, off + done, len - done);
+			if (n < 0)
+				break;
+			done += n;
+		}
+		return done;
+	}
 
 	/**
 	 * Open an asset using ACCESS_STREAMING mode.  This provides access to
@@ -637,16 +740,23 @@ public final class AssetManager {
 	 * the cookie of the added asset, or 0 on failure.
 	 * {@hide}
 	 */
-	/* this is not particularly efficient, avoid if possible */
-	public final void addAssetPath(String path) {
-		if (path == null)
-			return;
-		asset_paths.add(path);
-		/*String*/ Object[] asset_paths_arr = asset_paths.toArray();
-		native_setApkAssets(asset_paths_arr, asset_paths_arr.length);
+	/* AOSP addAssetPathInternal: a path already loaded keeps its cookie; a new one is loaded after
+	 * the others (all are loaded again: not particularly efficient, avoid if possible) */
+	public final int addAssetPath(String path) {
+		java.util.Objects.requireNonNull(path, "path");
+		synchronized (this) {
+			if (!mOpen)
+				throw new RuntimeException("AssetManager has been closed");
+			int existing = asset_paths.indexOf(path);
+			if (existing >= 0)
+				return existing + 1;
+			asset_paths.add(path);
+			tlSetApkAssets();
+			mSharedEntries = null;
+			int cookie = asset_paths.indexOf(path);
+			return cookie >= 0 ? cookie + 1 : 0;
+		}
 	}
-
-	private native final int addAssetPathNative(String path);
 
 	@Export
 	public static void extractFromAPK(String apk_resource_path, String path, String target) throws IOException {
@@ -700,14 +810,19 @@ public final class AssetManager {
 	 * instantiate a new AssetManager class to see the new data.
 	 * {@hide}
 	 */
-	public native final boolean isUpToDate();
-
-	/**
-	 * Change the locale being used by this asset manager.  Not for use by
-	 * applications.
-	 * {@hide}
-	 */
-	public native final void setLocale(String locale);
+	public boolean isUpToDate() {
+		/* AOSP: every ApkAssets is up to date (its file's modification time is the one it was
+		 * loaded with: ApkAssets::IsUpToDate) */
+		synchronized (this) {
+			if (!mOpen)
+				throw new RuntimeException("AssetManager has been closed");
+			for (int i = 0; i < asset_paths.size(); i++) {
+				if (new File(asset_paths.get(i)).lastModified() != tlModTimes.get(i))
+					return false;
+			}
+			return true;
+		}
+	}
 
 	/**
 	 * Get the locales that this asset manager contains data for.
@@ -782,13 +897,6 @@ public final class AssetManager {
 
 	/*package*/ native final int getArraySize(int resource);
 	/*package*/ native final int retrieveArray(int resource, int[] outValues);
-	private native final int getStringBlockCount();
-	private native final int getNativeStringBlock(int block);
-
-	/**
-	 * {@hide}
-	 */
-	public native final String getCookieName(int cookie);
 
 	/**
 	 * {@hide}
@@ -817,7 +925,12 @@ public final class AssetManager {
 	private native final long openXmlAssetNative(int cookie, String fileName);
 
 	private native final String[] getArrayStringResource(int arrayRes);
-	private native final int[] getArrayStringInfo(int arrayRes);
+	/**
+	 * AOSP: for each entry of the array resource, the cookie and the index of its string in that
+	 * cookie's pool (-1 for an entry that is no string); null when there is no such array.
+	 * @hide
+	 */
+	/*package*/ native final int[] getResourceStringArrayInfo(int arrayRes);
 	/*package*/ final int[] getArrayIntResource(int arrayRes) {
 		int n = getArraySize(arrayRes);
 		int[] valueArray = new int[n * STYLE_NUM_ENTRIES];
@@ -871,7 +984,7 @@ public final class AssetManager {
 		}
 	}
 
-	private native final void native_setApkAssets(/*String*/ Object[] paths, int num_assets);
+	private native final boolean[] native_setApkAssets(/*String*/ Object[] paths, int num_assets);
 
 	/**
 	 * Returns the cookie of the asset path (APK) with the given file system path, or 0 when it is not
@@ -960,6 +1073,7 @@ public final class AssetManager {
 		synchronized (this) {
 			init(android.os.Build.VERSION.RESOURCES_SDK_INT);
 			asset_paths.addAll(sharing.asset_paths);
+			tlModTimes.addAll(sharing.tlModTimes);
 			native_shareApkAssets(sharing.tlApkAssets, sharing.tlApkAssetsCount);
 		}
 	}

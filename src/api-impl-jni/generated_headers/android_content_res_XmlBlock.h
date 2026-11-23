@@ -20,9 +20,9 @@ JNIEXPORT jlong JNICALL Java_android_content_res_XmlBlock_nativeCreate
 /*
  * Class:     android_content_res_XmlBlock
  * Method:    nativeGetStringBlock
- * Signature: (J)I
+ * Signature: (J)J
  */
-JNIEXPORT jint JNICALL Java_android_content_res_XmlBlock_nativeGetStringBlock
+JNIEXPORT jlong JNICALL Java_android_content_res_XmlBlock_nativeGetStringBlock
   (JNIEnv *, jclass, jlong);
 
 /*
@@ -168,14 +168,6 @@ JNIEXPORT jint JNICALL Java_android_content_res_XmlBlock_nativeGetAttributeIndex
  */
 JNIEXPORT void JNICALL Java_android_content_res_XmlBlock_nativeDestroyParseState
   (JNIEnv *, jclass, jlong);
-
-/*
- * Class:     android_content_res_XmlBlock
- * Method:    nativeGetPooledString
- * Signature: (JI)Ljava/lang/String;
- */
-JNIEXPORT jstring JNICALL Java_android_content_res_XmlBlock_nativeGetPooledString
-  (JNIEnv *, jclass, jlong, jint);
 
 /*
  * Class:     android_content_res_XmlBlock

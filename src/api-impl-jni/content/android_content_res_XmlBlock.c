@@ -3,14 +3,73 @@
 #include "../generated_headers/android_content_res_XmlBlock.h"
 
 #include "../defines.h"
+#include "tl_xml_tree.h"
+
+/* ResXMLParser getters androidfw's C API does not wrap (libandroidfw's C++ methods, called with the
+ * parser as `this`, as ATL calls other androidfw/libutils methods; they return plain ints) */
+int32_t _ZNK7android12ResXMLParser9getTextIDEv(const struct ResXMLParser *parser);
+int32_t _ZNK7android12ResXMLParser21getElementNamespaceIDEv(const struct ResXMLParser *parser);
+int32_t _ZNK7android12ResXMLParser23getAttributeNamespaceIDEm(const struct ResXMLParser *parser, size_t idx);
 
 JNIEXPORT jlong JNICALL Java_android_content_res_XmlBlock_nativeCreate(JNIEnv *env, jclass this, jbyteArray data, jint offset, jint length)
 {
-	struct ResXMLTree *tree = ResXMLTree_new();
+	if (!data) {
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/NullPointerException"), NULL);
+		return 0;
+	}
+	jsize bLen = (*env)->GetArrayLength(env, data);
+	if (offset < 0 || offset >= bLen || length < 0 || length > bLen || (offset + length) > bLen) {
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IndexOutOfBoundsException"), NULL);
+		return 0;
+	}
 	jbyte *xml_buf = (*env)->GetByteArrayElements(env, data, NULL);
-	ResXMLTree_setTo(tree, xml_buf, length, true);
+	struct ResXMLTree *tree = tl_xml_tree_new(xml_buf + offset, length);
 	(*env)->ReleaseByteArrayElements(env, data, xml_buf, JNI_ABORT);
 	return _INTPTR(tree);
+}
+
+JNIEXPORT jlong JNICALL Java_android_content_res_XmlBlock_nativeGetStringBlock(JNIEnv *env, jclass this, jlong block)
+{
+	struct ResXMLTree *tree = (struct ResXMLTree *)_PTR(block);
+	if (!tree) {
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/NullPointerException"), NULL);
+		return 0;
+	}
+	return tl_xml_tree_string_block(tree);
+}
+
+JNIEXPORT jint JNICALL Java_android_content_res_XmlBlock_nativeGetText(JNIEnv *env, jclass this, jlong parser_ptr)
+{
+	struct ResXMLParser *parser = (struct ResXMLParser *)_PTR(parser_ptr);
+	if (!parser)
+		return -1;
+	return _ZNK7android12ResXMLParser9getTextIDEv(parser);
+}
+
+JNIEXPORT jint JNICALL Java_android_content_res_XmlBlock_nativeGetNamespace(JNIEnv *env, jclass this, jlong parser_ptr)
+{
+	struct ResXMLParser *parser = (struct ResXMLParser *)_PTR(parser_ptr);
+	if (!parser)
+		return -1;
+	return _ZNK7android12ResXMLParser21getElementNamespaceIDEv(parser);
+}
+
+JNIEXPORT jint JNICALL Java_android_content_res_XmlBlock_nativeGetAttributeNamespace(JNIEnv *env, jclass this, jlong parser_ptr, jint idx)
+{
+	struct ResXMLParser *parser = (struct ResXMLParser *)_PTR(parser_ptr);
+	if (!parser)
+		return 0;
+	return _ZNK7android12ResXMLParser23getAttributeNamespaceIDEm(parser, idx);
+}
+
+/* AOSP: the id attribute's string value index, -1 when the element has none */
+JNIEXPORT jint JNICALL Java_android_content_res_XmlBlock_nativeGetIdAttribute(JNIEnv *env, jclass this, jlong parser_ptr)
+{
+	struct ResXMLParser *parser = (struct ResXMLParser *)_PTR(parser_ptr);
+	if (!parser)
+		return 0;
+	ssize_t idx = ResXMLParser_indexOfID(parser);
+	return idx >= 0 ? ResXMLParser_getAttributeValueStringID(parser, idx) : -1;
 }
 
 JNIEXPORT jlong JNICALL Java_android_content_res_XmlBlock_nativeCreateParseState(JNIEnv *env, jobject this, jlong block)
@@ -137,7 +196,7 @@ JNIEXPORT void JNICALL Java_android_content_res_XmlBlock_nativeDestroyParseState
 JNIEXPORT void JNICALL Java_android_content_res_XmlBlock_nativeDestroy(JNIEnv *env, jobject this, jlong block)
 {
 	struct ResXMLTree *tree = (struct ResXMLTree *)_PTR(block);
-	ResXMLTree_delete(tree);
+	tl_xml_tree_delete(tree);
 }
 
 JNIEXPORT jstring JNICALL Java_android_content_res_XmlBlock_nativeGetClassAttribute(JNIEnv *env, jobject this, jlong parser_ptr)

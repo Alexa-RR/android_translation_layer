@@ -37,10 +37,10 @@ extern "C" {
 #define android_content_res_AssetManager_STYLE_SOURCE_RESOURCE_ID 6L
 /*
  * Class:     android_content_res_AssetManager
- * Method:    getPooledString
+ * Method:    nativeGetPooledString
  * Signature: (II)Ljava/lang/CharSequence;
  */
-JNIEXPORT jobject JNICALL Java_android_content_res_AssetManager_getPooledString
+JNIEXPORT jobject JNICALL Java_android_content_res_AssetManager_nativeGetPooledString
   (JNIEnv *, jobject, jint, jint);
 
 /*
@@ -49,30 +49,6 @@ JNIEXPORT jobject JNICALL Java_android_content_res_AssetManager_getPooledString
  * Signature: (Ljava/lang/String;)[Ljava/lang/String;
  */
 JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_list
-  (JNIEnv *, jobject, jstring);
-
-/*
- * Class:     android_content_res_AssetManager
- * Method:    addAssetPathNative
- * Signature: (Ljava/lang/String;)I
- */
-JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_addAssetPathNative
-  (JNIEnv *, jobject, jstring);
-
-/*
- * Class:     android_content_res_AssetManager
- * Method:    isUpToDate
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL Java_android_content_res_AssetManager_isUpToDate
-  (JNIEnv *, jobject);
-
-/*
- * Class:     android_content_res_AssetManager
- * Method:    setLocale
- * Signature: (Ljava/lang/String;)V
- */
-JNIEXPORT void JNICALL Java_android_content_res_AssetManager_setLocale
   (JNIEnv *, jobject, jstring);
 
 /*
@@ -253,30 +229,6 @@ JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_retrieveArray
 
 /*
  * Class:     android_content_res_AssetManager
- * Method:    getStringBlockCount
- * Signature: ()I
- */
-JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_getStringBlockCount
-  (JNIEnv *, jobject);
-
-/*
- * Class:     android_content_res_AssetManager
- * Method:    getNativeStringBlock
- * Signature: (I)I
- */
-JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_getNativeStringBlock
-  (JNIEnv *, jobject, jint);
-
-/*
- * Class:     android_content_res_AssetManager
- * Method:    getCookieName
- * Signature: (I)Ljava/lang/String;
- */
-JNIEXPORT jstring JNICALL Java_android_content_res_AssetManager_getCookieName
-  (JNIEnv *, jobject, jint);
-
-/*
- * Class:     android_content_res_AssetManager
  * Method:    getGlobalAssetCount
  * Signature: ()I
  */
@@ -365,10 +317,10 @@ JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_getArrayStr
 
 /*
  * Class:     android_content_res_AssetManager
- * Method:    getArrayStringInfo
+ * Method:    getResourceStringArrayInfo
  * Signature: (I)[I
  */
-JNIEXPORT jintArray JNICALL Java_android_content_res_AssetManager_getArrayStringInfo
+JNIEXPORT jintArray JNICALL Java_android_content_res_AssetManager_getResourceStringArrayInfo
   (JNIEnv *, jobject, jint);
 
 /*
@@ -390,9 +342,9 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_nativeDestroy
 /*
  * Class:     android_content_res_AssetManager
  * Method:    native_setApkAssets
- * Signature: ([Ljava/lang/Object;I)V
+ * Signature: ([Ljava/lang/Object;I)[Z
  */
-JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAssets
+JNIEXPORT jbooleanArray JNICALL Java_android_content_res_AssetManager_native_1setApkAssets
   (JNIEnv *, jobject, jobjectArray, jint);
 
 /*

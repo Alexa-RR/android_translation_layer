@@ -11,6 +11,7 @@
 #include "defines.h"
 #include "util.h"
 #include "generated_headers/android_content_res_AssetManager.h"
+#include "content/tl_xml_tree.h"
 
 #include <dirent.h>
 #include <glib.h>
@@ -196,27 +197,35 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_init(JNIEnv *env, j
 	_SET_LONG_FIELD(this, "mObject", _INTPTR(asset_manager));
 }
 
-JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAssets(JNIEnv *env, jobject this, jobjectArray paths, int num_assets)
+/* loads PATHS as the manager's APKs, in order; returns which of them loaded (the cookie of a loaded
+ * path is its position among the loaded ones, plus one) */
+JNIEXPORT jbooleanArray JNICALL Java_android_content_res_AssetManager_native_1setApkAssets(JNIEnv *env, jobject this, jobjectArray paths, int num_assets)
 {
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
-	const struct ApkAssets *apk_assets[num_assets];
+	const struct ApkAssets *apk_assets[num_assets > 0 ? num_assets : 1];
+	jboolean loaded[num_assets > 0 ? num_assets : 1];
 	int actual_count = 0;
 	for (int i = 0; i < num_assets; i++) {
+		loaded[i] = JNI_FALSE;
 		jstring path_jstr = (jstring)((*env)->GetObjectArrayElement(env, paths, i));
 		if (path_jstr == NULL)
 			continue;
 		const char *path = (*env)->GetStringUTFChars(env, path_jstr, NULL);
-		const struct ApkAssets *a;
-		if (path[strlen(path) - 1] == '/')
-			a = ApkAssets_loadDir(strdup(path));
-		else
-			a = ApkAssets_load(strdup(path), false);
+		const struct ApkAssets *a = NULL;
+		/* the path is copied by androidfw (ApkAssets keeps a std::string) */
+		if (path[0] && path[strlen(path) - 1] == '/')
+			a = ApkAssets_loadDir(path);
+		else if (path[0])
+			a = ApkAssets_load(path, false);
 		if (a == NULL)
 			android_log_printf(ANDROID_LOG_WARN, "[" __FILE__ "]", "failed to load ApkAssets from %s\n", path);
 		(*env)->ReleaseStringUTFChars(env, path_jstr, path);
-		if (a != NULL)
+		(*env)->DeleteLocalRef(env, path_jstr);
+		if (a != NULL) {
 			apk_assets[actual_count++] = a;
+			loaded[i] = JNI_TRUE;
+		}
 	}
 	if (actual_count > 0)
 		AssetManager_setApkAssets(asset_manager, apk_assets, actual_count, true, true);
@@ -230,6 +239,10 @@ JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1setApkAsset
 	_SET_LONG_FIELD(this, "tlApkAssets", _INTPTR(set));
 	_SET_INT_FIELD(this, "tlApkAssetsCount", actual_count);
 	tl_apk_set_unref(old);
+	jbooleanArray result = (*env)->NewBooleanArray(env, num_assets);
+	if (result && num_assets > 0)
+		(*env)->SetBooleanArrayRegion(env, result, 0, num_assets, loaded);
+	return result;
 }
 
 JNIEXPORT void JNICALL Java_android_content_res_AssetManager_native_1shareApkAssets(JNIEnv *env, jobject this, jlong apk_assets_ptr, jint num_assets)
@@ -313,6 +326,8 @@ JNIEXPORT jobjectArray JNICALL Java_android_content_res_AssetManager_getArrayStr
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
 	const struct ResolvedBag *bag = AssetManager_getBag(asset_manager, ident);
+	if (!bag)
+		return NULL; /* AOSP: no such array resource */
 	jobjectArray array = (*env)->NewObjectArray(env, bag->entry_count, _CACHED_CLASS(String), NULL);
 	for (int i = 0; i < bag->entry_count; i++) {
 		const struct ResolvedBag_Entry entry = bag->entries[i];
@@ -362,7 +377,7 @@ JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_getResourceIdentifi
 	return ret;
 }
 
-JNIEXPORT jobject JNICALL Java_android_content_res_AssetManager_getPooledString(JNIEnv *env, jobject this, jint cookie, jint index)
+JNIEXPORT jobject JNICALL Java_android_content_res_AssetManager_nativeGetPooledString(JNIEnv *env, jobject this, jint cookie, jint index)
 {
 	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
 	AM_SCOPEDLOCK(asset_manager)
@@ -765,10 +780,17 @@ JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_openXmlAssetNative
 	AM_SCOPEDLOCK(asset_manager)
 	const char *file_name = (*env)->GetStringUTFChars(env, _file_name, NULL);
 	struct Asset *asset = AssetManager_openNonAsset(asset_manager, file_name, ACCESS_BUFFER);
+	if (!asset) {
+		/* AOSP NativeOpenXmlAsset */
+		char msg[512];
+		snprintf(msg, sizeof(msg), "Asset XML file: %s", file_name);
+		(*env)->ReleaseStringUTFChars(env, _file_name, file_name);
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/io/FileNotFoundException"), msg);
+		return 0;
+	}
 	(*env)->ReleaseStringUTFChars(env, _file_name, file_name);
 
-	struct ResXMLTree *res_xml = ResXMLTree_new();
-	ResXMLTree_setTo(res_xml, Asset_getBuffer(asset, true), Asset_getLength(asset), true);
+	struct ResXMLTree *res_xml = tl_xml_tree_new(Asset_getBuffer(asset, true), Asset_getLength(asset));
 	Asset_delete(asset);
 	return _INTPTR(res_xml);
 }
@@ -796,8 +818,76 @@ JNIEXPORT jlong JNICALL Java_android_content_res_AssetManager_openXmlAssetFromBu
 {
 	jsize len = (*env)->GetArrayLength(env, data);
 	jbyte *bytes = (*env)->GetByteArrayElements(env, data, NULL);
-	struct ResXMLTree *res_xml = ResXMLTree_new();
-	ResXMLTree_setTo(res_xml, bytes, len, true); // copyData: the tree owns its copy
+	struct ResXMLTree *res_xml = tl_xml_tree_new(bytes, len); // the tree owns its copy
 	(*env)->ReleaseByteArrayElements(env, data, bytes, JNI_ABORT);
 	return _INTPTR(res_xml);
+}
+
+/* ---- AOSP's remaining AssetManager natives (android_util_AssetManager.cpp) ---- */
+
+int32_t _ZN7android5Asset14getGlobalCountEv(void);        /* android::Asset::getGlobalCount() */
+int32_t _ZN7android12AssetManager14getGlobalCountEv(void); /* android::AssetManager::getGlobalCount() */
+void _ZNK7android5Theme4DumpEv(const struct Theme *theme); /* android::Theme::Dump() const */
+char *tl_asset_get_allocations(void);                     /* androidfw_cxx.cpp */
+
+/* the number of assets open now in the process */
+JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_getGlobalAssetCount(JNIEnv *env, jclass clazz)
+{
+	return _ZN7android5Asset14getGlobalCountEv();
+}
+
+JNIEXPORT jstring JNICALL Java_android_content_res_AssetManager_getAssetAllocations(JNIEnv *env, jclass clazz)
+{
+	char *alloc = tl_asset_get_allocations();
+	if (!alloc)
+		return NULL;
+	jstring ret = (*env)->NewStringUTF(env, alloc);
+	free(alloc);
+	return ret;
+}
+
+/* AOSP: still androidfw's legacy AssetManager count ("TODO: Switch to AssetManager2"), which ATL
+ * never creates, as AOSP's framework no longer does */
+JNIEXPORT jint JNICALL Java_android_content_res_AssetManager_getGlobalAssetManagerCount(JNIEnv *env, jclass clazz)
+{
+	return _ZN7android12AssetManager14getGlobalCountEv();
+}
+
+/* AOSP NativeThemeDump: the theme's entries to the log (priority, tag and prefix are unused there) */
+JNIEXPORT void JNICALL Java_android_content_res_AssetManager_dumpTheme(JNIEnv *env, jclass clazz, jlong theme_ptr, jint priority, jstring tag, jstring prefix)
+{
+	struct Theme *theme = _PTR(theme_ptr);
+	if (theme)
+		_ZNK7android5Theme4DumpEv(theme);
+}
+
+/* AOSP NativeGetResourceStringArrayInfo: for each entry of an array resource, its cookie and the
+ * index of its string in that cookie's pool ({cookie, -1} for an entry that is no string) */
+JNIEXPORT jintArray JNICALL Java_android_content_res_AssetManager_getResourceStringArrayInfo(JNIEnv *env, jobject this, jint ident)
+{
+	struct AssetManager *asset_manager = _PTR(_GET_LONG_FIELD(this, "mObject"));
+	AM_SCOPEDLOCK(asset_manager)
+	const struct ResolvedBag *bag = AssetManager_getBag(asset_manager, ident);
+	if (!bag)
+		return NULL;
+	jintArray array = (*env)->NewIntArray(env, bag->entry_count * 2);
+	if (!array)
+		return NULL;
+	jint *buffer = (*env)->GetIntArrayElements(env, array, NULL);
+	for (int i = 0; i < bag->entry_count; i++) {
+		const struct ResolvedBag_Entry entry = bag->entries[i];
+		struct Res_value value = entry.value;
+		struct ResTable_config config;
+		uint32_t flags, ref;
+		ApkAssetsCookie cookie = AssetManager_resolveReference(asset_manager, entry.cookie, &value, &config, &flags, &ref);
+		if (cookie < 0) {
+			(*env)->ReleaseIntArrayElements(env, array, buffer, JNI_ABORT);
+			return NULL;
+		}
+		jint string_index = value.dataType == TYPE_STRING ? (jint)value.data : -1;
+		buffer[i * 2] = JAVA_COOKIE(cookie);
+		buffer[i * 2 + 1] = string_index;
+	}
+	(*env)->ReleaseIntArrayElements(env, array, buffer, 0);
+	return array;
 }
