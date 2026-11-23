@@ -449,6 +449,7 @@ srcs = [
 	'android/bluetooth/BluetoothAdapter.java',
 	'android/bluetooth/BluetoothManager.java',
 	'android/bluetooth/BluetoothProfile.java',
+	'android/bluetooth/TlBluez.java',
 	'android/bluetooth/le/ScanCallback.java',
 	'android/content/AbstractThreadedSyncAdapter.java',
 	'android/content/ActivityNotFoundException.java',

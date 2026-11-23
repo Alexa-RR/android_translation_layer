@@ -208,8 +208,8 @@ public final class ContextImpl extends Context {
 			case "wifi":
 				return new WifiManager();
 			case "bluetooth":
-				/* no Bluetooth feature on this device: Android returns null for the service too */
-				return getPackageManager().hasSystemFeature("android.hardware.bluetooth") ? new BluetoothManager() : null;
+				/* AOSP: the service exists only on a device with the Bluetooth feature (BlueZ on the host) */
+				return getPackageManager().hasSystemFeature("android.hardware.bluetooth") ? new BluetoothManager(this) : null;
 			case "jobscheduler":
 				return job_scheduler;
 			case "appops":

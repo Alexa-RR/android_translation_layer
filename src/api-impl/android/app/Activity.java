@@ -366,6 +366,19 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 			} catch (ReflectiveOperationException e) {
 				onActivityResult(requestCode, 0 /*RESULT_CANCELED*/, new Intent());
 			}
+		} else if (android.bluetooth.BluetoothAdapter.ACTION_REQUEST_ENABLE.equals(intent.getAction())) {
+			/* AOSP's Settings (RequestPermissionActivity): Bluetooth already on finishes at once with
+			 * RESULT_OK; otherwise it asks the user. Nobody can be asked here (Bluetooth is turned on
+			 * from the car page's settings), which ends as the user declining: RESULT_CANCELED. */
+			boolean on = android.bluetooth.BluetoothAdapter.getDefaultAdapter() != null &&
+			             android.bluetooth.BluetoothAdapter.tlState() == android.bluetooth.BluetoothAdapter.STATE_ON;
+			final int resultCode = on ? -1 /*RESULT_OK*/ : 0 /*RESULT_CANCELED*/;
+			runOnUiThread(new Runnable() {
+				@Override
+				public void run() {
+					onActivityResult(requestCode, resultCode, new Intent());
+				}
+			});
 		} else if (FILE_CHOOSER_ACTIONS.contains(intent.getAction())) {
 			nativeFileChooser(FILE_CHOOSER_ACTIONS.indexOf(intent.getAction()), intent.getType(), intent.getStringExtra("android.intent.extra.TITLE"), requestCode);
 		} else if (Intent.ACTION_GET_CONTENT.equals(intent.getAction())) {

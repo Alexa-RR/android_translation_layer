@@ -92,6 +92,8 @@ public abstract class Context {
 	public static final String INPUT_METHOD_SERVICE = "input_method";
 	public static final String INPUT_SERVICE = "input";
 	public static final String LOCATION_SERVICE = "location";
+	/** AOSP: the BluetoothManager (present only with FEATURE_BLUETOOTH). */
+	public static final String BLUETOOTH_SERVICE = "bluetooth";
 	public static final String MEDIA_ROUTER_SERVICE = "media_router";
 	public static final String POWER_SERVICE = "power";
 	public static final String VIBRATOR_SERVICE = "vibrator";

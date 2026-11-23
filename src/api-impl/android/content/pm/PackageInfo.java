@@ -172,6 +172,15 @@ public class PackageInfo implements Parcelable {
 	public static final int REQUESTED_PERMISSION_GRANTED = 1 << 1;
 
 	/**
+	 * Flag for {@link #requestedPermissionsFlags}: the requested permission has
+	 * declared {@code neverForLocation} in their manifest as a strong assertion
+	 * by a developer that they will never use this permission to derive the
+	 * physical location of the device, regardless of
+	 * ACCESS_FINE_LOCATION and/or ACCESS_COARSE_LOCATION being granted.
+	 */
+	public static final int REQUESTED_PERMISSION_NEVER_FOR_LOCATION = 0x00010000;
+
+	/**
 	 * Array of all signatures read from the package file.  This is only filled
 	 * in if the flag {@link PackageManager#GET_SIGNATURES} was set.
 	 */

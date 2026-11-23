@@ -2291,7 +2291,11 @@ public class PackageManager {
 			case FEATURE_WATCH:
 				return System.getenv("ATL_IS_WATCH") != null;
 			/* teslalinux: the feature set of the car device (Pi 4 host): touch, location through the car's
-			 * GPS feed, Wi-Fi; no Bluetooth radio for apps, no camera, no microphone, no telephony. */
+			 * GPS feed, Wi-Fi, Bluetooth (LE scanning) when the host has BlueZ; no camera, no
+			 * microphone, no telephony. */
+			case "android.hardware.bluetooth":
+			case "android.hardware.bluetooth_le":
+				return android.bluetooth.BluetoothAdapter.hostHasBluetooth();
 			case "android.hardware.touchscreen":
 			case "android.hardware.touchscreen.multitouch":
 			case "android.hardware.touchscreen.multitouch.jazzhand":
@@ -2307,8 +2311,6 @@ public class PackageManager {
 			case "android.hardware.vulkan.level":
 			case "android.hardware.vulkan.version":
 				return true;
-			case "android.hardware.bluetooth":
-			case "android.hardware.bluetooth_le":
 			case "android.hardware.camera":
 			case "android.hardware.camera.any":
 			case "android.hardware.camera.front":
