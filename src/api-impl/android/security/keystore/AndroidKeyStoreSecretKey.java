@@ -4,16 +4,19 @@ import javax.crypto.SecretKey;
 
 /* teslalinux: a symmetric key that lives in the keystore. Like on Android, the material is never
  * handed to the application: getEncoded()/getFormat() return null, so only the keystore's own
- * Cipher/Mac implementations (which read it package-privately) can use it. */
+ * Cipher/Mac implementations (which read it package-privately) can use it. The authorization list
+ * the key was made with travels with it (KeyMint keeps it in the key blob). */
 public final class AndroidKeyStoreSecretKey implements SecretKey {
 	private final String alias;
 	private final String algorithm;
 	final byte[] material;
+	final KeyAuthorizations auth;
 
-	AndroidKeyStoreSecretKey(String alias, String algorithm, byte[] material) {
+	AndroidKeyStoreSecretKey(String alias, String algorithm, byte[] material, KeyAuthorizations auth) {
 		this.alias = alias;
 		this.algorithm = algorithm;
 		this.material = material;
+		this.auth = auth;
 	}
 
 	public String getAlias() { return alias; }

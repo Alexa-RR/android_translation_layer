@@ -14,4 +14,35 @@ public abstract class KeyProperties {
 	public static final int AUTH_BIOMETRIC_STRONG = 2, AUTH_DEVICE_CREDENTIAL = 1;
 	public static final int SECURITY_LEVEL_UNKNOWN = -2, SECURITY_LEVEL_UNKNOWN_SECURE = -1, SECURITY_LEVEL_SOFTWARE = 0, SECURITY_LEVEL_TRUSTED_ENVIRONMENT = 1, SECURITY_LEVEL_STRONGBOX = 2;
 	public static final int UNRESTRICTED_USAGE_COUNT = -1;
+
+	/* AOSP: keystore namespaces (KeyGenParameterSpec.Builder.setNamespace/setUid) */
+	public static final int NAMESPACE_APPLICATION = -1;
+	public static final int NAMESPACE_WIFI = 102;
+	public static final int NAMESPACE_LOCKSETTINGS = 103;
+	/** AOSP android.security.KeyStore.UID_SELF */
+	static final int UID_SELF = -1;
+
+	/** AOSP: the legacy uid of a namespace. */
+	public static int namespaceToLegacyUid(int namespace) {
+		switch (namespace) {
+			case NAMESPACE_APPLICATION:
+				return UID_SELF;
+			case NAMESPACE_WIFI:
+				return android.os.Process.WIFI_UID;
+			default:
+				throw new IllegalArgumentException("No UID corresponding to namespace " + namespace);
+		}
+	}
+
+	/** AOSP: the namespace of a legacy uid. */
+	public static int legacyUidToNamespace(int uid) {
+		switch (uid) {
+			case UID_SELF:
+				return NAMESPACE_APPLICATION;
+			case android.os.Process.WIFI_UID:
+				return NAMESPACE_WIFI;
+			default:
+				throw new IllegalArgumentException("No namespace corresponding to uid " + uid);
+		}
+	}
 }

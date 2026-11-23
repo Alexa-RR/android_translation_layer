@@ -32,11 +32,11 @@ public class AndroidKeyStore extends KeyStoreSpi {
 	public void engineSetKeyEntry(String alias, Key key, char[] password, Certificate[] chain) throws KeyStoreException {
 		if (key instanceof AndroidKeyStoreSecretKey) {
 			AndroidKeyStoreSecretKey k = (AndroidKeyStoreSecretKey) key;
-			try { KeyStoreStorage.put(alias, k.getAlgorithm(), k.material); } catch (IOException e) { throw new KeyStoreException(e); }
+			try { KeyStoreStorage.put(alias, k.getAlgorithm(), k.material, k.auth); } catch (IOException e) { throw new KeyStoreException(e); }
 			return;
 		}
 		if (key instanceof SecretKey && key.getEncoded() != null) {
-			try { KeyStoreStorage.put(alias, key.getAlgorithm(), key.getEncoded()); } catch (IOException e) { throw new KeyStoreException(e); }
+			try { KeyStoreStorage.put(alias, key.getAlgorithm(), key.getEncoded(), KeyAuthorizations.unrestricted(key.getEncoded().length * 8, KeyProperties.ORIGIN_IMPORTED)); } catch (IOException e) { throw new KeyStoreException(e); }
 			return;
 		}
 		throw new KeyStoreException("Only secret keys can be stored in this keystore: " + (key == null ? "null" : key.getClass().getName()));

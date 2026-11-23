@@ -160,11 +160,7 @@ public abstract class Context {
 		}
 		package_manager = new PackageManager();
 
-		Provider provider = new Provider("AndroidKeyStore", 1.0, "Android KeyStore provider") {};
-		provider.put("KeyStore.AndroidKeyStore", "android.security.keystore.AndroidKeyStore");
-		provider.put("KeyGenerator.AES", "android.security.keystore.KeyGenerator$AES");
-		provider.put("KeyGenerator.HmacSHA512", "android.security.keystore.KeyGenerator$HmacSHA512");
-		Security.addProvider(provider);
+		android.security.keystore.AndroidKeyStoreProvider.install();
 
 		for (PackageParser.Activity receiver : primary_application.pkg.receivers) {
 			if (receiver.intents == null)
