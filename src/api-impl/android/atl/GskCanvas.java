@@ -126,10 +126,56 @@ public class GskCanvas extends DisplayListCanvas {
 			native_drawBitmap(snapshot, bitmap.getTexture(), dst.left, dst.top, dst.width(), dst.height(), src.left, src.top, src.width(), src.height(), paint != null ? paint.paint : default_paint.paint);
 	}
 
+	/**
+	 * Skia: a STROKE paint with width 0 is a hairline, one device pixel wide whatever the matrix.
+	 * True when the current matrix would scale or skew a unit stroke (a translation or a rotation
+	 * keeps it one pixel wide).
+	 */
+	private boolean tlHairlineNeedsDevice(Paint p) {
+		if (p == null || p.getStrokeWidth() != 0)
+			return false;
+		Matrix m = state_stack.peek();
+		if (m == null || m.isIdentity())
+			return false;
+		float[] v = new float[9];
+		m.getValues(v);
+		if (v[Matrix.MPERSP_0] != 0 || v[Matrix.MPERSP_1] != 0 || v[Matrix.MPERSP_2] != 1)
+			return true;
+		final float a = v[Matrix.MSCALE_X], b = v[Matrix.MSKEW_Y], c = v[Matrix.MSKEW_X], d = v[Matrix.MSCALE_Y];
+		final float eps = 1e-4f;
+		return Math.abs(a * a + b * b - 1) > eps || Math.abs(c * c + d * d - 1) > eps || Math.abs(a * c + b * d) > eps;
+	}
+
+	/** A hairline path stroked in device space: the path mapped by the matrix, drawn with no matrix. */
+	private void tlDrawDeviceHairline(Path path, Paint paint) {
+		Matrix m = new Matrix(state_stack.peek());
+		Matrix inv = new Matrix();
+		if (!m.invert(inv))
+			return; // Skia draws nothing under a singular matrix
+		Path dev = new Path(path);
+		dev.transform(m);
+		save();
+		concat(inv);
+		drawPath(dev, paint);
+		restore();
+	}
+
 	@Override
 	public void drawPath(Path path, Paint paint) {
 		if (path == null)
 			return;
+		if (paint != null && paint.getStyle() == Paint.Style.STROKE && tlHairlineNeedsDevice(paint)) {
+			// the path effect works in local coordinates, before the hairline goes to device space
+			if (paint.getPathEffect() != null) {
+				Path effected = paint.getPathEffect().tlApply(path);
+				Paint plain = new Paint(paint);
+				plain.setPathEffect(null);
+				tlDrawDeviceHairline(effected, plain);
+			} else {
+				tlDrawDeviceHairline(path, paint);
+			}
+			return;
+		}
 		if (paint != null && paint.getPathEffect() != null
 		    && !(paint.getPathEffect() instanceof DashPathEffect && paint.getStyle() == Paint.Style.STROKE)) {
 			// Skia: the effect rewrites the geometry, which is then filled/stroked; a dashed stroke
@@ -174,7 +220,13 @@ public class GskCanvas extends DisplayListCanvas {
 			if (android.graphics.Canvas.tlRedTraces++ < 3)
 				new Throwable("[red] drawRect " + left + "," + top + "-" + right + "," + bottom).printStackTrace(System.out);
 		}
-		if (paint != null && paint.getPathEffect() != null) {
+		// the outline below is four rectangles: square (mitered) corners in local coordinates. A
+		// round or bevel join, a miter limit under sqrt(2) (Skia bevels a right angle then) and a
+		// hairline under a scaling matrix go through the path stroke.
+		if (paint != null && (paint.getPathEffect() != null
+		                      || (paint.getStyle() != Paint.Style.FILL
+		                          && (paint.getStrokeJoin() != Paint.Join.MITER || paint.getStrokeMiter() < 1.41421356f
+		                              || (paint.getStyle() == Paint.Style.STROKE && tlHairlineNeedsDevice(paint)))))) {
 			Path rp = new Path();
 			rp.addRect(left, top, right, bottom, Path.Direction.CW);
 			drawPath(rp, paint);
@@ -191,10 +243,14 @@ public class GskCanvas extends DisplayListCanvas {
 		// when the width is 0), FILL_AND_STROKE does both. The native call only fills.
 		Paint.Style style = paint != null ? paint.getStyle() : Paint.Style.FILL;
 		long p = paint != null ? paint.paint : default_paint.paint;
-		if (style != Paint.Style.STROKE)
-			native_drawRect(snapshot, left, top, right, bottom, p);
-		if (style != Paint.Style.FILL) {
-			float w = paint != null ? paint.getStrokeWidth() : 0;
+		float w = paint != null ? paint.getStrokeWidth() : 0;
+		if (style == Paint.Style.FILL || (style == Paint.Style.FILL_AND_STROKE && w == 0)) {
+			native_drawRect(snapshot, left, top, right, bottom, p); // Skia: FILL_AND_STROKE at width 0 is FILL
+		} else if (style == Paint.Style.FILL_AND_STROKE) {
+			// the fill and the mitered stroke together are one rectangle, coloured once
+			float h = w / 2f;
+			native_drawRect(snapshot, left - h, top - h, right + h, bottom + h, p);
+		} else {
 			float h = w > 0 ? w / 2f : 0.5f;
 			native_drawRect(snapshot, left - h, top - h, right + h, top + h, p);
 			native_drawRect(snapshot, left - h, bottom - h, right + h, bottom + h, p);
@@ -230,7 +286,7 @@ public class GskCanvas extends DisplayListCanvas {
 	/** AOSP: a line is always stroked (the style is ignored), with the paint's cap and path effect. */
 	public void drawLine(float startX, float startY, float stopX, float stopY, Paint paint) {
 		Paint p = paint != null ? paint : default_paint;
-		if (p.getStrokeCap() != Paint.Cap.BUTT || p.getPathEffect() != null || tlNeeds(p, false)) {
+		if (p.getStrokeCap() != Paint.Cap.BUTT || p.getPathEffect() != null || tlNeeds(p, false) || tlHairlineNeedsDevice(p)) {
 			Path lp = new Path();
 			lp.moveTo(startX, startY);
 			lp.lineTo(stopX, stopY);
@@ -468,7 +524,41 @@ public class GskCanvas extends DisplayListCanvas {
 	public boolean clipOutRect(float left, float top, float right, float bottom) {
 		Path p = new Path();
 		p.addRect(left, top, right, bottom, Path.Direction.CW);
+		tlClipBoundsMinus(left, top, right, bottom);
 		return tlClipOut(p);
+	}
+
+	/**
+	 * The clip bounds after subtracting a local rectangle (Skia's raster clip is the exact region,
+	 * whose bounds shrink when the rectangle spans the whole clip in one direction). The clip is
+	 * tracked as device bounds, so only a rectangle that stays one under the matrix and covers the
+	 * bounds edge to edge in one direction shrinks them; a covered clip becomes empty.
+	 */
+	private void tlClipBoundsMinus(float left, float top, float right, float bottom) {
+		RectF cur = tlCurrentClip();
+		if (cur == null || cur.isEmpty() || !(right > left && bottom > top))
+			return;
+		Matrix m = state_stack.peek();
+		if (m != null && !m.rectStaysRect())
+			return;
+		RectF d = tlToDevice(left, top, right, bottom);
+		boolean spansX = d.left <= cur.left && d.right >= cur.right;
+		boolean spansY = d.top <= cur.top && d.bottom >= cur.bottom;
+		if (spansX && spansY) {
+			cur.setEmpty();
+		} else if (spansX) {
+			if (d.top <= cur.top && d.bottom > cur.top)
+				cur.top = Math.min(cur.bottom, d.bottom);
+			else if (d.bottom >= cur.bottom && d.top < cur.bottom)
+				cur.bottom = Math.max(cur.top, d.top);
+		} else if (spansY) {
+			if (d.left <= cur.left && d.right > cur.left)
+				cur.left = Math.min(cur.right, d.right);
+			else if (d.right >= cur.right && d.left < cur.right)
+				cur.right = Math.max(cur.left, d.left);
+		}
+		if (cur.isEmpty())
+			cur.setEmpty();
 	}
 
 	@Override
@@ -617,18 +707,57 @@ public class GskCanvas extends DisplayListCanvas {
 		drawPoints(pts, 0, pts.length, paint);
 	}
 
-	/* ---- teslalinux: colour filter groups for drawables (PorterDuff tints as GSK colour matrices) ---- */
+	/* ---- teslalinux: colour filter groups for drawables ----
+	 * A filter that is a colour matrix of the un-premultiplied colour (colour matrix and lighting
+	 * filters, and the blend modes that are affine: SRC_IN tints, DST_IN alphas, MODULATE, ...) is
+	 * pushed around the drawing as a GSK colour-matrix group. The other blend modes (DST_OVER, XOR,
+	 * PLUS, SCREEN, OVERLAY, ...) need the content's rectangle: the content is recorded on its own
+	 * (tlBeginFiltered) and goes into the canvas through the filter over that rectangle
+	 * (tlEndFiltered), as Skia draws a bitmap or a drawable's image through the paint's filter. */
 	private Paint tlFilterPaint;
 
-	/** Pushes a colour-matrix group for the filter; returns false (nothing pushed) for filters GSK cannot express. */
-	public boolean tlPushColorFilter(ColorFilter filter) {
-		if (!(filter instanceof PorterDuffColorFilter))
-			return false;
+	private Paint tlFilterPaintFor(ColorFilter filter) {
 		if (tlFilterPaint == null)
 			tlFilterPaint = new Paint();
 		tlFilterPaint.setColorFilter(filter);
-		native_pushColorMatrix(snapshot, tlFilterPaint.paint);
+		return tlFilterPaint;
+	}
+
+	/** Pushes a colour-matrix group for the filter; false (nothing pushed) when the filter is no colour matrix. */
+	public boolean tlPushColorFilter(ColorFilter filter) {
+		if (filter == null)
+			return false;
+		Paint fp = tlFilterPaintFor(filter);
+		if (!fp.tlColorFilterIsMatrix())
+			return false;
+		native_pushColorMatrix(snapshot, fp.paint);
 		return true;
+	}
+
+	/** Whether tlPushColorFilter can push the filter (null: nothing to push, true). */
+	public boolean tlColorFilterIsMatrix(ColorFilter filter) {
+		return filter == null || tlFilterPaintFor(filter).tlColorFilterIsMatrix();
+	}
+
+	/**
+	 * Starts recording content on its own for tlEndFiltered; returns the canvas's snapshot to give
+	 * back. Only native drawing (paintables, nine-patches) may happen until tlEndFiltered: the
+	 * canvas state (saves, clips, layers) belongs to the outer snapshot.
+	 */
+	public long tlBeginFiltered() {
+		long outer = snapshot;
+		snapshot = native_layerBegin();
+		return outer;
+	}
+
+	/** Ends the recording of tlBeginFiltered and draws it through the filter over (l, t, r, b). */
+	public void tlEndFiltered(long outer, ColorFilter filter, float l, float t, float r, float b) {
+		long node = native_layerFinish(snapshot);
+		snapshot = outer;
+		if (node == 0)
+			return;
+		native_appendFiltered(snapshot, node, tlFilterPaintFor(filter).paint, l, t, r, b);
+		native_nodeUnref(node);
 	}
 
 	/** Closes the group opened by tlPushColorFilter. */
@@ -637,6 +766,7 @@ public class GskCanvas extends DisplayListCanvas {
 	}
 
 	private static native void native_pushColorMatrix(long snapshot, long paint);
+	private static native void native_appendFiltered(long snapshot, long node, long paint, float l, float t, float r, float b);
 
 	/** AOSP: a display-list canvas is hardware accelerated; GSK renders the snapshot on the GPU. */
 	@Override
@@ -758,11 +888,14 @@ public class GskCanvas extends DisplayListCanvas {
 		snapshot = layer.outer;
 		int mode = layer.paint != null ? layer.paint.tlBlendModeValue() : -1;
 		long filterPaint = tlHasNativeFilter(layer.paint) ? layer.paint.paint : 0;
+		final boolean bounded = layer.bounds != null;
+		final float bl = bounded ? layer.bounds.left : 0, bt = bounded ? layer.bounds.top : 0;
+		final float br = bounded ? layer.bounds.right : 0, bb = bounded ? layer.bounds.bottom : 0;
 		if (mode >= 0 && tlCanCompose()) {
 			long dst = tlTakeTarget();
 			long t = native_layerBegin();
 			tlReplayState(t);
-			native_appendLayer(t, node, layer.alpha, filterPaint);
+			native_appendLayer(t, node, layer.alpha, filterPaint, bounded, bl, bt, br, bb);
 			long src = tlFinishReplayed(t);
 			long cov = 0;
 			if (layer.bounds != null) {
@@ -776,7 +909,7 @@ public class GskCanvas extends DisplayListCanvas {
 			native_appendComposite(s, dst, src, cov, mode);
 			tlInstallTarget(s);
 		} else if (mode < 0 || !tlModeAddsNothing(mode)) {
-			native_appendLayer(snapshot, node, layer.alpha, filterPaint);
+			native_appendLayer(snapshot, node, layer.alpha, filterPaint, bounded, bl, bt, br, bb);
 		}
 		native_nodeUnref(node);
 	}
@@ -1014,6 +1147,18 @@ public class GskCanvas extends DisplayListCanvas {
 			op.draw(mask);
 			native_pop(snapshot, 1);
 			boolean filtered = tlHasNativeFilter(paint);
+			if (filtered && !paint.tlColorFilterIsMatrix()) {
+				// Skia: the filter on every colour the shader produces (inside b, what the shape covers)
+				long sh_s = native_layerBegin();
+				tlAppendShader(sh_s, sh, b, paint);
+				long node = native_layerFinish(sh_s);
+				if (node != 0) {
+					native_appendFiltered(snapshot, node, paint.paint, b.left, b.top, b.right, b.bottom);
+					native_nodeUnref(node);
+				}
+				native_pop(snapshot, 1);
+				return;
+			}
 			if (filtered)
 				native_pushColorMatrix(snapshot, paint.paint);
 			tlAppendShader(snapshot, sh, b, paint);
@@ -1210,7 +1355,7 @@ public class GskCanvas extends DisplayListCanvas {
 	private static native long native_layerFinish(long snapshot);
 	private static native void native_nodeUnref(long node);
 	private static native void native_appendNode(long snapshot, long node);
-	private static native void native_appendLayer(long snapshot, long node, float alpha, long paint);
+	private static native void native_appendLayer(long snapshot, long node, float alpha, long paint, boolean bounded, float l, float t, float r, float b);
 	private static native void native_appendComposite(long snapshot, long dst, long src, long coverage, int mode);
 	private static native void native_pushMask(long snapshot, int mode);
 	private static native void native_pushBlur(long snapshot, float sigma);

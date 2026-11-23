@@ -6,9 +6,16 @@
 
 #include "../generated_headers/android_graphics_Matrix.h"
 
+/* AOSP Matrix(Matrix src): a copy of src, or the identity (src 0). The copy was missing: every
+ * new Matrix(m) was the identity (GskCanvas.save() lost the canvas matrix it tracks). */
 JNIEXPORT jlong JNICALL Java_android_graphics_Matrix_native_1create(JNIEnv *env, jclass class, jlong src)
 {
-	return _INTPTR(graphene_matrix_init_identity(graphene_matrix_alloc()));
+	graphene_matrix_t *matrix = graphene_matrix_alloc();
+	if (src)
+		graphene_matrix_init_from_matrix(matrix, (graphene_matrix_t *)_PTR(src));
+	else
+		graphene_matrix_init_identity(matrix);
+	return _INTPTR(matrix);
 }
 
 JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1getValues(JNIEnv *env, jclass class, jlong src, jfloatArray values_ref)

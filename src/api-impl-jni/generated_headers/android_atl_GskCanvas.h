@@ -187,6 +187,14 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1pushColorMatrix
 
 /*
  * Class:     android_atl_GskCanvas
+ * Method:    native_appendFiltered
+ * Signature: (JJJFFFF)V
+ */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendFiltered
+  (JNIEnv *, jclass, jlong, jlong, jlong, jfloat, jfloat, jfloat, jfloat);
+
+/*
+ * Class:     android_atl_GskCanvas
  * Method:    native_drawPathFillType
  * Signature: (JJJIFFFF)V
  */
@@ -228,10 +236,10 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendNode
 /*
  * Class:     android_atl_GskCanvas
  * Method:    native_appendLayer
- * Signature: (JJFJ)V
+ * Signature: (JJFJZFFFF)V
  */
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendLayer
-  (JNIEnv *, jclass, jlong, jlong, jfloat, jlong);
+  (JNIEnv *, jclass, jlong, jlong, jfloat, jlong, jboolean, jfloat, jfloat, jfloat, jfloat);
 
 /*
  * Class:     android_atl_GskCanvas

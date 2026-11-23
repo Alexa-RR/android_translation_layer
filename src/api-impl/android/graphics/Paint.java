@@ -198,15 +198,15 @@ public class Paint {
 	/** AOSP: a blend-mode colour filter (PorterDuffColorFilter, or BlendModeColorFilter as Compose and
 	 * AndroidX use on API 29+) with the mode's real result (native-paint-colorfilter-modes.sh). */
 	public ColorFilter setColorFilter(ColorFilter colorFilter) {
+		/* the mode goes to the native side as its SkBlendMode (PorterDuff.Mode.MULTIPLY is
+		 * MODULATE, BlendMode.MULTIPLY the W3C multiply), every mode with Skia's result
+		 * (atl_colorfilter.c) */
 		if (colorFilter instanceof PorterDuffColorFilter) {
 			PorterDuffColorFilter porterDuff = (PorterDuffColorFilter)colorFilter;
-			native_set_color_filter_mode(paint, porterDuff.getMode().ordinal(), porterDuff.getColor());
+			native_set_color_filter_mode(paint, porterDuff.getMode().nativeInt, porterDuff.getColor());
 		} else if (colorFilter instanceof BlendModeColorFilter) {
 			BlendModeColorFilter blend = (BlendModeColorFilter)colorFilter;
-			PorterDuff.Mode mode = BlendMode.blendModeToPorterDuffMode(blend.getMode());
-			if (blend.getMode() == BlendMode.MODULATE)
-				mode = PorterDuff.Mode.MULTIPLY;
-			native_set_color_filter_mode(paint, mode != null ? mode.ordinal() : PorterDuff.Mode.SRC_IN.ordinal(), blend.getColor());
+			native_set_color_filter_mode(paint, BlendMode.toValue(blend.getMode()), blend.getColor());
 		} else if (colorFilter instanceof ColorMatrixColorFilter) {
 			native_set_color_matrix(paint, ((ColorMatrixColorFilter) colorFilter).tlArray());
 		} else if (colorFilter instanceof LightingColorFilter) {
@@ -650,9 +650,38 @@ public class Paint {
 		return (mFlags & FAKE_BOLD_TEXT_FLAG) != 0;
 	}
 
+	/**
+	 * AOSP (Skia's SkPaint::getFillPath at resScale 1): the path effect is applied first; then FILL
+	 * (and FILL_AND_STROKE with a 0 width) gives the path itself, STROKE and FILL_AND_STROKE the
+	 * outline of the stroke (its width, cap, join and miter limit; plus the path for
+	 * FILL_AND_STROKE) as a WINDING path, inverse when src is (atl_stroke.c). Returns false only for
+	 * a hairline (STROKE with width 0), for which dst is the path: a hairline has no outline.
+	 */
 	public boolean getFillPath(Path src, Path dst) {
-		return false;
+		Path s = src;
+		if (mPathEffect != null)
+			s = mPathEffect.tlApply(src);
+		final Style style = getStyle();
+		final float width = getStrokeWidth();
+		if (style == Style.FILL || width == 0) {
+			if (dst != s)
+				dst.set(s);
+			return !(style == Style.STROKE && width == 0);
+		}
+		long outline = native_stroke_to_path(s.getGskPath(), width, getStrokeCap().ordinal(), getStrokeJoin().ordinal(),
+		                                     getStrokeMiter(), style == Style.FILL_AND_STROKE, 1f);
+		dst.tlSetGskPath(outline, s.isInverseFillType() ? Path.FillType.INVERSE_WINDING : Path.FillType.WINDING);
+		return true;
 	}
+
+	private static native long native_stroke_to_path(long path, float width, int cap, int join, float miter, boolean addSrc, float resScale);
+
+	/** Whether the colour filter (if any) is a colour matrix that can be pushed around drawn content (GskCanvas). */
+	public boolean tlColorFilterIsMatrix() {
+		return native_filter_is_matrix(paint);
+	}
+
+	private static native boolean native_filter_is_matrix(long paint);
 
 	public void reset() {
 		native_recycle(paint);

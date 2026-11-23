@@ -53,21 +53,19 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendNode(JNIEnv *env
 		gtk_snapshot_append_node(GTK_SNAPSHOT(_PTR(snapshot_ptr)), _PTR(node_ptr));
 }
 
-/* a finished layer into its parent: the layer paint's alpha (0..1) and colour filter (paint 0: none) */
-JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendLayer(JNIEnv *env, jclass clazz, jlong snapshot_ptr, jlong node_ptr, jfloat alpha, jlong paint_ptr)
+/* a finished layer into its parent: the layer paint's colour filter (paint 0: none), then its alpha
+ * (0..1). Skia draws the layer as an image of its bounds: a filter that colours transparent pixels
+ * too (DST_OVER, SCREEN, ...) covers the layer bounds (bounded) or, without them, the content's. */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendLayer(JNIEnv *env, jclass clazz, jlong snapshot_ptr, jlong node_ptr, jfloat alpha, jlong paint_ptr,
+		jboolean bounded, jfloat l, jfloat t, jfloat r, jfloat b)
 {
 	GtkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
 	struct AndroidPaint *paint = _PTR(paint_ptr);
 	if (!node_ptr || alpha <= 0.f)
 		return;
-	gboolean filter = paint && paint->use_color_filter;
 	if (alpha < 1.f)
 		gtk_snapshot_push_opacity(snapshot, alpha);
-	if (filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	gtk_snapshot_append_node(snapshot, _PTR(node_ptr));
-	if (filter)
-		gtk_snapshot_pop(snapshot);
+	tl_paint_append_filtered(snapshot, paint, _PTR(node_ptr), bounded ? &GRAPHENE_RECT_INIT(l, t, r - l, b - t) : NULL);
 	if (alpha < 1.f)
 		gtk_snapshot_pop(snapshot);
 }
@@ -473,6 +471,7 @@ JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1color_1matrix(JN
 	struct AndroidPaint *paint = _PTR(paint_ptr);
 	if (!matrix_arr) {
 		paint->use_color_filter = FALSE;
+		paint->filter_by_mode = FALSE;
 		return;
 	}
 	jfloat *a = (*env)->GetFloatArrayElements(env, matrix_arr, NULL);
@@ -484,6 +483,7 @@ JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1color_1matrix(JN
 	graphene_vec4_init(&paint->color_offset, a[4] / 255.f, a[9] / 255.f, a[14] / 255.f, a[19] / 255.f);
 	(*env)->ReleaseFloatArrayElements(env, matrix_arr, a, JNI_ABORT);
 	paint->use_color_filter = TRUE;
+	paint->filter_by_mode = FALSE;
 }
 
 /*
@@ -559,7 +559,7 @@ JNIEXPORT jlong JNICALL Java_android_view_RenderNode_nativeLayerPaintKeep(JNIEnv
 	GskRenderNode *node = gsk_render_node_ref(_PTR(node_ptr));
 	struct AndroidPaint *paint = _PTR(paint_ptr);
 	if (paint && paint->use_color_filter) {
-		GskRenderNode *filtered = gsk_color_matrix_node_new(node, &paint->color_matrix, &paint->color_offset);
+		GskRenderNode *filtered = tl_paint_filter_node(paint, node, NULL);
 		gsk_render_node_unref(node);
 		node = filtered;
 	}

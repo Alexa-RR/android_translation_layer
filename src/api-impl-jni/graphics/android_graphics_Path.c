@@ -211,14 +211,42 @@ JNIEXPORT void JNICALL Java_android_graphics_Path_native_1add_1round_1rect(JNIEn
 	gsk_path_builder_add_rounded_rect(_PTR(builder_ptr), &round_rect);
 }
 
+struct tl_bounds {
+	gboolean any;
+	float l, t, r, b;
+};
+
+static gboolean tl_bounds_cb(GskPathOperation op, const graphene_point_t *pts, gsize n_pts, float weight, gpointer data)
+{
+	struct tl_bounds *bb = data;
+	/* every point of the operation (a conic's weight is not one of them) */
+	for (gsize i = 0; i < n_pts; i++) {
+		if (!bb->any) {
+			bb->l = bb->r = pts[i].x;
+			bb->t = bb->b = pts[i].y;
+			bb->any = TRUE;
+		} else {
+			bb->l = MIN(bb->l, pts[i].x);
+			bb->r = MAX(bb->r, pts[i].x);
+			bb->t = MIN(bb->t, pts[i].y);
+			bb->b = MAX(bb->b, pts[i].y);
+		}
+	}
+	return TRUE;
+}
+
+/* AOSP computeBounds: the bounds of the path's points, control points included (Skia's
+ * SkPath::getBounds); an empty path has empty bounds at 0. Computed from the operations: GSK's own
+ * bounds of a contour with conics take the conic weight in as a point (a circle drawn with conics
+ * away from the origin reached to (0, 0)). */
 JNIEXPORT void JNICALL Java_android_graphics_Path_native_1get_1bounds(JNIEnv *env, jclass this, jlong path_ptr, jobject bounds)
 {
-	graphene_rect_t rect;
-	gsk_path_get_bounds(_PTR(path_ptr), &rect);
-	_SET_FLOAT_FIELD(bounds, "left", rect.origin.x);
-	_SET_FLOAT_FIELD(bounds, "top", rect.origin.y);
-	_SET_FLOAT_FIELD(bounds, "right", rect.origin.x + rect.size.width);
-	_SET_FLOAT_FIELD(bounds, "bottom", rect.origin.y + rect.size.height);
+	struct tl_bounds bb = { 0 };
+	gsk_path_foreach(_PTR(path_ptr), GSK_PATH_FOREACH_ALLOW_QUAD | GSK_PATH_FOREACH_ALLOW_CUBIC | GSK_PATH_FOREACH_ALLOW_CONIC, tl_bounds_cb, &bb);
+	_SET_FLOAT_FIELD(bounds, "left", bb.l);
+	_SET_FLOAT_FIELD(bounds, "top", bb.t);
+	_SET_FLOAT_FIELD(bounds, "right", bb.r);
+	_SET_FLOAT_FIELD(bounds, "bottom", bb.b);
 }
 
 /* ---- teslalinux: Path.addCircle ---------------------------------------------------------------- */

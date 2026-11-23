@@ -39,6 +39,22 @@ extern "C" {
 #define android_graphics_Paint_HINTING_ON 1L
 /*
  * Class:     android_graphics_Paint
+ * Method:    native_stroke_to_path
+ * Signature: (JFIIFZF)J
+ */
+JNIEXPORT jlong JNICALL Java_android_graphics_Paint_native_1stroke_1to_1path
+  (JNIEnv *, jclass, jlong, jfloat, jint, jint, jfloat, jboolean, jfloat);
+
+/*
+ * Class:     android_graphics_Paint
+ * Method:    native_filter_is_matrix
+ * Signature: (J)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Paint_native_1filter_1is_1matrix
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_graphics_Paint
  * Method:    native_create
  * Signature: ()J
  */

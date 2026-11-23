@@ -329,8 +329,19 @@ public class NinePatch {
 		                     && mTlValues[Matrix.MPERSP_0] == 0 && mTlValues[Matrix.MPERSP_1] == 0 && mTlValues[Matrix.MPERSP_2] == 1
 		                     && mTlValues[Matrix.MSCALE_X] > 0 && mTlValues[Matrix.MSCALE_Y] > 0;
 		final float sx = snap ? mTlValues[Matrix.MSCALE_X] : 0, sy = snap ? mTlValues[Matrix.MSCALE_Y] : 0;
-		nativeDraw(mPaintable, gsk.snapshot, left, top, width, height, alpha,
+		/* a filter that is no colour matrix goes over every pixel of the patch's rectangle (Skia
+		 * draws the nine-patch bitmap through the paint) */
+		final boolean record = filter != null && !pushed;
+		/* there the paint alpha fades the filtered pixels (Skia: filter, then the paint alpha) */
+		final boolean alphaGroup = record && alpha < 1f
+		                           && gsk.tlPushColorFilter(new PorterDuffColorFilter(paint.getAlpha() << 24, PorterDuff.Mode.DST_IN));
+		final long outer = record ? gsk.tlBeginFiltered() : 0;
+		nativeDraw(mPaintable, gsk.snapshot, left, top, width, height, alphaGroup ? 1f : alpha,
 		           sx, snap ? mTlValues[Matrix.MTRANS_X] + sx * left : 0, sy, snap ? mTlValues[Matrix.MTRANS_Y] + sy * top : 0);
+		if (record)
+			gsk.tlEndFiltered(outer, filter, left, top, left + width, top + height);
+		if (alphaGroup)
+			gsk.tlPopGroup();
 		if (pushed)
 			gsk.tlPopGroup();
 		if (scaled)

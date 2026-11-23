@@ -80,6 +80,13 @@ public class Path {
 		reset();
 	}
 
+	/** Replaces the geometry with gskPath (this path takes the reference) and sets the fill type. */
+	void tlSetGskPath(long gskPath, FillType fillType) {
+		reset();
+		path = gskPath;
+		this.fillType = fillType;
+	}
+
 	public void close() {
 		native_close(getBuilder());
 	}

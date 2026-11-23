@@ -13,12 +13,15 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawBitmap__JJIIIIJ(JN
 	GdkSnapshot *snapshot = (GdkSnapshot *)_PTR(snapshot_ptr);
 	GdkTexture *texture = GDK_TEXTURE(_PTR(texture_ptr));
 	struct AndroidPaint *paint = _PTR(paint_ptr);
-	if (paint->use_color_filter) {
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
+	const graphene_rect_t dst = GRAPHENE_RECT_INIT(x, y, width, height);
+	if (!paint->use_color_filter) {
+		gtk_snapshot_append_texture(snapshot, texture, &dst);
+		return;
 	}
-	gtk_snapshot_append_texture(snapshot, texture, &GRAPHENE_RECT_INIT(x, y, width, height));
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+	/* Skia: every texel of the bitmap through the paint's colour filter */
+	GskRenderNode *node = gsk_texture_node_new(texture, &dst);
+	tl_paint_append_filtered(snapshot, paint, node, &dst);
+	gsk_render_node_unref(node);
 }
 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawBitmap__JJIIIIIIIIJ(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong texture_ptr, jint x, jint y, jint width, jint height, jint src_x, jint src_y, jint src_width, jint src_height, jlong paint_ptr)
@@ -26,18 +29,17 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawBitmap__JJIIIIIIII
 	GdkSnapshot *snapshot = (GdkSnapshot *)_PTR(snapshot_ptr);
 	GdkTexture *texture = GDK_TEXTURE(_PTR(texture_ptr));
 	struct AndroidPaint *paint = _PTR(paint_ptr);
-	if (paint->use_color_filter) {
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	}
-	gtk_snapshot_push_clip(snapshot, &GRAPHENE_RECT_INIT(x, y, width, height));
+	const graphene_rect_t dst = GRAPHENE_RECT_INIT(x, y, width, height);
 	float xscale = width / (float)src_width;
 	float yscale = height / (float)src_height;
 	float scaled_width = gdk_texture_get_width(texture) * xscale;
 	float scaled_height = gdk_texture_get_height(texture) * yscale;
-	gtk_snapshot_append_texture(snapshot, texture, &GRAPHENE_RECT_INIT(x - src_x * xscale, y - src_y * yscale, scaled_width, scaled_height));
-	gtk_snapshot_pop(snapshot);
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+	GskRenderNode *tex = gsk_texture_node_new(texture, &GRAPHENE_RECT_INIT(x - src_x * xscale, y - src_y * yscale, scaled_width, scaled_height));
+	GskRenderNode *node = gsk_clip_node_new(tex, &dst);
+	gsk_render_node_unref(tex);
+	/* Skia: every texel of the bitmap through the paint's colour filter */
+	tl_paint_append_filtered(snapshot, paint, node, &dst);
+	gsk_render_node_unref(node);
 }
 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRect(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jfloat left, jfloat top, jfloat right, jfloat bottom, jlong paint_ptr)
@@ -45,11 +47,28 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRect(JNIEnv *env, 
 	GdkSnapshot *snapshot = (GdkSnapshot *)_PTR(snapshot_ptr);
 	struct AndroidPaint *paint = _PTR(paint_ptr);
 	graphene_rect_t bounds = GRAPHENE_RECT_INIT(left, top, right - left, bottom - top);
-	if (paint->use_color_filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	gtk_snapshot_append_color(snapshot, &paint->color, &bounds);
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+	GdkRGBA color;
+	/* a solid colour: the colour filter is applied to it (no filter node) */
+	tl_paint_filtered_color(paint, &color);
+	gtk_snapshot_append_color(snapshot, &color, &bounds);
+}
+
+/* Skia FILL_AND_STROKE: one shape, the fill and the stroke together, coloured once; a translucent
+ * colour must not cover their overlap twice, so both are drawn opaque inside an opacity group */
+static void tl_fill_and_stroke(GtkSnapshot *snapshot, GskPath *path, GskFillRule rule, const GskStroke *stroke, const GdkRGBA *color)
+{
+	if (color->alpha >= 1.f) {
+		gtk_snapshot_append_stroke(snapshot, path, stroke, color);
+		gtk_snapshot_append_fill(snapshot, path, rule, color);
+		return;
+	}
+	if (color->alpha <= 0.f)
+		return;
+	const GdkRGBA opaque = { color->red, color->green, color->blue, 1.f };
+	gtk_snapshot_push_opacity(snapshot, color->alpha);
+	gtk_snapshot_append_stroke(snapshot, path, stroke, &opaque);
+	gtk_snapshot_append_fill(snapshot, path, rule, &opaque);
+	gtk_snapshot_pop(snapshot);
 }
 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawPath(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong path_ptr, jint fill_rule, jlong paint_ptr)
@@ -57,16 +76,14 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawPath(JNIEnv *env, 
 	GtkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
 	GskPath *path = _PTR(path_ptr);
 	struct AndroidPaint *paint = _PTR(paint_ptr);
-	if (paint->use_color_filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	if (paint->is_stroke) {
-		gtk_snapshot_append_stroke(snapshot, path, paint->gsk_stroke, &paint->color);
-	}
-	if (paint->is_fill) {
-		gtk_snapshot_append_fill(snapshot, path, fill_rule, &paint->color);
-	}
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+	GdkRGBA color;
+	tl_paint_filtered_color(paint, &color);
+	if (paint->is_stroke && paint->is_fill && paint->stroke_width > 0)
+		tl_fill_and_stroke(snapshot, path, fill_rule, paint->gsk_stroke, &color);
+	else if (paint->is_fill) /* FILL, or FILL_AND_STROKE at width 0 (Skia: a fill) */
+		gtk_snapshot_append_fill(snapshot, path, fill_rule, &color);
+	else if (paint->is_stroke)
+		gtk_snapshot_append_stroke(snapshot, path, paint->gsk_stroke, &color);
 }
 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1translate(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jfloat dx, jfloat dy)
@@ -106,20 +123,19 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawLine(JNIEnv *env, 
 	gtk_snapshot_rotate(snapshot, rotation * 180 / M_PI);
 	float length = sqrt((x1 - x0) * (x1 - x0) + (y1 - y0) * (y1 - y0));
 	float stroke_width = gsk_stroke_get_line_width(paint->gsk_stroke);
-	if (paint->use_color_filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	gtk_snapshot_append_color(snapshot, &paint->color, &GRAPHENE_RECT_INIT(0, -stroke_width / 2, length, stroke_width));
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+	GdkRGBA color;
+	tl_paint_filtered_color(paint, &color);
+	gtk_snapshot_append_color(snapshot, &color, &GRAPHENE_RECT_INIT(0, -stroke_width / 2, length, stroke_width));
 	gtk_snapshot_restore(snapshot);
 }
 
+/* AOSP drawLines: count floats from offset, four per line, a trailing partial line ignored */
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawLines(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jfloatArray points_arr, jint offset, jint count, jlong paint_ptr)
 {
 	jfloat *points = (*env)->GetFloatArrayElements(env, points_arr, NULL);
-	for (int i = offset; i < count; i++)
+	for (int i = offset; i + 3 < offset + count; i += 4)
 		Java_android_atl_GskCanvas_native_1drawLine(env, this_class, snapshot_ptr, points[i + 0], points[i + 1], points[i + 2], points[i + 3], paint_ptr);
-	(*env)->ReleaseFloatArrayElements(env, points_arr, points, 0);
+	(*env)->ReleaseFloatArrayElements(env, points_arr, points, JNI_ABORT);
 }
 
 extern GtkWidget *window;
@@ -140,13 +156,11 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawText(JNIEnv *env, 
 		x -= rect.width / 2.f;
 	else if (paint->alignment == PANGO_ALIGN_RIGHT)
 		x -= rect.width;
-	if (paint->use_color_filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
+	GdkRGBA color;
+	tl_paint_filtered_color(paint, &color);
 	gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(x, y));
-	gtk_snapshot_append_layout(snapshot, layout, &paint->color);
+	gtk_snapshot_append_layout(snapshot, layout, &color);
 	gtk_snapshot_translate(snapshot, &GRAPHENE_POINT_INIT(-x, -y));
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
 	g_object_unref(layout);
 }
 
@@ -154,31 +168,17 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawRoundRect(JNIEnv *
 {
 	GdkSnapshot *snapshot = (GdkSnapshot *)_PTR(snapshot_ptr);
 	struct AndroidPaint *paint = _PTR(paint_ptr);
-	GdkRGBA gdk_color[4];
-	for (int i = 0; i < 4; i++) {
-		gdk_color[i].red = paint->color.red;
-		gdk_color[i].green = paint->color.green;
-		gdk_color[i].blue = paint->color.blue;
-		gdk_color[i].alpha = paint->color.alpha;
-	}
+	/* the filled rounded rectangle (GskCanvas strokes every outline through its path: AOSP centres
+	 * a stroke on the outline, a GSK border lies inside it) */
+	GdkRGBA color;
+	tl_paint_filtered_color(paint, &color);
 	GskRoundedRect round_rect = {
 		.bounds = GRAPHENE_RECT_INIT(left, top, right - left, bottom - top),
 		.corner = {{rx, ry}, {rx, ry}, {rx, ry}, {rx, ry}},
 	};
-	float width = gsk_stroke_get_line_width(paint->gsk_stroke);
-	const float widths[4] = {width, width, width, width};
-	if (paint->use_color_filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	if (paint->is_fill) {
-		gtk_snapshot_push_rounded_clip(snapshot, &round_rect);
-		gtk_snapshot_append_color(snapshot, gdk_color, &round_rect.bounds);
-		gtk_snapshot_pop(snapshot);
-	}
-	if (paint->is_stroke) {
-		gtk_snapshot_append_border(snapshot, &round_rect, widths, gdk_color);
-	}
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+	gtk_snapshot_push_rounded_clip(snapshot, &round_rect);
+	gtk_snapshot_append_color(snapshot, &color, &round_rect.bounds);
+	gtk_snapshot_pop(snapshot);
 }
 
 JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1scale(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jfloat x, jfloat y)
@@ -286,22 +286,36 @@ JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1drawPathFillType(JNIEn
 	struct AndroidPaint *paint = _PTR(paint_ptr);
 	GskFillRule rule = (fill_type == 1 || fill_type == 3) ? GSK_FILL_RULE_EVEN_ODD : GSK_FILL_RULE_WINDING;
 	gboolean inverse = fill_type >= 2;
-	if (paint->use_color_filter)
-		gtk_snapshot_push_color_matrix(snapshot, &paint->color_matrix, &paint->color_offset);
-	if (paint->is_stroke)
-		gtk_snapshot_append_stroke(snapshot, path, paint->gsk_stroke, &paint->color);
+	GdkRGBA color;
+	tl_paint_filtered_color(paint, &color);
+	if (paint->is_stroke && paint->is_fill && !inverse && paint->stroke_width > 0) {
+		tl_fill_and_stroke(snapshot, path, rule, paint->gsk_stroke, &color);
+		return;
+	}
+	/* FILL_AND_STROKE at width 0 is a fill (Skia) */
+	if (paint->is_stroke && !(paint->is_fill && paint->stroke_width == 0))
+		gtk_snapshot_append_stroke(snapshot, path, paint->gsk_stroke, &color);
 	if (paint->is_fill) {
 		if (!inverse) {
-			gtk_snapshot_append_fill(snapshot, path, rule, &paint->color);
+			gtk_snapshot_append_fill(snapshot, path, rule, &color);
 		} else if (right > left && bottom > top) {
 			/* the colour over the bounds, masked by the inverted coverage of the path */
 			gtk_snapshot_push_mask(snapshot, GSK_MASK_MODE_INVERTED_ALPHA);
 			gtk_snapshot_append_fill(snapshot, path, rule, &(GdkRGBA){0, 0, 0, 1});
 			gtk_snapshot_pop(snapshot);
-			gtk_snapshot_append_color(snapshot, &paint->color, &GRAPHENE_RECT_INIT(left, top, right - left, bottom - top));
+			gtk_snapshot_append_color(snapshot, &color, &GRAPHENE_RECT_INIT(left, top, right - left, bottom - top));
 			gtk_snapshot_pop(snapshot);
 		}
 	}
-	if (paint->use_color_filter)
-		gtk_snapshot_pop(snapshot);
+}
+
+/* teslalinux: content drawn into its own snapshot (GskCanvas.tlBeginFiltered) put into the canvas
+ * through a colour filter that is no colour matrix, over the content's rectangle (l, t, r, b);
+ * the node reference stays the caller's */
+JNIEXPORT void JNICALL Java_android_atl_GskCanvas_native_1appendFiltered(JNIEnv *env, jclass this_class, jlong snapshot_ptr, jlong node_ptr, jlong paint_ptr,
+		jfloat l, jfloat t, jfloat r, jfloat b)
+{
+	if (!node_ptr)
+		return;
+	tl_paint_append_filtered(_PTR(snapshot_ptr), _PTR(paint_ptr), _PTR(node_ptr), &GRAPHENE_RECT_INIT(l, t, r - l, b - t));
 }

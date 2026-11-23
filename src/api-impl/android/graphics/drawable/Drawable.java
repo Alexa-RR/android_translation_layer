@@ -171,7 +171,15 @@ public class Drawable {
 			boolean pushed = filter != null && gsk.tlPushColorFilter(filter);
 			if (mBounds.left != 0 || mBounds.top != 0)
 				canvas.translate(mBounds.left, mBounds.top);
-			native_draw(paintable, gsk.snapshot, mBounds.width(), mBounds.height());
+			if (filter != null && !pushed) {
+				/* a filter that is no colour matrix (DST_OVER, SCREEN, PLUS, ...): every pixel of
+				 * the drawable's rectangle goes through it, as Skia draws the drawable's image */
+				final long outer = gsk.tlBeginFiltered();
+				native_draw(paintable, gsk.snapshot, mBounds.width(), mBounds.height());
+				gsk.tlEndFiltered(outer, filter, 0, 0, mBounds.width(), mBounds.height());
+			} else {
+				native_draw(paintable, gsk.snapshot, mBounds.width(), mBounds.height());
+			}
 			if (mBounds.left != 0 || mBounds.top != 0)
 				canvas.translate(-mBounds.left, -mBounds.top);
 			if (pushed)
@@ -885,23 +893,15 @@ public class Drawable {
 		final GskCanvas gsk = canvas.tlGskCanvas();
 		if (gsk == null)
 			return -1;
-		PorterDuffColorFilter pd = null;
-		if (filter instanceof PorterDuffColorFilter) {
-			pd = (PorterDuffColorFilter) filter;
-		} else if (filter instanceof BlendModeColorFilter) {
-			BlendModeColorFilter blend = (BlendModeColorFilter) filter;
-			PorterDuff.Mode mode = blend.getMode() == BlendMode.MODULATE ? PorterDuff.Mode.MULTIPLY : BlendMode.blendModeToPorterDuffMode(blend.getMode());
-			if (mode == null)
-				return -1;
-			pd = new PorterDuffColorFilter(blend.getColor(), mode);
-		} else if (filter != null) {
+		/* every filter that is a colour matrix of the un-premultiplied colour (colour matrix,
+		 * lighting, the affine blend modes) can be a group; the others need each draw filtered */
+		if (!gsk.tlColorFilterIsMatrix(filter))
 			return -1;
-		}
 		int pushed = 0;
 		alpha &= 0xFF;
 		if (alpha != 0xFF && gsk.tlPushColorFilter(new PorterDuffColorFilter(alpha << 24, PorterDuff.Mode.DST_IN)))
 			pushed++;
-		if (pd != null && gsk.tlPushColorFilter(pd))
+		if (filter != null && gsk.tlPushColorFilter(filter))
 			pushed++;
 		return pushed;
 	}

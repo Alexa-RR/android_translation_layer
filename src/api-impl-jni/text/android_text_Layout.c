@@ -405,8 +405,11 @@ JNIEXPORT void JNICALL Java_android_text_Layout_native_1draw(JNIEnv *env, jobjec
 	PangoLayout *pango_layout = PANGO_LAYOUT(_PTR(layout));
 	GtkSnapshot *snapshot = GTK_SNAPSHOT(_PTR(snapshot_ptr));
 	struct AndroidPaint *android_paint = _PTR(paint_ptr);
+	GdkRGBA color;
 
-	gtk_snapshot_append_layout(snapshot, pango_layout, &android_paint->color);
+	/* the text colour through the paint's colour filter (Skia filters the paint colour) */
+	tl_paint_filtered_color(android_paint, &color);
+	gtk_snapshot_append_layout(snapshot, pango_layout, &color);
 }
 
 JNIEXPORT void JNICALL Java_android_text_Layout_native_1draw_1custom_1canvas(JNIEnv *env, jobject object, jlong layout, jobject canvas, jobject paint)

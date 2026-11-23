@@ -767,10 +767,10 @@ public class GradientDrawable extends Drawable {
             both the fill and the stroke.
         */
         /* ATL: on the GSK canvas the layer is a group that applies the alpha and the filter to
-           what is drawn inside it (Drawable.tlPushLayer); a filter GSK cannot express falls back to
-           filtering each draw, as without a layer */
+           what is drawn inside it (Drawable.tlPushLayer) when the filter is a colour matrix; any
+           other filter (DST_OVER, SCREEN, ...) takes a real saveLayer, as in AOSP */
         final int tlLayerGroups = useLayer ? Drawable.tlPushLayer(canvas, mAlpha, colorFilter) : -1;
-        final boolean layer = useLayer && (tlLayerGroups >= 0 || !(canvas instanceof android.atl.GskCanvas));
+        final boolean layer = useLayer;
         if (layer) {
             if (tlLayerGroups < 0) {
                 if (mLayerPaint == null) {

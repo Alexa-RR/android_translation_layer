@@ -87,19 +87,19 @@ JNIEXPORT jint JNICALL Java_android_graphics_Paint_native_1get_1style(JNIEnv *en
 JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1stroke_1width(JNIEnv *env, jclass clazz, jlong paint_ptr, jfloat width)
 {
 	struct AndroidPaint *paint = _PTR(paint_ptr);
-	/* TODO: width of 0 means "single pixel width, no matter what",
-	 * meanwile width of 1 should care about scaling;
-	 * The problem is, 0 is not a valid value for gsk_stroke_set_line_width,
-	 * so at least change it to 1 for now */
-	if (width == 0)
-		width = 1;
-	gsk_stroke_set_line_width(paint->gsk_stroke, width);
+	/* Skia ignores a negative width. 0 is a hairline: one device pixel whatever the matrix, which
+	 * GskCanvas strokes in device space; the GSK stroke (which needs a width > 0) is one unit wide
+	 * for it, and getStrokeWidth still reports the 0 that was set. */
+	if (!(width >= 0))
+		return;
+	paint->stroke_width = width;
+	gsk_stroke_set_line_width(paint->gsk_stroke, width > 0 ? width : 1);
 }
 
 JNIEXPORT jfloat JNICALL Java_android_graphics_Paint_native_1get_1stroke_1width(JNIEnv *env, jclass clazz, jlong paint_ptr)
 {
 	struct AndroidPaint *paint = _PTR(paint_ptr);
-	return gsk_stroke_get_line_width(paint->gsk_stroke);
+	return paint->stroke_width;
 }
 
 JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1stroke_1cap(JNIEnv *env, jclass clazz, jlong paint_ptr, jint cap)
@@ -151,6 +151,14 @@ JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1color_1filter(JN
 	/* clang-format on */
 	graphene_vec4_init(&paint->color_offset, ((color >> 16) & 0xFF) / 255.f, ((color >> 8) & 0xFF) / 255.f, ((color >> 0) & 0xFF) / 255.f, 0);
 	paint->use_color_filter = mode != -1;
+	paint->filter_by_mode = FALSE;
+}
+
+/* teslalinux: whether the colour filter (if any) is a colour matrix GSK can push around content */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Paint_native_1filter_1is_1matrix(JNIEnv *env, jclass clazz, jlong paint_ptr)
+{
+	struct AndroidPaint *paint = _PTR(paint_ptr);
+	return paint->use_color_filter && !paint->filter_by_mode;
 }
 
 extern GtkWidget *window;
@@ -186,60 +194,8 @@ JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1text_1align(JNIE
 	paint->alignment = align;
 }
 
-/* teslalinux: blend-mode colour filter, mode = PorterDuff.Mode ordinal (-1: no filter) */
-JNIEXPORT void JNICALL Java_android_graphics_Paint_native_1set_1color_1filter_1mode(JNIEnv *env, jclass clazz, jlong paint_ptr, jint mode, jint color)
-{
-	struct AndroidPaint *paint = _PTR(paint_ptr);
-	const float ca = ((color >> 24) & 0xFF) / 255.f;
-	const float c[3] = { ((color >> 16) & 0xFF) / 255.f, ((color >> 8) & 0xFF) / 255.f, ((color >> 0) & 0xFF) / 255.f };
-	float diag[4] = { 0, 0, 0, ca }; /* SRC_IN, also the fallback */
-	float off[4] = { c[0], c[1], c[2], 0 };
-	switch (mode) {
-	case -1:
-		paint->use_color_filter = FALSE;
-		return;
-	case 0: /* CLEAR */
-		diag[3] = 0; off[0] = off[1] = off[2] = 0;
-		break;
-	case 1: /* SRC */
-		diag[3] = 0; off[3] = ca;
-		break;
-	case 2: /* DST */
-		diag[0] = diag[1] = diag[2] = diag[3] = 1; off[0] = off[1] = off[2] = 0;
-		break;
-	case 3: /* SRC_OVER */
-		if (ca >= 1.f) { diag[3] = 0; off[3] = 1; }
-		break;
-	case 6: /* DST_IN */
-		diag[0] = diag[1] = diag[2] = 1; off[0] = off[1] = off[2] = 0;
-		break;
-	case 7: /* SRC_OUT */
-		diag[3] = -ca; off[3] = ca;
-		break;
-	case 8: /* DST_OUT */
-		diag[0] = diag[1] = diag[2] = 1; off[0] = off[1] = off[2] = 0; diag[3] = 1.f - ca;
-		break;
-	case 9: /* SRC_ATOP */
-		for (int i = 0; i < 3; i++) { diag[i] = 1.f - ca; off[i] = ca * c[i]; }
-		diag[3] = 1;
-		break;
-	case 14: /* MULTIPLY */
-		for (int i = 0; i < 3; i++) { diag[i] = c[i]; off[i] = 0; }
-		break;
-	default: /* 5 SRC_IN and the non-linear modes (see the script header) */
-		break;
-	}
-	/* clang-format off */
-	graphene_matrix_init_from_float(&paint->color_matrix, (float[]){
-		diag[0], 0, 0, 0,
-		0, diag[1], 0, 0,
-		0, 0, diag[2], 0,
-		0, 0, 0, diag[3],
-	});
-	/* clang-format on */
-	graphene_vec4_init(&paint->color_offset, off[0], off[1], off[2], off[3]);
-	paint->use_color_filter = TRUE;
-}
+/* teslalinux: Paint.setColorFilter for blend-mode filters (native_set_color_filter_mode) is in
+ * atl_colorfilter.c */
 
 /* ---- teslalinux: text measurement (native-paint-metrics.sh) ---- */
 
