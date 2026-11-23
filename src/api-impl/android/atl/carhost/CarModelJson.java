@@ -25,7 +25,8 @@ import java.util.Map;
  *     ID, "$": "OnClickDelegateImpl"}, an id in {@link #delegates} the renderer sends back to
  *     invoke it (see ATLCarAppChannel);</li>
  * <li>an icon (IconCompat): {"$": "IconCompat", "icon": ID, ...}, an id in {@link #icons}; the
- *     channel sends the image itself once.</li>
+ *     channel sends the image itself once; one of the app's drawables also has its resource
+ *     entry name ("resName", see {@link #resources}).</li>
  * </ul>
  */
 final class CarModelJson {
@@ -79,6 +80,39 @@ final class CarModelJson {
 		return null;
 	}
 	private int nextId = 1;
+
+	/**
+	 * The app's resources, for the names of resource icons: an icon of the app's own drawables is
+	 * {"$":"IconCompat",...,"resName":"ENTRY"} with its resource entry name (Resources
+	 * .getResourceEntryName), which names what it shows across app versions, where its id
+	 * changes with every build. Null until the host has the app's context.
+	 */
+	volatile android.content.res.Resources resources;
+	private final HashMap<Integer, String> resNames = new HashMap<>();
+
+	/* the entry name of an IconCompat of TYPE_RESOURCE from the app's own package, else null */
+	private String resourceName(Object icon) {
+		if (resources == null)
+			return null;
+		try {
+			Class<?> c = icon.getClass();
+			if ((Integer)c.getMethod("getType").invoke(icon) != 2 /* TYPE_RESOURCE */)
+				return null;
+			int id = (Integer)c.getMethod("getResId").invoke(icon);
+			Object pkg = c.getMethod("getResPackage").invoke(icon);
+			if (id == 0 || pkg == null || !pkg.equals(resources.getResourcePackageName(id)))
+				return null;
+			String name = resNames.get(id);
+			if (name == null) {
+				name = resources.getResourceEntryName(id);
+				resNames.put(id, name);
+			}
+			return name;
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			/* not one of the app's resources (android.content.res.Resources.NotFoundException) */
+			return null;
+		}
+	}
 
 	/* the callbacks of the template before the current one: a tap on what the renderer still
 	 * shows while the next template is on its way reaches the app */
@@ -291,6 +325,11 @@ final class CarModelJson {
 				iconIds.put(o, id);
 			}
 			sb.append(",\"icon\":").append(id);
+			String resName = resourceName(o);
+			if (resName != null) {
+				sb.append(",\"resName\":");
+				quote(sb, resName);
+			}
 		}
 		for (Method m : getters(c)) {
 			Object value;

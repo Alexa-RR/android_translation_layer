@@ -183,6 +183,8 @@ public final class ATLCarHost {
 					}
 				});
 				vehicle.start(app.getApplication());
+				/* the names of the app's resource icons in the templates (CarModelJson.resources) */
+				modelJson.resources = app.getApplication().getResources();
 				sendRestrictions(vehicle.restrictions());
 				channel.sendDayNight(vehicle.isNight());
 				carSurface = new ATLCarSurface(app.getApplication(), handler, new ATLCarSurface.Sender() {
