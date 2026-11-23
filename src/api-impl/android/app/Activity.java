@@ -865,8 +865,15 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 			throw new IllegalArgumentException("permissions cannot be null");
 		}
 		final int[] results = new int[permissions.length];
-		for (int i = 0; i < permissions.length; i++)
+		for (int i = 0; i < permissions.length; i++) {
 			results[i] = checkSelfPermission(permissions[i]);
+			// the user's answer to the request (no prompt here: their consent on the car page)
+			if (results[i] != android.content.pm.PackageManager.PERMISSION_GRANTED
+			    && android.content.pm.TlRuntimePermissions.requestGrantable(this, permissions[i])) {
+				android.content.pm.TlRuntimePermissions.grant(permissions[i]);
+				results[i] = checkSelfPermission(permissions[i]);
+			}
+		}
 		new Handler(Looper.getMainLooper()).post(new Runnable() {
 			@Override
 			public void run() {

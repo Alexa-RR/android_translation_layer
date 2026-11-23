@@ -483,7 +483,9 @@ public final class ATLPackageSettings {
 	 * a runtime permission the app requests counts as granted, except those the host does not let
 	 * apps use, which count as denied by the user: location without a location source
 	 * (ATL_UGLY_ENABLE_LOCATION or ATL_LOCATION_SOURCE, which LocationManager needs too) and the
-	 * microphone without ATL_UGLY_ENABLE_MICROPHONE (AudioRecord refuses to record without it).
+	 * microphone without ATL_UGLY_ENABLE_MICROPHONE (AudioRecord refuses to record without it),
+	 * unless the user granted a request for it (TlRuntimePermissions: the car page's microphone, for
+	 * speech recognition through the page).
 	 */
 	public static boolean isRuntimePermissionGranted(String permission) {
 		switch (permission) {
@@ -492,7 +494,7 @@ public final class ATLPackageSettings {
 			case "android.permission.ACCESS_BACKGROUND_LOCATION":
 				return System.getenv("ATL_UGLY_ENABLE_LOCATION") != null || System.getenv("ATL_LOCATION_SOURCE") != null;
 			case "android.permission.RECORD_AUDIO":
-				return System.getenv("ATL_UGLY_ENABLE_MICROPHONE") != null;
+				return System.getenv("ATL_UGLY_ENABLE_MICROPHONE") != null || android.content.pm.TlRuntimePermissions.isGranted(permission);
 			default:
 				return true;
 		}
