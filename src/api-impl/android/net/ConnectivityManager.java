@@ -200,9 +200,210 @@ public class ConnectivityManager {
         String iface;
         int transport = -1;
         int netId = NETID_UNSET;
+        HostLink link;
         NetworkCapabilities capabilities;
         LinkProperties linkProperties;
     }
+
+    /**
+     * What the host says about the default route's interface: NetworkManager's device (type,
+     * metered state, driver, link speed), the ModemManager modem behind it (access technology,
+     * signal, registration), and sysfs (the kernel driver, a wireless interface, the link speed).
+     * The transport, the metered state, the link bandwidth and the mobile network type follow
+     * from them the way Android's network agents (Wi-Fi, Ethernet, telephony) report theirs.
+     */
+    static final class HostLink {
+        /* NetworkManager NMDeviceType */
+        static final int NM_DEVICE_TYPE_ETHERNET = 1, NM_DEVICE_TYPE_WIFI = 2, NM_DEVICE_TYPE_BT = 5, NM_DEVICE_TYPE_MODEM = 8,
+                         NM_DEVICE_TYPE_TUN = 16, NM_DEVICE_TYPE_IP_TUNNEL = 17, NM_DEVICE_TYPE_WIREGUARD = 29, NM_DEVICE_TYPE_WIFI_P2P = 30;
+        /* NetworkManager NMMetered */
+        static final int NM_METERED_UNKNOWN = 0, NM_METERED_YES = 1, NM_METERED_NO = 2, NM_METERED_GUESS_YES = 3, NM_METERED_GUESS_NO = 4;
+        /* ModemManager MMModemAccessTechnology bits */
+        static final int MM_GSM = 1 << 1, MM_GSM_COMPACT = 1 << 2, MM_GPRS = 1 << 3, MM_EDGE = 1 << 4, MM_UMTS = 1 << 5, MM_HSDPA = 1 << 6,
+                         MM_HSUPA = 1 << 7, MM_HSPA = 1 << 8, MM_HSPA_PLUS = 1 << 9, MM_1XRTT = 1 << 10, MM_EVDO0 = 1 << 11, MM_EVDOA = 1 << 12,
+                         MM_EVDOB = 1 << 13, MM_LTE = 1 << 14, MM_5GNR = 1 << 15, MM_LTE_CAT_M = 1 << 16, MM_LTE_NB_IOT = 1 << 17;
+        /* the kernel drivers of USB modems and phone tethering: the LTE stick of the car (a HiLink or
+         * ECM/NCM stick NetworkManager sees as an Ethernet device), QMI/MBIM modems, a phone's USB
+         * tethering (RNDIS, iPhone); as host/teslalinux-uplink classifies uplinks */
+        static final java.util.Set<String> CELLULAR_DRIVERS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "cdc_ether", "cdc_ncm", "huawei_cdc_ncm", "rndis_host", "qmi_wwan", "cdc_mbim", "ipheth"));
+
+        final java.util.Map<String, String> facts = new java.util.HashMap<>();
+        String driver;
+        boolean wireless;
+
+        static HostLink of(String iface) {
+            HostLink l = new HostLink();
+            if (iface == null)
+                return l;
+            String described = nativeDescribe(iface);
+            if (described != null) {
+                for (String line : described.split("\n")) {
+                    int eq = line.indexOf('=');
+                    if (eq > 0)
+                        l.facts.put(line.substring(0, eq), line.substring(eq + 1));
+                }
+            }
+            l.driver = sysfsDriver(iface);
+            l.wireless = new File("/sys/class/net/" + iface + "/wireless").exists() || new File("/sys/class/net/" + iface + "/phy80211").exists();
+            return l;
+        }
+
+        int intFact(String key, int fallback) {
+            String v = facts.get(key);
+            if (v == null)
+                return fallback;
+            try {
+                return Integer.parseInt(v.trim());
+            } catch (NumberFormatException e) {
+                return fallback;
+            }
+        }
+
+        boolean hasModem() {
+            return facts.containsKey("mm_modem");
+        }
+
+        /** The transport: NetworkManager's device type, a modem's network port, else the kernel's view. */
+        int transport(String iface) {
+            if (hasModem())
+                return NetworkCapabilities.TRANSPORT_CELLULAR;
+            String drv = facts.containsKey("nm_driver") ? facts.get("nm_driver") : driver;
+            switch (intFact("nm_type", 0)) {
+                case NM_DEVICE_TYPE_WIFI:
+                case NM_DEVICE_TYPE_WIFI_P2P:
+                    return NetworkCapabilities.TRANSPORT_WIFI;
+                case NM_DEVICE_TYPE_MODEM:
+                    return NetworkCapabilities.TRANSPORT_CELLULAR;
+                case NM_DEVICE_TYPE_BT:
+                    return NetworkCapabilities.TRANSPORT_BLUETOOTH;
+                case NM_DEVICE_TYPE_TUN:
+                case NM_DEVICE_TYPE_IP_TUNNEL:
+                case NM_DEVICE_TYPE_WIREGUARD:
+                    return NetworkCapabilities.TRANSPORT_VPN;
+                case NM_DEVICE_TYPE_ETHERNET:
+                    return drv != null && CELLULAR_DRIVERS.contains(drv) ? NetworkCapabilities.TRANSPORT_CELLULAR : NetworkCapabilities.TRANSPORT_ETHERNET;
+                default:
+                    break;
+            }
+            if (drv != null && CELLULAR_DRIVERS.contains(drv))
+                return NetworkCapabilities.TRANSPORT_CELLULAR;
+            if (wireless)
+                return NetworkCapabilities.TRANSPORT_WIFI;
+            return transportOfName(iface);
+        }
+
+        /**
+         * NOT_METERED: NetworkManager's metered state of the device (set on the connection, or
+         * guessed); a cellular network is metered unless it says otherwise explicitly (Android's
+         * telephony marks mobile data metered unless the carrier configures it unmetered; for an LTE
+         * stick NetworkManager only sees an Ethernet device and guesses "no"); without
+         * NetworkManager, GLib's network monitor's hint.
+         */
+        boolean metered(int transport, boolean monitorHint) {
+            boolean cellular = transport == NetworkCapabilities.TRANSPORT_CELLULAR;
+            switch (intFact("nm_metered", NM_METERED_UNKNOWN)) {
+                case NM_METERED_YES:
+                case NM_METERED_GUESS_YES:
+                    return true;
+                case NM_METERED_NO:
+                    return false;
+                case NM_METERED_GUESS_NO:
+                    return cellular;
+                default:
+                    return cellular || monitorHint;
+            }
+        }
+
+        /** The mobile network type (TelephonyManager.NETWORK_TYPE_*) of ModemManager's access technology, or 0. */
+        int mobileNetworkType() {
+            int a = intFact("mm_access", 0);
+            if ((a & MM_5GNR) != 0)
+                return 20; // NETWORK_TYPE_NR
+            if ((a & (MM_LTE | MM_LTE_CAT_M | MM_LTE_NB_IOT)) != 0)
+                return 13; // NETWORK_TYPE_LTE
+            if ((a & MM_HSPA_PLUS) != 0)
+                return 15; // HSPAP
+            if ((a & MM_HSPA) != 0)
+                return 10;
+            if ((a & MM_HSUPA) != 0)
+                return 9;
+            if ((a & MM_HSDPA) != 0)
+                return 8;
+            if ((a & MM_UMTS) != 0)
+                return 3;
+            if ((a & MM_EVDOB) != 0)
+                return 12;
+            if ((a & MM_EVDOA) != 0)
+                return 6;
+            if ((a & MM_EVDO0) != 0)
+                return 5;
+            if ((a & MM_1XRTT) != 0)
+                return 7;
+            if ((a & MM_EDGE) != 0)
+                return 2;
+            if ((a & MM_GPRS) != 0)
+                return 1;
+            if ((a & (MM_GSM | MM_GSM_COMPACT)) != 0)
+                return 16; // NETWORK_TYPE_GSM
+            return 0;
+        }
+
+        /** AOSP TelephonyManager.getNetworkTypeName */
+        static String mobileNetworkTypeName(int type) {
+            switch (type) {
+                case 1: return "GPRS";
+                case 2: return "EDGE";
+                case 3: return "UMTS";
+                case 5: return "CDMA - EvDo rev. 0";
+                case 6: return "CDMA - EvDo rev. A";
+                case 7: return "CDMA - 1xRTT";
+                case 8: return "HSDPA";
+                case 9: return "HSUPA";
+                case 10: return "HSPA";
+                case 12: return "CDMA - EvDo rev. B";
+                case 13: return "LTE";
+                case 15: return "HSPA+";
+                case 16: return "GSM";
+                case 20: return "NR";
+                default: return "UNKNOWN";
+            }
+        }
+
+        /*
+         * The link bandwidth of a mobile network type in kbps, down and up: AOSP's defaults
+         * (CarrierConfigManager KEY_BANDWIDTH_STRING_ARRAY), which telephony reports until it has
+         * measured the link. A 5G radio with LTE alongside is non-standalone (NR_NSA).
+         */
+        int[] mobileBandwidthKbps() {
+            int a = intFact("mm_access", 0);
+            switch (mobileNetworkType()) {
+                case 20: return (a & MM_LTE) != 0 ? new int[] {47000, 18000} : new int[] {145000, 60000};
+                case 13: return new int[] {30000, 15000};
+                case 15: return new int[] {13000, 3400};
+                case 10: return new int[] {4300, 1800};
+                case 9: return new int[] {4300, 1800};
+                case 8: return new int[] {4300, 620};
+                case 3: return new int[] {115, 115};
+                case 12: return new int[] {1500, 550};
+                case 6: return new int[] {950, 550};
+                case 5: return new int[] {750, 48};
+                case 7: return new int[] {30, 30};
+                case 2: return new int[] {70, 18};
+                case 1: return new int[] {24, 24};
+                case 16: return new int[] {24, 24};
+                default: return null;
+            }
+        }
+
+        /** MM_MODEM_3GPP_REGISTRATION_STATE_ROAMING and its SMS-only and CSFB variants */
+        boolean roaming() {
+            int r = intFact("mm_registration", 0);
+            return r == 5 || r == 7 || r == 10;
+        }
+    }
+
+    private static native String nativeDescribe(String iface);
 
     private static final Object sLock = new Object();
     private static final List<Registration> sRegistrations = new ArrayList<>();
@@ -328,12 +529,32 @@ public class ConnectivityManager {
         return null;
     }
 
-    /** Also used by TrafficStats to pick the mobile (cellular) interfaces. */
+    /** The kernel driver of an interface (/sys/class/net/IFACE/device/driver), or null for a virtual one. */
+    static String sysfsDriver(String iface) {
+        try {
+            File link = new File("/sys/class/net/" + iface + "/device/driver");
+            if (!link.exists())
+                return null;
+            return link.getCanonicalFile().getName();
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /** Also used by TrafficStats to pick the mobile (cellular) interfaces: the kernel's view of an interface. */
     static int transportOf(String iface) {
         if (iface == null)
             return -1;
         if (new File("/sys/class/net/" + iface + "/wireless").exists() || new File("/sys/class/net/" + iface + "/phy80211").exists())
             return NetworkCapabilities.TRANSPORT_WIFI;
+        String drv = sysfsDriver(iface);
+        if (drv != null && HostLink.CELLULAR_DRIVERS.contains(drv))
+            return NetworkCapabilities.TRANSPORT_CELLULAR;
+        return transportOfName(iface);
+    }
+
+    /* the conventional interface names, for interfaces without a driver or daemon to ask */
+    static int transportOfName(String iface) {
         if (iface.startsWith("tun") || iface.startsWith("wg") || iface.startsWith("tap") || iface.startsWith("vpn"))
             return NetworkCapabilities.TRANSPORT_VPN;
         if (iface.startsWith("wwan") || iface.startsWith("rmnet") || iface.startsWith("ppp") || iface.startsWith("qmi"))
@@ -389,7 +610,8 @@ public class ConnectivityManager {
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_TRUSTED);
-        nc.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING);
+        if (s.link == null || !s.link.roaming())
+            nc.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_FOREGROUND);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_CONGESTED);
         nc.addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED);
@@ -402,13 +624,47 @@ public class ConnectivityManager {
             nc.addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
         if (s.connectivity == 3 /* G_NETWORK_CONNECTIVITY_PORTAL */)
             nc.addCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL);
-        int mbps = readIntFile("/sys/class/net/" + s.iface + "/speed", -1);
-        if (mbps > 0) {
-            nc.setLinkDownstreamBandwidthKbps(mbps * 1000);
-            nc.setLinkUpstreamBandwidthKbps(mbps * 1000);
+        /* the link bandwidth as each network agent reports it: Wi-Fi its link rate, Ethernet the
+         * negotiated speed, cellular telephony's estimate for the radio technology (the USB link to
+         * a modem says nothing about the radio); unknown stays LINK_BANDWIDTH_UNSPECIFIED */
+        HostLink link = s.link != null ? s.link : new HostLink();
+        int downKbps = 0, upKbps = 0;
+        switch (s.transport) {
+            case NetworkCapabilities.TRANSPORT_CELLULAR: {
+                int[] bw = link.mobileBandwidthKbps();
+                if (bw != null) {
+                    downKbps = bw[0];
+                    upKbps = bw[1];
+                }
+                break;
+            }
+            case NetworkCapabilities.TRANSPORT_WIFI: {
+                int kbps = link.intFact("nm_wifi_bitrate_kbps", 0);
+                if (kbps > 0)
+                    downKbps = upKbps = kbps;
+                break;
+            }
+            default: {
+                int mbps = link.intFact("nm_wired_speed_mbps", 0);
+                if (mbps <= 0)
+                    mbps = readIntFile("/sys/class/net/" + s.iface + "/speed", -1);
+                if (mbps > 0)
+                    downKbps = upKbps = mbps * 1000;
+                break;
+            }
         }
-        if (s.transport == NetworkCapabilities.TRANSPORT_WIFI)
-            nc.setSignalStrength(wirelessLevel(s.iface));
+        if (downKbps > 0) {
+            nc.setLinkDownstreamBandwidthKbps(downKbps);
+            nc.setLinkUpstreamBandwidthKbps(upKbps);
+        }
+        if (s.transport == NetworkCapabilities.TRANSPORT_WIFI) {
+            int dbm = wirelessLevel(s.iface);
+            int strength = link.intFact("nm_wifi_strength", -1);
+            /* NetworkManager's strength is 2 * (dBm + 100), clamped to -100..-50 dBm */
+            if (dbm == NetworkCapabilities.SIGNAL_STRENGTH_UNSPECIFIED && strength >= 0)
+                dbm = strength / 2 - 100;
+            nc.setSignalStrength(dbm);
+        }
         nc.setOwnerUid(Process.INVALID_UID);
         return nc;
     }
@@ -423,7 +679,9 @@ public class ConnectivityManager {
         if (s.iface == null)
             s.available = false;
         if (s.available) {
-            s.transport = transportOf(s.iface);
+            s.link = HostLink.of(s.iface);
+            s.transport = s.link.transport(s.iface);
+            s.metered = s.link.metered(s.transport, s.metered);
             if (previous != null && previous.available && s.iface.equals(previous.iface)) {
                 s.netId = previous.netId;
             } else {
@@ -446,6 +704,12 @@ public class ConnectivityManager {
         NetworkInfo info = new NetworkInfo(type, 0, getNetworkTypeName(type), "");
         if (s.available && type == currentType) {
             info.setIsAvailable(true);
+            if (s.transport == NetworkCapabilities.TRANSPORT_CELLULAR && s.link != null) {
+                /* AOSP: a mobile network's subtype is its radio technology, and it may be roaming */
+                int subtype = s.link.mobileNetworkType();
+                info.setSubtype(subtype, subtype != 0 ? HostLink.mobileNetworkTypeName(subtype) : "");
+                info.setRoaming(s.link.roaming());
+            }
             info.setDetailedState(NetworkInfo.DetailedState.CONNECTED, null, s.iface);
         } else {
             info.setIsAvailable(false);

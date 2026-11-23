@@ -75,6 +75,14 @@ extern "C" {
 #define android_net_ConnectivityManager_FIRST_NETID 100L
 /*
  * Class:     android_net_ConnectivityManager
+ * Method:    nativeDescribe
+ * Signature: (Ljava/lang/String;)Ljava/lang/String;
+ */
+JNIEXPORT jstring JNICALL Java_android_net_ConnectivityManager_nativeDescribe
+  (JNIEnv *, jclass, jstring);
+
+/*
+ * Class:     android_net_ConnectivityManager
  * Method:    nativeGetNetworkAvailable
  * Signature: ()Z
  */
