@@ -28,5 +28,7 @@ void bionic_glGenerateMipmap(unsigned int target);
 void bionic_glDeleteTextures(int n, const unsigned int *textures);
 void bionic_glDeleteFramebuffers(int n, const unsigned int *framebuffers);
 void bionic_glFlush(void);
+void bionic_glObjectPtrLabel(const void *ptr, int length, const char *label);
+void bionic_glGetObjectPtrLabel(const void *ptr, int bufSize, int *length, char *label);
 
 #endif

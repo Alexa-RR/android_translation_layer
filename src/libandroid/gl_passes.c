@@ -989,6 +989,7 @@ struct tl_sync {
 	struct tl_real_sync *real; /* NULL while pending */
 	struct tl_ctx *owner;      /* while pending: the context whose next flush creates it */
 	struct tl_sync *next_pending;
+	char *label; /* KHR_debug's pointer label (bionic_glObjectPtrLabel) */
 };
 
 static GHashTable *live_syncs; /* the sync objects handed out (glIsSync, and to tell ours from garbage) */
@@ -1128,6 +1129,7 @@ void bionic_glDeleteSync(GLsync sync)
 	} else {
 		real_unref_locked(s->real);
 	}
+	g_free(s->label);
 	g_free(s);
 	g_mutex_unlock(&tl_lock);
 }
@@ -1246,6 +1248,68 @@ void bionic_glGetSynciv(GLsync sync, GLenum pname, GLsizei count, GLsizei *lengt
 	}
 	glGetSynciv(s->real->sync, pname, count, length, values);
 	g_mutex_unlock(&tl_lock);
+}
+
+/* KHR_debug's pointer labels on the sync objects handed out here. Deferred fences of a flush
+ * share one GL sync, so each handle keeps its own label (as GL keeps one per sync object); GL's
+ * errors (a label too long, a negative buffer size) come from GL, by passing it our handle, which
+ * it rejects with the same GL_INVALID_VALUE. Any other pointer goes to GL as it is. */
+void bionic_glObjectPtrLabel(const void *ptr, GLsizei length, const GLchar *label)
+{
+	g_mutex_lock(&tl_lock);
+	struct tl_sync *s = sync_lookup_locked((GLsync)ptr);
+	if (!s) {
+		g_mutex_unlock(&tl_lock);
+		glObjectPtrLabel(ptr, length, label);
+		return;
+	}
+	GLint max = 0;
+	glGetIntegerv(GL_MAX_LABEL_LENGTH, &max);
+	size_t len = label ? (length < 0 ? strlen(label) : (size_t)length) : 0;
+	if (label && (GLint)len >= max) {
+		g_mutex_unlock(&tl_lock);
+		glObjectPtrLabel(ptr, length, label); /* GL_INVALID_VALUE */
+		return;
+	}
+	g_free(s->label);
+	/* a NULL label (or an empty one) removes it */
+	s->label = label && len > 0 ? g_strndup(label, len) : NULL;
+	g_mutex_unlock(&tl_lock);
+}
+
+void bionic_glGetObjectPtrLabel(const void *ptr, GLsizei bufSize, GLsizei *length, GLchar *label)
+{
+	g_mutex_lock(&tl_lock);
+	struct tl_sync *s = sync_lookup_locked((GLsync)ptr);
+	if (!s || bufSize < 0) {
+		g_mutex_unlock(&tl_lock);
+		glGetObjectPtrLabel(ptr, bufSize, length, label);
+		return;
+	}
+	/* Mesa's copy_label: with no buffer the label's length, else as much as fits, terminated */
+	size_t len = s->label ? strlen(s->label) : 0;
+	if (!label || bufSize == 0) {
+		if (length)
+			*length = (GLsizei)len;
+	} else {
+		size_t n = len < (size_t)bufSize - 1 ? len : (size_t)bufSize - 1;
+		if (n)
+			memcpy(label, s->label, n);
+		label[n] = '\0';
+		if (length)
+			*length = (GLsizei)n;
+	}
+	g_mutex_unlock(&tl_lock);
+}
+
+void bionic_glObjectPtrLabelKHR(const void *ptr, GLsizei length, const GLchar *label)
+{
+	bionic_glObjectPtrLabel(ptr, length, label);
+}
+
+void bionic_glGetObjectPtrLabelKHR(const void *ptr, GLsizei bufSize, GLsizei *length, GLchar *label)
+{
+	bionic_glGetObjectPtrLabel(ptr, bufSize, length, label);
 }
 
 void bionic_glFlush(void)

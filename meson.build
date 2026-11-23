@@ -158,10 +158,36 @@ wayland_protos_dep = dependency('wayland-protocols', version: '>=1.12')
 # wayland protocols for osk
 subdir('protocol')
 
+# AOSP's generated GL bindings (android.opengl.GLES*, the GL10/GL11 GLImpl), C++ as glgen writes
+# them, with the compat headers and support in src/api-impl-jni/opengl/aosp (gles_atl.h)
+add_languages('cpp', native: false)
+gles_bindings = static_library('atl_gles_bindings', [
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES10.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES10Ext.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES11.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES11Ext.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES20.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES30.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES31.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES31Ext.cpp',
+                               	'src/api-impl-jni/opengl/aosp/android_opengl_GLES32.cpp',
+                               	'src/api-impl-jni/opengl/aosp/com_google_android_gles_jni_GLImpl.cpp',
+                               	'src/api-impl-jni/opengl/aosp/gles_atl.c',
+                               	'src/api-impl-jni/opengl/aosp/gles_debug.c',
+                               	'src/api-impl-jni/opengl/aosp/gles_register.c',
+                               ],
+                               include_directories: include_directories('src/api-impl-jni/opengl/aosp/compat'),
+                               dependencies: [ dependency('jni'), dependency('gl') ],
+                               cpp_args: [
+                               	'-include', meson.current_source_dir() / 'src/api-impl-jni/opengl/aosp/gles_atl.h',
+                               	'-fno-exceptions', '-fno-rtti', '-Wno-unused-parameter', '-Wno-unused-but-set-variable', '-Wno-write-strings',
+                               ],
+                               gnu_symbol_visibility: 'hidden',
+                               pic: true)
+
 libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/android_app_NativeActivity.c',
                                                                   	'src/api-impl-jni/android_content_res_AssetManager.c',
-                                                                  	'src/api-impl-jni/android_opengl_GLES20.c',
                                                                   	'src/api-impl-jni/android_opengl_GLUtils.c',
                                                                   	'src/api-impl-jni/android_os_Environment.c',
                                                                   	'src/api-impl-jni/android_os_MemoryFile.c',
@@ -183,7 +209,6 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/audio/android_media_AudioTrack.c',
                                                                   	'src/api-impl-jni/audio/android_media_SoundPool.c',
                                                                   	'src/api-impl-jni/audio/audio.c',
-                                                                  	'src/api-impl-jni/com_google_android_gles_jni_GLImpl.c',
                                                                   	'src/api-impl-jni/content/android_atl_ATLMediaContentProvider.c',
                                                                   	'src/api-impl-jni/content/android_content_ClipboardManager.c',
                                                                   	'src/api-impl-jni/content/android_content_ContentResolver.c',
@@ -276,6 +301,7 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                         libart_dep, wayland_protos_dep, upcalls_header
                                                                   ],
                                                                   link_with: [ libandroid_so ],
+                                                                  link_whole: [ gles_bindings ],
                                                                   link_args: [
                                                                   	'-lasound'
                                                                   ],
