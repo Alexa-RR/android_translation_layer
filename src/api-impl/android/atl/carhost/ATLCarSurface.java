@@ -393,6 +393,8 @@ final class ATLCarSurface implements SurfaceHolder.Callback {
 		v.setOnTouchListener(new View.OnTouchListener() {
 			@Override
 			public boolean onTouch(View view, MotionEvent event) {
+				/* the driver's finger on the map: it pans, zooms or is about to */
+				android.atl.ATLFrameRateLimiter.contentMoved("car map touched");
 				scale.onTouchEvent(event);
 				gestures.onTouchEvent(event);
 				return true;

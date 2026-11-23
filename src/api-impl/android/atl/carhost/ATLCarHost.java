@@ -556,6 +556,7 @@ public final class ATLCarHost {
 	private ATLCarSurface carSurface;
 	private final CarModelJson modelJson = new CarModelJson();
 	private int templateSeq;
+	private String lastTemplateJson;
 	/**
 	 * Drawable icons (vectors, resources) are rendered with at least this many pixels on their
 	 * longer side, enough for the largest place a template shows one (a maneuver, a large row
@@ -584,6 +585,11 @@ public final class ATLCarHost {
 			if (png != null)
 				channel.sendIcon(e.getKey(), png);
 		}
+		/* a template that differs from the one shown: a new screen, a route, a panel, which moves
+		 * the app's map (a route preview zooms to the route) */
+		if (!json.equals(lastTemplateJson))
+			android.atl.ATLFrameRateLimiter.contentMoved("car template");
+		lastTemplateJson = json;
 		channel.sendTemplate(++templateSeq, json);
 	}
 
@@ -663,6 +669,9 @@ public final class ATLCarHost {
 		try {
 			org.json.JSONObject m = new org.json.JSONObject(text);
 			String type = m.getString("type");
+			/* every renderer message is the driver's input or a change of the map's area or look:
+			 * the app's map moves or redraws */
+			android.atl.ATLFrameRateLimiter.contentMoved("car renderer " + type);
 			if ("visibleArea".equals(type)) {
 				if (carSurface != null)
 					carSurface.setVisibleArea(m.getInt("left"), m.getInt("top"), m.getInt("right"), m.getInt("bottom"));

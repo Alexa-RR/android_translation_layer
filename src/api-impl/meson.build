@@ -377,6 +377,7 @@ srcs = [
 	'android/appwidget/AppWidgetManager.java',
 	'android/appwidget/AppWidgetProvider.java',
 	'android/atl/ATLActiveServices.java',
+	'android/atl/ATLFrameRateLimiter.java',
 	'android/atl/ATLGStub.java',
 	'android/atl/ATLKeyboardDialog.java',
 	'android/atl/ATLKeyboardViewer.java',

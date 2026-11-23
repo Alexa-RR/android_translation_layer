@@ -16,6 +16,7 @@
 
 package android.location;
 
+import android.atl.ATLFrameRateLimiter;
 import android.atl.annotation.Export;
 import android.app.PendingIntent;
 import android.os.Bundle;
@@ -738,10 +739,12 @@ public class LocationManager {
 	/** Entry point for every fix: records it on its provider (and the mirrors) and dispatches it. */
 	static void reportLocation(String provider, Location location) {
 		List<String> targets = new ArrayList<>();
+		Location previous;
 		synchronized (sLock) {
 			ProviderState p = sProviders.get(provider);
 			if (p == null)
 				return;
+			previous = p.last;
 			p.last = location;
 			targets.add(provider);
 			if (GPS_PROVIDER.equals(provider) || NETWORK_PROVIDER.equals(provider)) {
@@ -762,6 +765,8 @@ public class LocationManager {
 		}
 		if (GPS_PROVIDER.equals(provider))
 			gnssFix();
+		/* a fix of a moving device moves an app's map: its frame limiter may run at the display's rate */
+		ATLFrameRateLimiter.locationFix(location, previous);
 		for (Request r : sRequests) {
 			if (targets.contains(r.provider))
 				r.deliver(location);
