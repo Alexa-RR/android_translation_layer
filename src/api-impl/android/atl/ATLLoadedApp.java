@@ -118,8 +118,11 @@ public final class ATLLoadedApp {
 	 * installed APK itself, for one verified app version (the APK stays untouched: Google APIs check
 	 * its signing block). Class loading only: the files carry no resources and stay off the
 	 * AssetManager's path. A file that does not exist is left out, with a warning.
+	 * They are part of the app's class loader context: the code ART compiles for the app's APKs
+	 * names every dex in front of them, so a device that wants the app compiled once keeps this list
+	 * the same from start to start (and TlPrewarm, which compiles the app ahead, uses it too).
 	 */
-	private static String appClassOverrides() {
+	static String appClassOverrides() {
 		String env = System.getenv("ATL_APP_CLASS_OVERRIDES");
 		if (env == null || env.isEmpty())
 			return null;

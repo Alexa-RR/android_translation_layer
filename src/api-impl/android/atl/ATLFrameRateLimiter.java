@@ -27,6 +27,21 @@ import android.view.Display;
  * a speed, a fix that far from the last one a second later). The app's own boost (its higher rate
  * after a touch on its view) works as before: the faster of the two applies.
  *
+ * <p>ATL_FRAME_RATE chooses the policy, read once when the class loads:
+ * <ul>
+ * <li>"boost" (the default): as above, the app's own rate, the display's for {@link #BOOST_MS} after
+ *     the content moved;</li>
+ * <li>"display": the display's refresh rate all the time (the app's own rate only where it is
+ *     faster, and no limit where the app sets none), what the app's limiter would do with its
+ *     battery-saving rate raised to the display's;</li>
+ * <li>"app": the app's own limiter exactly, as if this class were not there: its rate and its own
+ *     boosts, and nothing ATL sees moving changes it.</li>
+ * </ul>
+ * The policy is the device's choice at the app's start, not part of the class: the same subclass of
+ * this one serves every policy, so the app's class path (and with it the code ART compiled for it,
+ * whose class loader context names every dex in front of the app's own) stays the same whichever
+ * one the device chooses.
+ *
  * <p>The limiter's contract is the app's: {@link #isTooSoon} is asked before each frame, and the app
  * tells {@link #setFrameStarted} when it drew one; a rate of 0 or below means no limit.
  * ATL_FRAME_BOOST_MS sets the boost's length (milliseconds, 0 turns it off);
@@ -40,12 +55,25 @@ public class ATLFrameRateLimiter {
 	/** a location fix this fast (m/s, 3.6 km/h) or faster moves the map */
 	public static final float MOVING_MPS = 1.0f;
 
+	/** ATL_FRAME_RATE: the display's rate after the content moved, else the app's own */
+	public static final int POLICY_BOOST = 0;
+	/** ATL_FRAME_RATE=display: the display's rate all the time */
+	public static final int POLICY_DISPLAY = 1;
+	/** ATL_FRAME_RATE=app: the app's own limiter, unchanged */
+	public static final int POLICY_APP = 2;
+	/** the policy in effect (ATL_FRAME_RATE) */
+	public static final int POLICY = policy();
+
 	private static final boolean DEBUG = "1".equals(System.getenv("ATL_DEBUG_FRAME_RATE"));
 
 	/* the end of the current boost (SystemClock.uptimeMillis), and the display's frame interval then */
 	private static volatile long boostUntil = Long.MIN_VALUE;
 	private static volatile long boostIntervalMs = 16;
 	private static volatile String lastReason;
+	/* "display": the display's frame interval, asked again once a second (the compositor can change
+	 * its rate) instead of before every frame */
+	private static volatile long displayIntervalMs = -1;
+	private static volatile long displayIntervalAt = Long.MIN_VALUE;
 
 	/* the app's own interval in ms (-1: no limit), the start of the last frame drawn (elapsedRealtime) */
 	private volatile long appIntervalMs;
@@ -69,8 +97,35 @@ public class ATLFrameRateLimiter {
 		return 5000;
 	}
 
+	private static int policy() {
+		String v = System.getenv("ATL_FRAME_RATE");
+		if (v == null || v.isEmpty() || "boost".equals(v))
+			return POLICY_BOOST;
+		if ("display".equals(v))
+			return POLICY_DISPLAY;
+		if ("app".equals(v))
+			return POLICY_APP;
+		Log.w(TAG, "ATL_FRAME_RATE=" + v + " is not boost, display or app; using boost");
+		return POLICY_BOOST;
+	}
+
 	private static long interval(int fps) {
 		return fps > 0 ? 1000 / fps : -1;
+	}
+
+	/* the display's frame interval in ms, as its refresh rate is now */
+	private static long displayInterval() {
+		float rate = new Display().getRefreshRate();
+		return rate > 0 ? (long)(1000 / rate) : 16;
+	}
+
+	private static long displayIntervalNow() {
+		long now = SystemClock.uptimeMillis();
+		if (displayIntervalMs < 0 || now - displayIntervalAt >= 1000) {
+			displayIntervalMs = displayInterval();
+			displayIntervalAt = now;
+		}
+		return displayIntervalMs;
 	}
 
 	/** the app sets its own rate (its battery-saving rate, its own boost after a touch on its view) */
@@ -81,7 +136,11 @@ public class ATLFrameRateLimiter {
 	/** the shortest time between frames now, in ms; -1 when frames are not limited */
 	public final long frameIntervalMs() {
 		long app = appIntervalMs;
-		if (app < 0 || SystemClock.uptimeMillis() >= boostUntil)
+		if (app < 0 || POLICY == POLICY_APP)
+			return app;
+		if (POLICY == POLICY_DISPLAY)
+			return Math.min(app, displayIntervalNow());
+		if (SystemClock.uptimeMillis() >= boostUntil)
 			return app;
 		return Math.min(app, boostIntervalMs);
 	}
@@ -92,7 +151,7 @@ public class ATLFrameRateLimiter {
 		if (DEBUG && interval != debugInterval) {
 			debugInterval = interval;
 			Log.i(TAG, "frame interval " + interval + " ms (app's own " + appIntervalMs + " ms"
-			      + (interval != appIntervalMs ? ", boosted: " + lastReason : "") + ")");
+			      + (interval == appIntervalMs ? "" : POLICY == POLICY_DISPLAY ? ", the display's rate" : ", boosted: " + lastReason) + ")");
 		}
 		return interval >= 0 && SystemClock.elapsedRealtime() - lastFrameMs < interval;
 	}
@@ -110,15 +169,15 @@ public class ATLFrameRateLimiter {
 	 * @hide
 	 */
 	public static void contentMoved(String reason) {
-		if (BOOST_MS <= 0)
+		/* only the boost policy boosts ("display" is at the display's rate anyway, "app" never) */
+		if (BOOST_MS <= 0 || POLICY != POLICY_BOOST)
 			return;
 		long until = SystemClock.uptimeMillis() + BOOST_MS;
 		if (until <= boostUntil)
 			return;
 		if (SystemClock.uptimeMillis() >= boostUntil) {
 			/* a new boost: the display's rate as it is now (the compositor can change it) */
-			float rate = new Display().getRefreshRate();
-			boostIntervalMs = rate > 0 ? (long)(1000 / rate) : 16;
+			boostIntervalMs = displayInterval();
 		}
 		lastReason = reason;
 		boostUntil = until;

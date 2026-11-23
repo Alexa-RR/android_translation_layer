@@ -16,10 +16,12 @@ import java.io.File;
  *
  * as the user and with the environment the app runs with (the compiled code goes to that user's
  * cache). The VM opens its class path as ATL's does (api-impl.jar's own code is compiled), then this
- * builds the app's class loader as {@link ATLLoadedApp#loadFromPath} builds it (ghax.jar first, the
- * APKs in the order given, api-impl's loader as parent), and gstub.jar as ATLGStub loads it: the same
- * dex files in the same contexts, so dex2oat makes exactly what the app's first start would have
- * made, and that start finds it ready.
+ * builds the app's class loader as {@link ATLLoadedApp#loadFromPath} builds it (the
+ * ATL_APP_CLASS_OVERRIDES first, then ghax.jar, the APKs in the order given, api-impl's loader as
+ * parent), and gstub.jar as ATLGStub loads it: the same dex files in the same contexts, so dex2oat
+ * makes exactly what the app's first start would have made, and that start finds it ready. ART
+ * keeps one compiled copy per APK, made for one class loader context: the start uses it only when
+ * its overrides are the ones given here.
  * Exit status 0 when every APK could be opened.
  */
 public final class TlPrewarm {
@@ -43,6 +45,9 @@ public final class TlPrewarm {
 		String classLoaderPath = path.toString();
 		if (ATLToggles.ATL_GHAX)
 			classLoaderPath = ATLPaths.ghax_jar.getPath() + File.pathSeparator + classLoaderPath;
+		String overrides = ATLLoadedApp.appClassOverrides();
+		if (overrides != null)
+			classLoaderPath = overrides + File.pathSeparator + classLoaderPath;
 		long start = System.nanoTime();
 		/* opening the dex files is what compiles them (DexPathList, OatFileManager) */
 		ClassLoader loader = new PathClassLoader(classLoaderPath, null, TlPrewarm.class.getClassLoader());
