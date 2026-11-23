@@ -909,6 +909,10 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 	public void atl_attach_base_context(Context baseContext) {
 		super.atl_attach_base_context(baseContext);
 		this.window = new Window(this, this);
+		/* AOSP Activity.attach: the window takes the manifest's windowSoftInputMode */
+		android.content.pm.ActivityInfo info = tlActivityInfo();
+		if (info != null && info.softInputMode != 0)
+			this.window.setSoftInputMode(info.softInputMode);
 	}
 
 

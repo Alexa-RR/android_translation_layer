@@ -93,7 +93,7 @@ public final class InputMethodManager {
 		sExtractedText = null;
 		sCursorAnchorInfo = null;
 		nativeStartInput(sImContext, 0, null, 0);
-		nativeOskHide();
+		tlOskHide();
 		sInputShown = false;
 	}
 
@@ -155,7 +155,7 @@ public final class InputMethodManager {
 		boolean wasShown = sInputShown;
 		sInputShown = nativeActivate(sImContext);
 		if (tlOskEnabled() && sServedEditorInfo != null) {
-			nativeOskShow(sServedEditorInfo.imeOptions, sServedEditorInfo.inputType);
+			tlOskShow(sServedEditorInfo.imeOptions, sServedEditorInfo.inputType);
 			sInputShown = true;
 		}
 		if (TL_DEBUG_IME)
@@ -175,7 +175,7 @@ public final class InputMethodManager {
 		if (TL_DEBUG_IME)
 			android.util.Log.i("InputMethodManager", "[ime] hideSoftInput wasShown=" + wasShown);
 		nativeDeactivate(sImContext);
-		nativeOskHide();
+		tlOskHide();
 		sInputShown = false;
 		if (resultReceiver != null)
 			resultReceiver.send(wasShown ? RESULT_HIDDEN : RESULT_UNCHANGED_HIDDEN, null);
@@ -396,6 +396,21 @@ public final class InputMethodManager {
 	 */
 	private static native void nativeOskShow(int imeOptions, int inputType);
 	private static native void nativeOskHide();
+	/** the keyboard layer's height (for the main window's width) */
+	private static native int nativeOskHeight();
+
+	/* the built-in keyboard, and the windows' IME inset it is (android.view.TlImeInsets) */
+	private static void tlOskShow(int imeOptions, int inputType) {
+		nativeOskShow(imeOptions, inputType);
+		android.view.TlImeInsets.set(true, nativeOskHeight());
+	}
+
+	private static void tlOskHide() {
+		boolean shown = nativeOskIsShown();
+		nativeOskHide();
+		if (shown)
+			android.view.TlImeInsets.set(false, 0);
+	}
 	private static native boolean nativeOskIsShown();
 
 	private static boolean tlOskEnabled() {
@@ -457,7 +472,7 @@ public final class InputMethodManager {
 	private static boolean tlOskHandleBack() {
 		if (!nativeOskIsShown())
 			return false;
-		nativeOskHide();
+		tlOskHide();
 		sInputShown = false;
 		return true;
 	}

@@ -89,6 +89,14 @@ JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOs
 
 /*
  * Class:     android_view_inputmethod_InputMethodManager
+ * Method:    nativeOskHeight
+ * Signature: ()I
+ */
+JNIEXPORT jint JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOskHeight
+  (JNIEnv *, jclass);
+
+/*
+ * Class:     android_view_inputmethod_InputMethodManager
  * Method:    nativeOskIsShown
  * Signature: ()Z
  */

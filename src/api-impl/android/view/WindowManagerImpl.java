@@ -147,6 +147,14 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 	/** every window added through any WindowManagerImpl of the process, oldest (lowest) first */
 	private static final ArrayList<AddedWindow> sWindows = new ArrayList<>();
 
+	/** the root views of the app windows added now (TlImeInsets dispatches their insets) */
+	static java.util.List<View> tlWindowRoots() {
+		ArrayList<View> roots = new ArrayList<>();
+		for (AddedWindow w : sWindows)
+			roots.add(w.view);
+		return roots;
+	}
+
 	private static AddedWindow findWindow(View view) {
 		for (AddedWindow w : sWindows) {
 			if (w.view == view)

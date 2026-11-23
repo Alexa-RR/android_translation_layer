@@ -1898,6 +1898,70 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		return insets;
 	}
 
+	/* AOSP mInsetsAnimationDispatchMode: whether insets animations reach the children */
+	private int tlInsetsAnimationDispatchMode = WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE;
+
+	@Override
+	public void setWindowInsetsAnimationCallback(WindowInsetsAnimation.Callback callback) {
+		super.setWindowInsetsAnimationCallback(callback);
+		tlInsetsAnimationDispatchMode = callback != null ? callback.getDispatchMode() : WindowInsetsAnimation.Callback.DISPATCH_MODE_CONTINUE_ON_SUBTREE;
+	}
+
+	/** AOSP: the framework's content view that fits the insets stops the dispatch, imitating
+	 * consumption (an app gets the animations below it only with setDecorFitsSystemWindows(false)) */
+	private boolean tlContentFitsInsets() {
+		if (!isFrameworkOptionalFitsSystemWindows() || !isAttachedToWindow())
+			return false;
+		final Window window = native_get_window(widget);
+		return window != null && window.tlDecorFitsSystemWindows();
+	}
+
+	@Override
+	public void dispatchWindowInsetsAnimationPrepare(WindowInsetsAnimation animation) {
+		super.dispatchWindowInsetsAnimationPrepare(animation);
+		if (tlContentFitsInsets()) {
+			tlInsetsAnimationDispatchMode = WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP;
+			return;
+		}
+		if (tlInsetsAnimationDispatchMode == WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP)
+			return;
+		final int count = getChildCount();
+		for (int i = 0; i < count; i++)
+			getChildAt(i).dispatchWindowInsetsAnimationPrepare(animation);
+	}
+
+	@Override
+	public WindowInsetsAnimation.Bounds dispatchWindowInsetsAnimationStart(WindowInsetsAnimation animation, WindowInsetsAnimation.Bounds bounds) {
+		bounds = super.dispatchWindowInsetsAnimationStart(animation, bounds);
+		if (tlInsetsAnimationDispatchMode == WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP)
+			return bounds;
+		final int count = getChildCount();
+		for (int i = 0; i < count; i++)
+			getChildAt(i).dispatchWindowInsetsAnimationStart(animation, bounds);
+		return bounds;
+	}
+
+	@Override
+	public WindowInsets dispatchWindowInsetsAnimationProgress(WindowInsets insets, java.util.List<WindowInsetsAnimation> runningAnimations) {
+		insets = super.dispatchWindowInsetsAnimationProgress(insets, runningAnimations);
+		if (tlInsetsAnimationDispatchMode == WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP)
+			return insets;
+		final int count = getChildCount();
+		for (int i = 0; i < count; i++)
+			getChildAt(i).dispatchWindowInsetsAnimationProgress(insets, runningAnimations);
+		return insets;
+	}
+
+	@Override
+	public void dispatchWindowInsetsAnimationEnd(WindowInsetsAnimation animation) {
+		super.dispatchWindowInsetsAnimationEnd(animation);
+		if (tlInsetsAnimationDispatchMode == WindowInsetsAnimation.Callback.DISPATCH_MODE_STOP)
+			return;
+		final int count = getChildCount();
+		for (int i = 0; i < count; i++)
+			getChildAt(i).dispatchWindowInsetsAnimationEnd(animation);
+	}
+
 	/** AOSP: the group and every descendant use the framework's optional fitsSystemWindows */
 	@Override
 	public void makeOptionalFitsSystemWindows() {

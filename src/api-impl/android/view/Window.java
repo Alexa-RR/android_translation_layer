@@ -223,8 +223,12 @@ public class Window {
 	}
 
 	/** AOSP: the window soft input mode (WindowManager.LayoutParams.SOFT_INPUT_*). */
-	public void setSoftInputMode(int dummy) {
-		tlSoftInputMode = dummy;
+	public void setSoftInputMode(int mode) {
+		tlSoftInputMode = mode;
+		getAttributes().softInputMode = mode;
+		/* the IME's part of the system window insets may change (TlImeInsets) */
+		if (decorView != null && decorView.isAttachedToWindow())
+			decorView.requestApplyInsets();
 	}
 
 	public int getNavigationBarColor() {
@@ -596,21 +600,62 @@ public class Window {
 	 * a window without inset sources); the display shape is the screen's rectangle.
 	 */
 	public WindowInsets tlGetWindowInsets() {
-		return tlWindowInsetsFor(context);
+		return tlWindowInsetsFor(context, tlResizesForIme());
+	}
+
+	/**
+	 * AOSP ViewRootImpl/InsetsState: whether the IME inset joins the system window insets (the
+	 * content the decor fits shrinks above the keyboard): adjustResize, or an unspecified adjustment
+	 * with a scroll container in the window (ViewRootImpl's mScrollContainers rule); adjustPan and
+	 * adjustNothing leave the content as it is.
+	 */
+	boolean tlResizesForIme() {
+		int adjust = tlSoftInputMode & WindowManager.LayoutParams.SOFT_INPUT_MASK_ADJUST;
+		if (adjust == WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
+			return true;
+		if (adjust != WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED)
+			return false;
+		return decorView != null && tlHasScrollContainer(decorView);
+	}
+
+	private static boolean tlHasScrollContainer(View v) {
+		if (v.getVisibility() != View.VISIBLE)
+			return false;
+		if (v.isScrollContainer())
+			return true;
+		if (v instanceof ViewGroup) {
+			ViewGroup g = (ViewGroup) v;
+			for (int i = 0; i < g.getChildCount(); i++)
+				if (tlHasScrollContainer(g.getChildAt(i)))
+					return true;
+		}
+		return false;
 	}
 
 	/** @hide the window insets of a root without a Window (popups, overlays) */
 	public static WindowInsets tlWindowInsetsFor(Context context) {
+		return tlWindowInsetsFor(context, false);
+	}
+
+	/** the window insets: no bars or cutout; the on-screen keyboard while it shows (TlImeInsets) */
+	static WindowInsets tlWindowInsetsFor(Context context, boolean resizesForIme) {
 		final android.util.DisplayMetrics dm = context.getResources().getDisplayMetrics();
 		final android.graphics.Insets[] typeInsets = new android.graphics.Insets[WindowInsets.Type.SIZE];
 		final android.graphics.Insets[] typeMaxInsets = new android.graphics.Insets[WindowInsets.Type.SIZE];
+		final boolean[] typeVisibility = new boolean[WindowInsets.Type.SIZE];
 		java.util.Arrays.fill(typeInsets, android.graphics.Insets.NONE);
 		java.util.Arrays.fill(typeMaxInsets, android.graphics.Insets.NONE);
-		return new WindowInsets(typeInsets, typeMaxInsets, new boolean[WindowInsets.Type.SIZE],
+		final int ime = WindowInsets.Type.indexOf(WindowInsets.Type.ime());
+		typeInsets[ime] = android.graphics.Insets.of(0, 0, 0, TlImeInsets.bottom());
+		typeVisibility[ime] = TlImeInsets.isVisible();
+		int compatTypes = WindowInsets.Type.systemBars();
+		if (resizesForIme)
+			compatTypes |= WindowInsets.Type.ime();
+		return new WindowInsets(typeInsets, typeMaxInsets, typeVisibility,
 		                        (context.getResources().getConfiguration().screenLayout & 0x300) == 0x200 /* SCREENLAYOUT_ROUND_YES */, false, 0,
 		                        DisplayCutout.NO_CUTOUT, RoundedCorners.NO_ROUNDED_CORNERS, new PrivacyIndicatorBounds(),
 		                        DisplayShape.createDefaultDisplayShape(dm.widthPixels, dm.heightPixels, false),
-		                        WindowInsets.Type.systemBars(), false);
+		                        compatTypes, false);
 	}
 
 	/**

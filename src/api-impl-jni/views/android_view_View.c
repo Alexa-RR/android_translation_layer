@@ -1471,6 +1471,17 @@ JNIEXPORT jboolean JNICALL Java_android_view_View_nativeClearFocus(JNIEnv *env, 
 	return pending;
 }
 
+/* View.tlFocusWindowChanged: the focused window has no focused view, so GTK's focus goes to no
+ * widget and keys reach the window-level dispatch (AOSP: keys go to the focused window's root) */
+JNIEXPORT void JNICALL Java_android_view_View_nativeDropWindowFocus(JNIEnv *env, jclass clazz)
+{
+	if (!window)
+		return;
+	gtk_root_set_focus(GTK_ROOT(window), NULL);
+	if (getenv("ATL_DEBUG_FOCUS"))
+		fprintf(stderr, "[focus] focused window has no focused view: GTK focus dropped\n");
+}
+
 /* ---- teslalinux: touch mode input hooks (tl_touch_mode), connected in main.c ---- */
 int map_key_code(int key_code);
 int map_meta_state(GdkModifierType state);

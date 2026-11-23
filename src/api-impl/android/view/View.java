@@ -4175,10 +4175,72 @@ public class View implements Drawable.Callback {
 			                                + "attribute defined on view " + mHostView.getClass() + idText);
 		}
 	}
-	public void setForceDarkAllowed(boolean forceDark) {}
-	public void setWindowInsetsAnimationCallback(WindowInsetsAnimation.Callback callback) {}
-	public void setViewTranslationCallback(ViewTranslationCallback callback) {}
-	public void clearViewTranslationCallback() {}
+	/* AOSP: whether force dark may apply to this view (RenderNode.setForceDarkAllowed); GTK draws
+	 * no forced dark theme, so the setting is only kept and reported */
+	private boolean tlForceDarkAllowed = true;
+
+	public void setForceDarkAllowed(boolean allow) {
+		tlForceDarkAllowed = allow;
+	}
+
+	public boolean isForceDarkAllowed() {
+		return tlForceDarkAllowed;
+	}
+
+	/* AOSP ListenerInfo.mWindowInsetsAnimationCallback */
+	private WindowInsetsAnimation.Callback tlWindowInsetsAnimationCallback;
+
+	/** AOSP: the callback hears the animations of the window insets (here: the on-screen keyboard's) */
+	public void setWindowInsetsAnimationCallback(WindowInsetsAnimation.Callback callback) {
+		tlWindowInsetsAnimationCallback = callback;
+	}
+
+	/** @hide AOSP */
+	public boolean hasWindowInsetsAnimationCallback() {
+		return tlWindowInsetsAnimationCallback != null;
+	}
+
+	/** AOSP: an animation of the window insets is about to start (the layout is still the start state) */
+	public void dispatchWindowInsetsAnimationPrepare(WindowInsetsAnimation animation) {
+		if (tlWindowInsetsAnimationCallback != null)
+			tlWindowInsetsAnimationCallback.onPrepare(animation);
+	}
+
+	/** AOSP: the animation starts; the callback may narrow the bounds for the views below */
+	public WindowInsetsAnimation.Bounds dispatchWindowInsetsAnimationStart(WindowInsetsAnimation animation, WindowInsetsAnimation.Bounds bounds) {
+		if (tlWindowInsetsAnimationCallback != null)
+			return tlWindowInsetsAnimationCallback.onStart(animation, bounds);
+		return bounds;
+	}
+
+	/** AOSP: a frame of the running animations, with the insets of that frame */
+	public WindowInsets dispatchWindowInsetsAnimationProgress(WindowInsets insets, java.util.List<WindowInsetsAnimation> runningAnimations) {
+		if (tlWindowInsetsAnimationCallback != null)
+			return tlWindowInsetsAnimationCallback.onProgress(insets, runningAnimations);
+		return insets;
+	}
+
+	/** AOSP: the animation ended */
+	public void dispatchWindowInsetsAnimationEnd(WindowInsetsAnimation animation) {
+		if (tlWindowInsetsAnimationCallback != null)
+			tlWindowInsetsAnimationCallback.onEnd(animation);
+	}
+	/* AOSP: the callback the UI translation service calls to show a translation; this device has
+	 * no translation service, so it is kept and never called, as on a device without one */
+	private ViewTranslationCallback tlViewTranslationCallback;
+
+	public void setViewTranslationCallback(ViewTranslationCallback callback) {
+		tlViewTranslationCallback = callback;
+	}
+
+	public void clearViewTranslationCallback() {
+		tlViewTranslationCallback = null;
+	}
+
+	/** @hide AOSP */
+	public ViewTranslationCallback getViewTranslationCallback() {
+		return tlViewTranslationCallback;
+	}
 	public void transformMatrixToGlobal(Matrix matrix) {
 		final ViewParent p = getParent();
 		if (p instanceof View) {

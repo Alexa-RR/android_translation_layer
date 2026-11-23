@@ -427,6 +427,21 @@ JNIEXPORT void JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOs
 		gtk_overlay_remove_overlay(GTK_OVERLAY(tl_main_overlay), tl_osk);
 }
 
+/* the keyboard layer's height at the bottom of the main window: as allocated, or (shown but not
+ * allocated yet) its natural height for the window's width */
+JNIEXPORT jint JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOskHeight(JNIEnv *env, jclass clazz)
+{
+	if (!tl_osk)
+		return 0;
+	int h = gtk_widget_get_height(tl_osk);
+	if (h <= 0 && tl_main_overlay) {
+		int min = 0, nat = 0;
+		gtk_widget_measure(tl_osk, GTK_ORIENTATION_VERTICAL, gtk_widget_get_width(tl_main_overlay), &min, &nat, NULL, NULL);
+		h = nat;
+	}
+	return h;
+}
+
 JNIEXPORT jboolean JNICALL Java_android_view_inputmethod_InputMethodManager_nativeOskIsShown(JNIEnv *env, jclass clazz)
 {
 	return tl_osk && gtk_widget_get_parent(tl_osk) && gtk_widget_get_visible(tl_osk);

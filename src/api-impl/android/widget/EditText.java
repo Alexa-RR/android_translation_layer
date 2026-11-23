@@ -9,12 +9,18 @@ import android.util.AttributeSet;
 import android.view.MotionEvent;
 
 public class EditText extends TextView {
+	/* AOSP: the constructors without a style take the theme's editTextStyle (Widget.EditText:
+	 * focusable, focusable in touch mode, clickable, the edit text background) */
 	public EditText(Context context) {
-		super(context);
+		this(context, null);
 	}
 
 	public EditText(Context context, AttributeSet attrs) {
-		super(context, attrs);
+		this(context, attrs, com.android.internal.R.attr.editTextStyle);
+	}
+
+	public EditText(Context context, AttributeSet attrs, int defStyleAttr) {
+		this(context, attrs, defStyleAttr, 0);
 	}
 
 	public EditText(Context context, AttributeSet attrs, int defStyle, int defStyleRes) {
