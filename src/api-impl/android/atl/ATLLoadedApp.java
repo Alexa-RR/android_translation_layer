@@ -122,7 +122,22 @@ public final class ATLLoadedApp {
 	 * names every dex in front of them, so a device that wants the app compiled once keeps this list
 	 * the same from start to start (and TlPrewarm, which compiles the app ahead, uses it too).
 	 */
-	static String appClassOverrides() {
+	private static String appClassOverrides() {
+		java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+		String overrides = appClassOverrides(missing);
+		for (String path : missing)
+			Slog.w(TAG, "ATL_APP_CLASS_OVERRIDES: " + path + " is not a file, left out");
+		if (overrides != null)
+			Slog.i(TAG, "app class overrides in front of the app's classes: " + overrides);
+		return overrides;
+	}
+
+	/**
+	 * ATL_APP_CLASS_OVERRIDES as it goes on the app's class loader (null: none), the files that do
+	 * not exist left out and added to MISSING. Logs nothing, so a VM without ATL's natives (TlPrewarm
+	 * under dalvikvm, where android.util.Log has no native code) can call it.
+	 */
+	static String appClassOverrides(java.util.List<String> missing) {
 		String env = System.getenv("ATL_APP_CLASS_OVERRIDES");
 		if (env == null || env.isEmpty())
 			return null;
@@ -131,17 +146,14 @@ public final class ATLLoadedApp {
 			if (path.isEmpty())
 				continue;
 			if (!new File(path).isFile()) {
-				Slog.w(TAG, "ATL_APP_CLASS_OVERRIDES: " + path + " is not a file, left out");
+				missing.add(path);
 				continue;
 			}
 			if (sb.length() > 0)
 				sb.append(File.pathSeparator);
 			sb.append(path);
 		}
-		if (sb.length() == 0)
-			return null;
-		Slog.i(TAG, "app class overrides in front of the app's classes: " + sb);
-		return sb.toString();
+		return sb.length() == 0 ? null : sb.toString();
 	}
 
 	@NonNull

@@ -45,7 +45,12 @@ public final class TlPrewarm {
 		String classLoaderPath = path.toString();
 		if (ATLToggles.ATL_GHAX)
 			classLoaderPath = ATLPaths.ghax_jar.getPath() + File.pathSeparator + classLoaderPath;
-		String overrides = ATLLoadedApp.appClassOverrides();
+		/* the overrides as ATLLoadedApp puts them in front (its quiet variant: android.util.Log has no
+		 * native code in this VM) */
+		java.util.ArrayList<String> missing = new java.util.ArrayList<>();
+		String overrides = ATLLoadedApp.appClassOverrides(missing);
+		for (String m : missing)
+			System.err.println("TlPrewarm: ATL_APP_CLASS_OVERRIDES: " + m + " is not a file, left out");
 		if (overrides != null)
 			classLoaderPath = overrides + File.pathSeparator + classLoaderPath;
 		long start = System.nanoTime();
