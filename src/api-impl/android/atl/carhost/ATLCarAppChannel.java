@@ -37,18 +37,33 @@ import java.util.Map;
  * <li>from the renderer: {"type":"click","cb":ID}, {"type":"selected","cb":ID,"index":I},
  *     {"type":"checked","cb":ID,"checked":B}, {"type":"search","cb":ID,"text":T,"submit":B},
  *     {"type":"back"}, {"type":"mapScale","scale":S}, {"type":"renderScale","scale":S} (the map
- *     drawn in that fraction of the display's pixels, 0.5 to 1); CarAppChannelListener receives them on the
+ *     drawn in that fraction of the display's pixels, 0.5 to 1), {"type":"appSettings","state":S}
+ *     (where the renderer is with the app's settings shown in a page of its own: "open", "closed",
+ *     "abandon"; ATLCarHost pops abandoned ones); CarAppChannelListener receives them on the
  *     host's handler.</li>
  * </ul>
  * A renderer that connects gets the icons and the current template at once.
+ *
+ * <p>A renderer is gone when its socket closes, and also when it stops answering: the channel sends
+ * a WebSocket ping every {@link #PING_MS} (a browser answers pings by itself, as RFC 6455 has it, also
+ * through nginx, which passes the frames on) and closes a renderer it has heard nothing from for
+ * {@link #SILENT_MS}, such as a car browser that went out of the hotspot's range without closing
+ * its connection. The listener hears of each renderer that went.
  */
 final class ATLCarAppChannel {
 	private static final String TAG = "ATLCarAppChannel";
 	private static final String GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+	/** how often each renderer is pinged */
+	static final long PING_MS = 10000;
+	/** a renderer silent this long (no frame at all, not even a pong) is closed */
+	static final long SILENT_MS = 30000;
 
 	interface Listener {
-		/** a message from a renderer, as its JSON text (on the host's handler) */
-		void onMessage(String json);
+		/** a message from a renderer (an opaque identity, the same for all its messages), as its JSON text (on the host's handler) */
+		void onMessage(Object renderer, String json);
+
+		/** that renderer is gone: its socket closed, or it stopped answering (on the host's handler) */
+		void onRendererGone(Object renderer);
 	}
 
 	private final int port;
@@ -88,6 +103,39 @@ final class ATLCarAppChannel {
 		}, "car-app-channel");
 		t.setDaemon(true);
 		t.start();
+		Thread keepalive = new Thread(new Runnable() {
+			@Override
+			public void run() {
+				keepalive();
+			}
+		}, "car-app-keepalive");
+		keepalive.setDaemon(true);
+		keepalive.start();
+	}
+
+	/* every PING_MS: a ping to each renderer, and a renderer silent for SILENT_MS closed (its reading
+	 * thread then ends and reports it gone) */
+	private void keepalive() {
+		while (true) {
+			try {
+				Thread.sleep(PING_MS);
+			} catch (InterruptedException e) {
+				return;
+			}
+			ArrayList<Client> list;
+			synchronized (clients) {
+				list = new ArrayList<>(clients);
+			}
+			long now = android.os.SystemClock.uptimeMillis();
+			for (Client c : list) {
+				if (now - c.lastHeard > SILENT_MS) {
+					Log.i(TAG, "renderer silent for " + (now - c.lastHeard) + " ms: closed");
+					c.close();
+				} else {
+					c.ping();
+				}
+			}
+		}
 	}
 
 	private void serve() {
@@ -239,10 +287,20 @@ final class ATLCarAppChannel {
 	private final class Client {
 		final Socket socket;
 		final OutputStream out;
+		/* when the renderer last sent a frame (SystemClock.uptimeMillis) */
+		volatile long lastHeard = android.os.SystemClock.uptimeMillis();
 
 		Client(Socket socket) throws IOException {
 			this.socket = socket;
 			this.out = socket.getOutputStream();
+		}
+
+		synchronized void ping() {
+			try {
+				writeFrame(0x9, new byte[0]);
+			} catch (IOException e) {
+				close();
+			}
 		}
 
 		/* one text frame; servers send unmasked frames */
@@ -330,9 +388,16 @@ final class ATLCarAppChannel {
 		} catch (IOException | NoSuchAlgorithmException e) {
 			Log.i(TAG, "renderer gone: " + e);
 		} finally {
-			if (client != null)
+			if (client != null) {
 				client.close();
-			else
+				final Client gone = client;
+				handler.post(new Runnable() {
+					@Override
+					public void run() {
+						listener.onRendererGone(gone);
+					}
+				});
+			} else
 				try {
 					s.close();
 				} catch (IOException ignored) {
@@ -411,6 +476,7 @@ final class ATLCarAppChannel {
 			if (masked)
 				for (int i = 0; i < payload.length; i++)
 					payload[i] ^= mask[i & 3];
+			client.lastHeard = android.os.SystemClock.uptimeMillis();
 			switch (opcode) {
 				case 0x8: /* close */
 					client.writeFrame(0x8, new byte[0]);
@@ -429,7 +495,7 @@ final class ATLCarAppChannel {
 						handler.post(new Runnable() {
 							@Override
 							public void run() {
-								listener.onMessage(text);
+								listener.onMessage(client, text);
 							}
 						});
 					}

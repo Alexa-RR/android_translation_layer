@@ -162,8 +162,16 @@ public final class ATLCarHost {
 				constraintHost = new ConstraintHost();
 				channel = new ATLCarAppChannel(ATLCarAppChannel.configuredPort(), handler, new ATLCarAppChannel.Listener() {
 					@Override
-					public void onMessage(String json) {
-						onRendererMessage(json);
+					public void onMessage(Object renderer, String json) {
+						onRendererMessage(renderer, json);
+					}
+
+					@Override
+					public void onRendererGone(Object renderer) {
+						if (renderer == settingsOwner) {
+							log("the renderer showing the app's settings is gone: back to the map");
+							abandonAppSettings();
+						}
 					}
 				});
 				channel.start();
@@ -593,6 +601,213 @@ public final class ATLCarHost {
 			android.atl.ATLFrameRateLimiter.contentMoved("car template");
 		lastTemplateJson = json;
 		channel.sendTemplate(++templateSeq, json);
+		if (settingsOwner != null || settingsClosing)
+			appSettingsTemplate(stackIds(json));
+	}
+
+	/* ---- the app's own settings shown by a renderer in its own page ------------------------------
+	 * A renderer may show the app's settings screens in a page of its own instead of over the map
+	 * (teslalinux's car page: Settings > Waze > Waze's settings): it taps the app's settings action,
+	 * draws the screens the app pushes for it, and when it is done pops them with back until the
+	 * app's screen stack is the map's again. It tells the host with {"type":"appSettings","state":S}:
+	 * "open" right before it taps the action, "closed" once it is back at the map, "abandon" when it
+	 * goes away without popping them (the page being closed). A renderer that goes away while it
+	 * shows them (its socket closed, or silent: ATLCarAppChannel) abandons them too. Abandoned
+	 * settings would stay on the car's map, where no renderer offers a way out of them, so the host
+	 * pops them itself as the renderer would: back (AppManager.onBackPressed, which the app's
+	 * ScreenManager answers with pop), one at a time, each after the template answering the one
+	 * before, until the stack is the one the settings were opened from. Screens are told apart by
+	 * the stack's template ids (TemplateWrapper.templateInfosForScreenStack, top first), as the
+	 * renderer does: a screen keeps its id while screens lie above it. */
+
+	/** the settings screen arrives within this after the tap, or it did not open */
+	private static final long SETTINGS_OPEN_MS = 5000;
+	/** one back answered with a template within this, or the app kept its screen */
+	private static final long SETTINGS_STEP_MS = 3000;
+	/** never more backs than this for one closing */
+	private static final int SETTINGS_MAX_BACKS = 12;
+
+	/* the renderer showing the app's settings (its channel identity), or null */
+	private Object settingsOwner;
+	/* the app's screen stack (template ids, top first) the settings were opened from */
+	private java.util.List<String> settingsBase = java.util.Collections.emptyList();
+	/* the app's current screen stack, while settings are open or closing */
+	private java.util.List<String> settingsStack = java.util.Collections.emptyList();
+	/* whether a screen above the base was seen since they were opened */
+	private boolean settingsSeen;
+	/* the host is popping them (abandoned), a back on its way, how many were sent, and until when
+	 * (uptimeMillis) a settings screen still on its way after the tap is waited for */
+	private boolean settingsClosing;
+	private boolean settingsBackPending;
+	private int settingsBacks;
+	private long settingsWaitUntil;
+	private final Runnable settingsStepTimeout = new Runnable() {
+		@Override
+		public void run() {
+			if (!settingsClosing)
+				return;
+			if (settingsBackPending) {
+				/* the app kept its screen (a question of its own): it stays, where the driver sees it */
+				log("app settings: back not answered in " + SETTINGS_STEP_MS + " ms; leaving the app's screen as it is");
+				endAppSettings();
+				return;
+			}
+			/* the settings screen never came after the tap */
+			endAppSettings();
+		}
+	};
+
+	/** the template ids of a template message's screen stack, top first (empty when the app sends none) */
+	private static java.util.List<String> stackIds(String templateJson) {
+		java.util.ArrayList<String> ids = new java.util.ArrayList<>();
+		try {
+			org.json.JSONArray a = new org.json.JSONObject(templateJson).optJSONArray("templateInfosForScreenStack");
+			if (a != null)
+				for (int i = 0; i < a.length(); i++) {
+					org.json.JSONObject info = a.optJSONObject(i);
+					String id = info != null ? info.optString("templateId", null) : null;
+					if (id != null)
+						ids.add(id);
+				}
+		} catch (org.json.JSONException e) {
+			Log.w(TAG, "template without a readable screen stack", e);
+		}
+		return ids;
+	}
+
+	/* whether the bottom of IDS is exactly BASE (both top first) */
+	private static boolean endsWith(java.util.List<String> ids, java.util.List<String> base) {
+		return ids.size() >= base.size() && ids.subList(ids.size() - base.size(), ids.size()).equals(base);
+	}
+
+	/* how many screens IDS has above the settings' base, 0 at the base or not above it. The base's
+	 * top screen may be refreshed (a new id) while nothing lies above it: then the base follows. */
+	private int settingsDepth(java.util.List<String> ids) {
+		java.util.List<String> base = settingsBase;
+		int n = base.size();
+		if (n == 0)
+			return 0;
+		java.util.List<String> under = base.subList(1, n);
+		if (ids.size() == n && endsWith(ids, under)) {
+			settingsBase = new java.util.ArrayList<>(ids);
+			return 0;
+		}
+		if (ids.size() > n && endsWith(ids, under))
+			return ids.size() - n;
+		return 0;
+	}
+
+	/* host thread: a renderer's {"type":"appSettings"} */
+	private void onAppSettingsMessage(Object renderer, String state) {
+		switch (state) {
+			case "open":
+				/* a renderer opens them (again, or another renderer takes over): from the stack now */
+				handler.removeCallbacks(settingsStepTimeout);
+				settingsOwner = renderer;
+				settingsStack = lastTemplateJson != null ? stackIds(lastTemplateJson) : java.util.Collections.<String>emptyList();
+				settingsBase = settingsStack;
+				settingsSeen = false;
+				settingsClosing = false;
+				settingsBackPending = false;
+				settingsBacks = 0;
+				log("app settings opened by a renderer, from a stack of " + settingsBase.size());
+				break;
+			case "closed":
+				if (renderer == settingsOwner && !settingsClosing)
+					endAppSettings();
+				break;
+			case "abandon":
+				if (renderer == settingsOwner) {
+					log("app settings abandoned by their renderer: back to the map");
+					abandonAppSettings();
+				}
+				break;
+			default:
+				Log.w(TAG, "renderer: unknown app settings state " + state);
+		}
+	}
+
+	/* host thread: the settings' renderer went without closing them: the host pops them */
+	private void abandonAppSettings() {
+		settingsOwner = null;
+		if (settingsBase.isEmpty()) {
+			/* the app sends no screen stack: nothing tells its settings from the map */
+			endAppSettings();
+			return;
+		}
+		settingsClosing = true;
+		settingsBacks = 0;
+		/* a settings screen tapped for just now may still be on its way */
+		settingsWaitUntil = android.os.SystemClock.uptimeMillis() + SETTINGS_OPEN_MS;
+		pumpAppSettingsBack();
+	}
+
+	/* host thread: a template while settings are open or closing */
+	private void appSettingsTemplate(java.util.List<String> ids) {
+		settingsStack = ids;
+		int depth = settingsDepth(ids);
+		if (depth > 0)
+			settingsSeen = true;
+		if (!settingsClosing)
+			return;
+		settingsBackPending = false;
+		handler.removeCallbacks(settingsStepTimeout);
+		pumpAppSettingsBack();
+	}
+
+	/* host thread: one back while the app's settings are above the map, none while one is answered */
+	private void pumpAppSettingsBack() {
+		if (!settingsClosing || settingsBackPending)
+			return;
+		int depth = settingsDepth(settingsStack);
+		if (depth == 0) {
+			long wait = settingsWaitUntil - android.os.SystemClock.uptimeMillis();
+			if (settingsSeen || wait <= 0) {
+				if (settingsSeen)
+					log("app settings closed: the app is back at its map after " + settingsBacks + " back(s)");
+				endAppSettings();
+			} else {
+				handler.removeCallbacks(settingsStepTimeout);
+				handler.postDelayed(settingsStepTimeout, wait);
+			}
+			return;
+		}
+		if (settingsBacks >= SETTINGS_MAX_BACKS || appManager == null) {
+			Log.w(TAG, "app settings: still " + depth + " screen(s) above the map after " + settingsBacks + " back(s); left as they are");
+			endAppSettings();
+			return;
+		}
+		settingsBackPending = true;
+		settingsBacks++;
+		handler.removeCallbacks(settingsStepTimeout);
+		handler.postDelayed(settingsStepTimeout, SETTINGS_STEP_MS);
+		sendBack();
+	}
+
+	private void endAppSettings() {
+		handler.removeCallbacks(settingsStepTimeout);
+		settingsOwner = null;
+		settingsClosing = false;
+		settingsBackPending = false;
+		settingsSeen = false;
+		settingsBacks = 0;
+		settingsBase = java.util.Collections.emptyList();
+		settingsStack = java.util.Collections.emptyList();
+	}
+
+	/* host thread: back, as the car's back button (the app's ScreenManager pops its top screen) */
+	private void sendBack() {
+		if (appManager == null)
+			return;
+		try {
+			appManager.onBackPressed(new Done("onBackPressed") {
+				@Override
+				void success(Object response) {
+				}
+			});
+		} catch (RemoteException | RuntimeException e) {
+			Log.w(TAG, "onBackPressed failed", e);
+		}
 	}
 
 	/* an IconCompat as PNG: the app's drawable (IconCompat.loadDrawable with the app's context),
@@ -667,10 +882,15 @@ public final class ATLCarHost {
 	}
 
 	/* host thread: an interaction from the renderer, delivered to the app's callback for it */
-	private void onRendererMessage(String text) {
+	private void onRendererMessage(Object renderer, String text) {
 		try {
 			org.json.JSONObject m = new org.json.JSONObject(text);
 			String type = m.getString("type");
+			if ("appSettings".equals(type)) {
+				/* where the renderer is with the app's settings (onAppSettingsMessage) */
+				onAppSettingsMessage(renderer, m.optString("state", ""));
+				return;
+			}
 			/* every renderer message is the driver's input or a change of the map's area or look:
 			 * the app's map moves or redraws */
 			android.atl.ATLFrameRateLimiter.contentMoved("car renderer " + type);
@@ -712,12 +932,7 @@ public final class ATLCarHost {
 				return;
 			}
 			if ("back".equals(type)) {
-				if (appManager != null)
-					appManager.onBackPressed(new Done("onBackPressed") {
-						@Override
-						void success(Object response) {
-						}
-					});
+				sendBack();
 				return;
 			}
 			Object delegate = modelJson.delegate(m.optInt("cb", -1));
@@ -753,7 +968,7 @@ public final class ATLCarHost {
 				default:
 					Log.w(TAG, "renderer: unknown message type " + type);
 			}
-		} catch (org.json.JSONException | RemoteException | RuntimeException e) {
+		} catch (org.json.JSONException | RuntimeException e) {
 			Log.w(TAG, "renderer message not handled: " + text, e);
 		}
 	}
