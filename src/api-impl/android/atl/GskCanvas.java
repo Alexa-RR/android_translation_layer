@@ -1000,10 +1000,49 @@ public class GskCanvas extends DisplayListCanvas {
 
 	/** The base canvas of a bitmap canvas hands in the bitmap's current snapshot before each call. */
 	public void tlSetBase(long base) {
+		if (tlBaseDetached && base != tlBaseSnapshot()) {
+			/* the bitmap was read meanwhile (tlBaseDetach): its new snapshot gets this canvas's
+			 * saves, transforms and clips again, so drawing continues where it was */
+			tlBaseDetached = false;
+			tlReplayRange(base, 1, tlBaseTopLevel(), new Matrix());
+		}
 		if (tlLayers != null && !tlLayers.isEmpty())
 			tlLayers.get(0).outer = base;
 		else
 			snapshot = base;
+	}
+
+	/** the snapshot that is the bitmap's (the outermost target) */
+	private long tlBaseSnapshot() {
+		return (tlLayers != null && !tlLayers.isEmpty()) ? tlLayers.get(0).outer : snapshot;
+	}
+
+	/** the save levels whose state lives in the bitmap's snapshot (the rest are in layers) */
+	private int tlBaseTopLevel() {
+		return (tlLayers != null && !tlLayers.isEmpty()) ? tlLayers.get(0).level - 1 : getSaveCount();
+	}
+
+	private boolean tlBaseDetached;
+	private boolean tlTakingTarget;
+
+	/**
+	 * The bitmap this canvas draws into is read (Bitmap.getTexture) while the canvas has saves and
+	 * clips open on its snapshot: they are closed first, so GTK ends a balanced snapshot (with open
+	 * pushes it keeps only the innermost state, and the drawing made before a clip was lost), and
+	 * they are replayed into the bitmap's next snapshot (tlSetBase). AOSP: the bitmap is a pixel
+	 * buffer, reading it does not touch the canvas state.
+	 */
+	public void tlBaseDetach(long base) {
+		if (tlTakingTarget || tlBaseDetached || base == 0 || base != tlBaseSnapshot())
+			return;
+		for (int lvl = tlBaseTopLevel(); lvl >= 1; lvl--) {
+			int pops = (push_history != null && push_history.length > lvl) ? push_history[lvl] : 0;
+			if (pops > 0)
+				native_pop(base, pops);
+			if (lvl >= 2)
+				native_restore(base);
+		}
+		tlBaseDetached = true;
 	}
 
 	/** Clip pushes are recorded: a composite or an expanded clip replays them in a new target. */
@@ -1104,7 +1143,13 @@ public class GskCanvas extends DisplayListCanvas {
 		}
 		tlUnwind(snapshot);
 		Bitmap bm = tlBaseBitmap;
-		return native_textureNode(bm.getTexture(), bm.getWidth(), bm.getHeight());
+		/* unwound here already: the bitmap's read must not close the states again */
+		tlTakingTarget = true;
+		try {
+			return native_textureNode(bm.getTexture(), bm.getWidth(), bm.getHeight());
+		} finally {
+			tlTakingTarget = false;
+		}
 	}
 
 	/** Makes s (holding the composite) the current target, with the canvas state replayed into it. */
@@ -1150,13 +1195,18 @@ public class GskCanvas extends DisplayListCanvas {
 			start = 1;
 			cur = new Matrix();
 		}
+		tlReplayRange(s, start, getSaveCount(), cur);
+	}
+
+	/** Replays save levels start..end (their saves, clips and transforms) into s, from transform cur. */
+	private void tlReplayRange(long s, int start, int end, Matrix cur) {
 		// an expanded clip (TL_CLIP_DEVICE) replaces every clip recorded before it
 		int first = 0;
 		if (tlClips != null)
 			for (int i = 0; i < tlClips.size(); i++)
-				if (tlClips.get(i).kind == TL_CLIP_DEVICE && tlClips.get(i).level >= start)
+				if (tlClips.get(i).kind == TL_CLIP_DEVICE && tlClips.get(i).level >= start && tlClips.get(i).level <= end)
 					first = i;
-		for (int lvl = start; lvl <= getSaveCount(); lvl++) {
+		for (int lvl = start; lvl <= end; lvl++) {
 			if (lvl >= 2)
 				native_save(s);
 			int pushes = 0;

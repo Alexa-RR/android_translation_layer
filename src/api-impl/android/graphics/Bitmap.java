@@ -176,11 +176,34 @@ public final class Bitmap implements Parcelable {
 			if (tlPixels != 0) {
 				texture = native_pixels_to_texture(tlPixels, width, height);
 			} else {
+				/* a canvas drawing into this bitmap closes its open saves and clips on the snapshot
+				 * first (and replays them into the next one) */
+				if (snapshot != 0 && tlCanvases != null) {
+					for (int i = tlCanvases.size() - 1; i >= 0; i--) {
+						android.atl.GskCanvas c = tlCanvases.get(i).get();
+						if (c == null || c.tlBaseBitmap != this)
+							tlCanvases.remove(i);
+						else
+							c.tlBaseDetach(snapshot);
+					}
+				}
 				texture = native_create_texture(snapshot, width, height, stride, config.gdk_memory_format);
 				snapshot = 0;
 			}
 		}
 		return texture;
+	}
+
+	/** the canvases drawing into this bitmap (Canvas(Bitmap), Canvas.setBitmap) */
+	private java.util.ArrayList<java.lang.ref.WeakReference<android.atl.GskCanvas>> tlCanvases;
+
+	synchronized void tlAttachCanvas(android.atl.GskCanvas canvas) {
+		if (tlCanvases == null)
+			tlCanvases = new java.util.ArrayList<>();
+		for (java.lang.ref.WeakReference<android.atl.GskCanvas> r : tlCanvases)
+			if (r.get() == canvas)
+				return;
+		tlCanvases.add(new java.lang.ref.WeakReference<>(canvas));
 	}
 
 	/** The snapshot to draw into: the bitmap's content changes, its pixel memory (if any) is dropped. */

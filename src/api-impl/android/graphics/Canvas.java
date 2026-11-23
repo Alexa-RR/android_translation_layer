@@ -68,6 +68,7 @@ public class Canvas {
 		this.bitmap = bmp;
 		gsk_canvas = new GskCanvas(bmp.getSnapshot());
 		gsk_canvas.tlBaseBitmap = bmp;
+		bmp.tlAttachCanvas(gsk_canvas);
 		tlDensity = bmp.getDensity();
 	}
 
@@ -102,6 +103,8 @@ public class Canvas {
 		if (gsk_canvas != null) {
 			gsk_canvas.tlBaseBitmap = bitmap;
 			gsk_canvas.snapshot = bitmap == null ? 0 : bitmap.getSnapshot();
+			if (bitmap != null)
+				bitmap.tlAttachCanvas(gsk_canvas);
 		}
 	}
 
