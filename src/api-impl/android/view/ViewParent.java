@@ -29,4 +29,13 @@ public interface ViewParent {
 	/** Software invalidation path (AOSP): returns the next parent to notify, or null. */
 	public ViewParent invalidateChildInParent(int[] location, android.graphics.Rect r);
 	public void requestLayout();
+
+	/**
+	 * AOSP: a child asks for an accessibility event to be sent; true if it was. The window's root
+	 * parent (ViewRootImpl) hands it to the AccessibilityManager, a ViewGroup passes it up after its
+	 * onRequestSendAccessibilityEvent; a parent that is neither sends nothing.
+	 */
+	public default boolean requestSendAccessibilityEvent(View child, android.view.accessibility.AccessibilityEvent event) {
+		return false;
+	}
 }

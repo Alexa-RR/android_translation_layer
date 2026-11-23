@@ -202,7 +202,7 @@ public final class ContextImpl extends Context {
 			case "input_method":
 				return new InputMethodManager();
 			case "accessibility":
-				return new AccessibilityManager();
+				return AccessibilityManager.getInstance(this);
 			case "layout_inflater":
 				return layout_inflater;
 			case "wifi":

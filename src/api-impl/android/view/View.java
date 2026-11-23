@@ -1928,10 +1928,219 @@ public class View implements Drawable.Callback {
 
 	public void setDescendantFocusability(int value) {}
 
-	public void setAccessibilityDelegate(AccessibilityDelegate delegate) {}
+	/* ---- accessibility (AOSP View): the delegate sees every accessibility call first; the events
+	 * travel up the parents to the window's root parent (ViewRootImpl), which hands them to the
+	 * AccessibilityManager. No accessibility service can be installed here, so the manager reports
+	 * accessibility off and, as on a device with no service enabled, no event is created. */
 
+	/** AOSP: the delegate that accessibility calls go through (null: the view's own behaviour). */
+	AccessibilityDelegate mAccessibilityDelegate;
+
+	public void setAccessibilityDelegate(AccessibilityDelegate delegate) {
+		mAccessibilityDelegate = delegate;
+	}
+
+	/**
+	 * AOSP: the delegate that implements the accessibility support of a view (composition instead
+	 * of inheritance). Every method defaults to the view's own implementation.
+	 */
 	public static class AccessibilityDelegate {
-		public void sendAccessibilityEvent(View view, int eventType) {}
+		public void sendAccessibilityEvent(View host, int eventType) {
+			host.sendAccessibilityEventInternal(eventType);
+		}
+
+		public boolean performAccessibilityAction(View host, int action, Bundle args) {
+			return host.performAccessibilityActionInternal(action, args);
+		}
+
+		public void sendAccessibilityEventUnchecked(View host, android.view.accessibility.AccessibilityEvent event) {
+			host.sendAccessibilityEventUncheckedInternal(event);
+		}
+
+		public boolean dispatchPopulateAccessibilityEvent(View host, android.view.accessibility.AccessibilityEvent event) {
+			return host.dispatchPopulateAccessibilityEventInternal(event);
+		}
+
+		public void onPopulateAccessibilityEvent(View host, android.view.accessibility.AccessibilityEvent event) {
+			host.onPopulateAccessibilityEventInternal(event);
+		}
+
+		public void onInitializeAccessibilityEvent(View host, android.view.accessibility.AccessibilityEvent event) {
+			host.onInitializeAccessibilityEventInternal(event);
+		}
+
+		public void onInitializeAccessibilityNodeInfo(View host, android.view.accessibility.AccessibilityNodeInfo info) {
+			host.onInitializeAccessibilityNodeInfoInternal(info);
+		}
+
+		public void addExtraDataToAccessibilityNodeInfo(View host, android.view.accessibility.AccessibilityNodeInfo info, String extraDataKey, Bundle arguments) {
+			host.addExtraDataToAccessibilityNodeInfo(info, extraDataKey, arguments);
+		}
+
+		public boolean onRequestSendAccessibilityEvent(ViewGroup host, View child, android.view.accessibility.AccessibilityEvent event) {
+			return host.onRequestSendAccessibilityEventInternal(child, event);
+		}
+
+		public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider(View host) {
+			return null;
+		}
+
+		public android.view.accessibility.AccessibilityNodeInfo createAccessibilityNodeInfo(View host) {
+			return host.createAccessibilityNodeInfoInternal();
+		}
+	}
+
+	/** AOSP: the event types whose events carry the text of the view (dispatchPopulateAccessibilityEvent). */
+	private static final int POPULATING_ACCESSIBILITY_EVENT_TYPES =
+	    android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SELECTED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_FOCUSED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_HOVER_ENTER
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_HOVER_EXIT
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_SELECTION_CHANGED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED
+	    | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_TEXT_TRAVERSED_AT_MOVEMENT_GRANULARITY;
+
+	public void sendAccessibilityEvent(int eventType) {
+		if (mAccessibilityDelegate != null)
+			mAccessibilityDelegate.sendAccessibilityEvent(this, eventType);
+		else
+			sendAccessibilityEventInternal(eventType);
+	}
+
+	public void sendAccessibilityEventInternal(int eventType) {
+		if (android.view.accessibility.AccessibilityManager.getInstance(getContext()).isEnabled())
+			sendAccessibilityEventUnchecked(android.view.accessibility.AccessibilityEvent.obtain(eventType));
+	}
+
+	public void sendAccessibilityEventUnchecked(android.view.accessibility.AccessibilityEvent event) {
+		if (mAccessibilityDelegate != null)
+			mAccessibilityDelegate.sendAccessibilityEventUnchecked(this, event);
+		else
+			sendAccessibilityEventUncheckedInternal(event);
+	}
+
+	public void sendAccessibilityEventUncheckedInternal(android.view.accessibility.AccessibilityEvent event) {
+		// panes disappearing are relevant even though the view is no longer visible
+		boolean isWindowStateChanged = event.getEventType() == android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED;
+		boolean isWindowDisappearedEvent = isWindowStateChanged
+		    && (event.getContentChangeTypes() & android.view.accessibility.AccessibilityEvent.CONTENT_CHANGE_TYPE_PANE_DISAPPEARED) != 0;
+		boolean detached = isTemporarilyDetached();
+		if (!isShown() && !isWindowDisappearedEvent && !detached)
+			return;
+		onInitializeAccessibilityEvent(event);
+		// only a subset of accessibility events populates text content
+		if ((event.getEventType() & POPULATING_ACCESSIBILITY_EVENT_TYPES) != 0)
+			dispatchPopulateAccessibilityEvent(event);
+		TlAccessibilityEventThrottle throttle = tlThrottleFor(event);
+		if (throttle != null) {
+			throttle.post(event);
+		} else if (!isWindowDisappearedEvent && detached) {
+			// views could be attached soon; events of a temporarily detached view are sent then
+			final android.view.accessibility.AccessibilityEvent fe = event;
+			postDelayed(new Runnable() {
+				public void run() {
+					if (android.view.accessibility.AccessibilityManager.getInstance(getContext()).isEnabled() && isShown())
+						requestParentSendAccessibilityEvent(fe);
+				}
+			}, ViewConfiguration.getSendRecurringAccessibilityEventsInterval());
+		} else {
+			requestParentSendAccessibilityEvent(event);
+		}
+	}
+
+	private void requestParentSendAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
+		ViewParent parent = getParent();
+		if (parent != null)
+			parent.requestSendAccessibilityEvent(this, event);
+	}
+
+	/** AOSP SendAccessibilityEventThrottle: one event per interval for scrolls and state descriptions. */
+	private class TlAccessibilityEventThrottle implements Runnable {
+		volatile boolean mIsPending;
+		android.view.accessibility.AccessibilityEvent mAccessibilityEvent;
+		final boolean mScrolled;
+
+		TlAccessibilityEventThrottle(boolean scrolled) {
+			mScrolled = scrolled;
+		}
+
+		void post(android.view.accessibility.AccessibilityEvent event) {
+			update(event);
+			if (!mIsPending) {
+				mIsPending = true;
+				postDelayed(this, ViewConfiguration.getSendRecurringAccessibilityEventsInterval());
+			}
+		}
+
+		/** the newest event is the one sent (AOSP's scroll throttle adds the deltas up) */
+		void update(android.view.accessibility.AccessibilityEvent event) {
+			if (mScrolled && mAccessibilityEvent != null) {
+				event.setScrollDeltaX(event.getScrollDeltaX() + mAccessibilityEvent.getScrollDeltaX());
+				event.setScrollDeltaY(event.getScrollDeltaY() + mAccessibilityEvent.getScrollDeltaY());
+			}
+			mAccessibilityEvent = event;
+		}
+
+		@Override
+		public void run() {
+			if (android.view.accessibility.AccessibilityManager.getInstance(getContext()).isEnabled() && isShown() && mAccessibilityEvent != null)
+				requestParentSendAccessibilityEvent(mAccessibilityEvent);
+			mIsPending = false;
+			mAccessibilityEvent = null;
+		}
+	}
+
+	private TlAccessibilityEventThrottle mSendViewScrolledAccessibilityEvent;
+	private TlAccessibilityEventThrottle mSendStateChangedAccessibilityEvent;
+
+	private TlAccessibilityEventThrottle tlThrottleFor(android.view.accessibility.AccessibilityEvent event) {
+		if (event.getEventType() == android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+			if (mSendViewScrolledAccessibilityEvent == null)
+				mSendViewScrolledAccessibilityEvent = new TlAccessibilityEventThrottle(true);
+			return mSendViewScrolledAccessibilityEvent;
+		}
+		boolean isStateContentChanged = (event.getContentChangeTypes() & android.view.accessibility.AccessibilityEvent.CONTENT_CHANGE_TYPE_STATE_DESCRIPTION) != 0;
+		if (event.getEventType() == android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED && isStateContentChanged) {
+			if (mSendStateChangedAccessibilityEvent == null)
+				mSendStateChangedAccessibilityEvent = new TlAccessibilityEventThrottle(false);
+			return mSendStateChangedAccessibilityEvent;
+		}
+		return null;
+	}
+
+	public boolean dispatchPopulateAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
+		if (mAccessibilityDelegate != null)
+			return mAccessibilityDelegate.dispatchPopulateAccessibilityEvent(this, event);
+		return dispatchPopulateAccessibilityEventInternal(event);
+	}
+
+	public boolean dispatchPopulateAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent event) {
+		onPopulateAccessibilityEvent(event);
+		return false;
+	}
+
+	/** AOSP: the node describing this view (its provider's host node when it has a provider). */
+	public android.view.accessibility.AccessibilityNodeInfo createAccessibilityNodeInfo() {
+		if (mAccessibilityDelegate != null)
+			return mAccessibilityDelegate.createAccessibilityNodeInfo(this);
+		return createAccessibilityNodeInfoInternal();
+	}
+
+	public android.view.accessibility.AccessibilityNodeInfo createAccessibilityNodeInfoInternal() {
+		android.view.accessibility.AccessibilityNodeProvider provider = getAccessibilityNodeProvider();
+		if (provider != null)
+			return provider.createAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeProvider.HOST_VIEW_ID);
+		android.view.accessibility.AccessibilityNodeInfo info = android.view.accessibility.AccessibilityNodeInfo.obtain(this);
+		onInitializeAccessibilityNodeInfo(info);
+		return info;
+	}
+
+	/** AOSP: a hook for views that add extra data to their node on request; the view itself has none. */
+	public void addExtraDataToAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info, String extraDataKey, Bundle arguments) {
 	}
 
 	public Drawable getBackground() {
@@ -2314,8 +2523,6 @@ public class View implements Drawable.Callback {
 	}
 
 	public boolean isSelected() { return tlSelected; }
-
-	public void sendAccessibilityEvent(int eventType) {}
 
 	public void setMinimumHeight(int minHeight) {
 		this.minHeight = minHeight;
@@ -3599,8 +3806,10 @@ public class View implements Drawable.Callback {
 		}
 	}
 
-	/** AOSP: the action goes to performAccessibilityActionInternal (an accessibility delegate would see it first). */
+	/** AOSP: the action goes to the accessibility delegate, else to performAccessibilityActionInternal. */
 	public boolean performAccessibilityAction(int action, Bundle arguments) {
+		if (mAccessibilityDelegate != null)
+			return mAccessibilityDelegate.performAccessibilityAction(this, action, arguments);
 		return performAccessibilityActionInternal(action, arguments);
 	}
 
@@ -3735,7 +3944,16 @@ public class View implements Drawable.Callback {
 		return tlDrawingCache;
 	}
 
-	public void announceForAccessibility(CharSequence text) {}
+	/** AOSP: an announcement event for the accessibility services (only while accessibility is on). */
+	public void announceForAccessibility(CharSequence text) {
+		if (android.view.accessibility.AccessibilityManager.getInstance(getContext()).isEnabled() && getParent() != null) {
+			android.view.accessibility.AccessibilityEvent event = android.view.accessibility.AccessibilityEvent.obtain(android.view.accessibility.AccessibilityEvent.TYPE_ANNOUNCEMENT);
+			onInitializeAccessibilityEvent(event);
+			event.getText().add(text);
+			event.setContentDescription(null);
+			getParent().requestSendAccessibilityEvent(this, event);
+		}
+	}
 
 	public WindowInsetsController getWindowInsetsController() {
 		/* teslalinux: the decor view has no native window yet when AndroidX's EdgeToEdge asks during onCreate */
@@ -3758,7 +3976,7 @@ public class View implements Drawable.Callback {
 		return mAutofillId;
 	}
 
-	public AccessibilityDelegate getAccessibilityDelegate() { return null; }
+	public AccessibilityDelegate getAccessibilityDelegate() { return mAccessibilityDelegate; }
 
 	/** AOSP: scrollTo(value, scrollY) */
 	public void setScrollX(int value) {
@@ -3942,7 +4160,23 @@ public class View implements Drawable.Callback {
 		return false;
 	}
 	public int getMeasuredHeightAndState() { return getMeasuredHeight(); }
-	public boolean isImportantForAccessibility() { return true; }
+	/** AOSP: whether accessibility services see this view (its mode, its ancestors', and whether it acts or reports). */
+	public boolean isImportantForAccessibility() {
+		final int mode = getImportantForAccessibility();
+		if (mode == IMPORTANT_FOR_ACCESSIBILITY_NO || mode == IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS)
+			return false;
+		// a parent may hide its descendants
+		ViewParent parent = getParent();
+		while (parent instanceof View) {
+			if (((View) parent).getImportantForAccessibility() == IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS)
+				return false;
+			parent = parent.getParent();
+		}
+		return mode == IMPORTANT_FOR_ACCESSIBILITY_YES || isClickable() || isLongClickable() || isFocusable()
+		    || mTouchDelegate != null || on_touch_listener != null || mOnKeyListener != null
+		    || getAccessibilityNodeProvider() != null || getAccessibilityLiveRegion() != ACCESSIBILITY_LIVE_REGION_NONE
+		    || getAccessibilityPaneTitle() != null;
+	}
 	public boolean isImportantForAutofill() { return false; }
 	public boolean isImportantForContentCapture() { return false; }
 	public int getImportantForContentCapture() { return 0; }
@@ -4045,7 +4279,12 @@ public class View implements Drawable.Callback {
 	public ViewParent getParentForAccessibility() { return getParent(); }
 	public void setAllowClickWhenDisabled(boolean clickableWhenDisabled) {}
 	public boolean isPivotSet() { return tlPivotSet; }
-	public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider() { return null; }
+	/** AOSP: the provider of a virtual view tree (the delegate's; a plain view has none). */
+	public android.view.accessibility.AccessibilityNodeProvider getAccessibilityNodeProvider() {
+		if (mAccessibilityDelegate != null)
+			return mAccessibilityDelegate.getAccessibilityNodeProvider(this);
+		return null;
+	}
 
 	/* ---- content capture (AOSP View.java, API 29). The content capture system service does not
 	 * exist in this runtime, so the context has no ContentCaptureManager and the default session is
@@ -4779,7 +5018,10 @@ public class View implements Drawable.Callback {
 
 	/* AOSP accessibility population: the public methods delegate to the internal ones so a delegate can wrap them */
 	public void onInitializeAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
-		onInitializeAccessibilityEventInternal(event);
+		if (mAccessibilityDelegate != null)
+			mAccessibilityDelegate.onInitializeAccessibilityEvent(this, event);
+		else
+			onInitializeAccessibilityEventInternal(event);
 	}
 
 	public void onInitializeAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent event) {
@@ -4793,14 +5035,20 @@ public class View implements Drawable.Callback {
 	}
 
 	public void onPopulateAccessibilityEvent(android.view.accessibility.AccessibilityEvent event) {
-		onPopulateAccessibilityEventInternal(event);
+		if (mAccessibilityDelegate != null)
+			mAccessibilityDelegate.onPopulateAccessibilityEvent(this, event);
+		else
+			onPopulateAccessibilityEventInternal(event);
 	}
 
 	public void onPopulateAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent event) {
 	}
 
 	public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
-		onInitializeAccessibilityNodeInfoInternal(info);
+		if (mAccessibilityDelegate != null)
+			mAccessibilityDelegate.onInitializeAccessibilityNodeInfo(this, info);
+		else
+			onInitializeAccessibilityNodeInfoInternal(info);
 	}
 
 	public void onInitializeAccessibilityNodeInfoInternal(android.view.accessibility.AccessibilityNodeInfo info) {

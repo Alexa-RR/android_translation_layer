@@ -102,6 +102,17 @@ public final class AccessibilityManager {
 	public AccessibilityManager() {
 	}
 
+	private static AccessibilityManager sInstance;
+
+	/** @hide AOSP: the process's accessibility manager (one per process, as the system service client is). */
+	public static AccessibilityManager getInstance(android.content.Context context) {
+		synchronized (AccessibilityManager.class) {
+			if (sInstance == null)
+				sInstance = new AccessibilityManager();
+			return sInstance;
+		}
+	}
+
 	private static Handler mainHandler() {
 		return new Handler(Looper.getMainLooper());
 	}

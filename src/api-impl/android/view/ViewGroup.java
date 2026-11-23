@@ -479,6 +479,43 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 	// (layout) isChildrenDrawingOrderEnabled: see ViewGroup+layout.frag
 
+	/* ---- accessibility (AOSP ViewGroup) ---- */
+
+	/** AOSP: the group may veto a child's event (onRequestSendAccessibilityEvent), then passes it up. */
+	@Override
+	public boolean requestSendAccessibilityEvent(View child, android.view.accessibility.AccessibilityEvent event) {
+		ViewParent parent = getParent();
+		if (parent == null)
+			return false;
+		final boolean propagate = onRequestSendAccessibilityEvent(child, event);
+		if (!propagate)
+			return false;
+		return parent.requestSendAccessibilityEvent(this, event);
+	}
+
+	public boolean onRequestSendAccessibilityEvent(View child, android.view.accessibility.AccessibilityEvent event) {
+		if (mAccessibilityDelegate != null)
+			return mAccessibilityDelegate.onRequestSendAccessibilityEvent(this, child, event);
+		return onRequestSendAccessibilityEventInternal(child, event);
+	}
+
+	public boolean onRequestSendAccessibilityEventInternal(View child, android.view.accessibility.AccessibilityEvent event) {
+		return true;
+	}
+
+	/** AOSP: the group's own text (when it is important for accessibility), then its visible children's. */
+	@Override
+	public boolean dispatchPopulateAccessibilityEventInternal(android.view.accessibility.AccessibilityEvent event) {
+		if (isImportantForAccessibility() && super.dispatchPopulateAccessibilityEventInternal(event))
+			return true;
+		for (int i = 0; i < getChildCount(); i++) {
+			View child = getChildAt(i);
+			if (child.getVisibility() == VISIBLE && child.dispatchPopulateAccessibilityEvent(event))
+				return true;
+		}
+		return false;
+	}
+
 	@Override
 	public boolean onStartNestedScroll(View child, View target, int nestedScrollAxes) {
 		return false;

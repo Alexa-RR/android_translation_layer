@@ -123,6 +123,13 @@ public class WindowManagerImpl implements WindowManager, ViewManager {
 		public void requestLayout() {
 			root.requestLayout();
 		}
+
+		/** ViewRootImpl: the event goes to the accessibility manager (whose callers checked it is on). */
+		@Override
+		public boolean requestSendAccessibilityEvent(View child, android.view.accessibility.AccessibilityEvent event) {
+			android.view.accessibility.AccessibilityManager.getInstance(root.getContext()).sendAccessibilityEvent(event);
+			return true;
+		}
 	}
 
 	/** One added window: its root view, its attributes and where the last layout put it. */
