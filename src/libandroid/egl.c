@@ -4,6 +4,7 @@
 #include <gtk/gtk.h>
 
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <wayland-egl.h>
 
@@ -810,6 +811,28 @@ static void destroy_texture(void *data)
 	g_object_unref(buffer->surface);
 }
 
+/* tl_surface_offload: a frame handed to GTK as a GdkDmabufTexture holds its own descriptor of the
+ * buffer's dmabuf, as a consumer of an Android buffer queue holds its own handle of the buffer: GTK
+ * reads the texture's fd whenever it makes a wl_buffer of it (zwp_linux_buffer_params_v1.add, when
+ * it puts the frame in a subsurface), which can be after the app destroyed its EGL surface and the
+ * surface's own descriptor was closed. A closed one made libwayland's dup fail, which kills the
+ * whole Wayland connection ("Error 9 (Bad file descriptor) dispatching to Wayland display": the app
+ * exited); a reused number would have sent the compositor some other file. The texture's descriptor
+ * is closed when GTK lets the texture go. */
+struct tl_dmabuf_frame {
+	struct atl_surface_buffer *buffer;
+	int fd;
+};
+
+/* runs on main thread */
+static void destroy_dmabuf_texture(void *data)
+{
+	struct tl_dmabuf_frame *frame = data;
+	close(frame->fd);
+	destroy_texture(frame->buffer);
+	g_free(frame);
+}
+
 static void frame_callback(SurfaceViewWidget *surface_view_widget)
 {
 	g_async_queue_push(surface_view_widget->frame_callback_data, GINT_TO_POINTER(1));
@@ -838,7 +861,8 @@ static gboolean queue_texture(gpointer data)
 		return G_SOURCE_REMOVE;
 	}
 	struct atl_surface_buffer *buffer = atl_surface->front_buffer;
-	if (buffer->dmabuf_fd >= 0) {
+	int frame_fd = buffer->dmabuf_fd >= 0 ? fcntl(buffer->dmabuf_fd, F_DUPFD_CLOEXEC, 0) : -1;
+	if (frame_fd >= 0) {
 		/* tl_surface_offload: the dmabuf itself; the GPU work that drew it is waited for through the
 		 * buffer's implicit fence (the app flushed it in eglSwapBuffers) */
 		if (buffer->tl_frame_fence) {
@@ -862,11 +886,14 @@ static gboolean queue_texture(gpointer data)
 		gdk_dmabuf_texture_builder_set_modifier(builder, buffer->dmabuf_modifier);
 		gdk_dmabuf_texture_builder_set_premultiplied(builder, TRUE);
 		gdk_dmabuf_texture_builder_set_n_planes(builder, 1);
-		gdk_dmabuf_texture_builder_set_fd(builder, 0, buffer->dmabuf_fd);
+		gdk_dmabuf_texture_builder_set_fd(builder, 0, frame_fd);
 		gdk_dmabuf_texture_builder_set_stride(builder, 0, buffer->dmabuf_stride);
 		gdk_dmabuf_texture_builder_set_offset(builder, 0, buffer->dmabuf_offset);
 		GError *error = NULL;
-		GdkTexture *texture = gdk_dmabuf_texture_builder_build(builder, destroy_texture, buffer, &error);
+		struct tl_dmabuf_frame *frame = g_new(struct tl_dmabuf_frame, 1);
+		frame->buffer = buffer;
+		frame->fd = frame_fd;
+		GdkTexture *texture = gdk_dmabuf_texture_builder_build(builder, destroy_dmabuf_texture, frame, &error);
 		g_object_unref(builder);
 		if (texture) {
 			tl_set_frame_callback(atl_surface);
@@ -882,6 +909,8 @@ static gboolean queue_texture(gpointer data)
 			fprintf(stderr, "[egl] SurfaceView frames go through GL textures: GTK takes no dmabuf of format %.4s modifier 0x%llx (%s)\n",
 			        (char *)&buffer->dmabuf_fourcc, (unsigned long long)buffer->dmabuf_modifier, error ? error->message : "?");
 		g_clear_error(&error);
+		g_free(frame);
+		close(frame_fd);
 		close(buffer->dmabuf_fd);
 		buffer->dmabuf_fd = -1;
 		/* the GL path needs the image the export left alone */
