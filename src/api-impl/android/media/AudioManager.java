@@ -25,9 +25,6 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 
-import java.io.BufferedReader;
-import java.io.FileReader;
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -846,72 +843,75 @@ public class AudioManager {
 
     // ---- routing --------------------------------------------------------------------------------
 
-    /** The host's single output: every track plays to it. */
-    private static AudioDeviceInfo sSpeaker;
-    /** A capture device, only when ALSA lists one (the Pi has none). */
-    private static AudioDeviceInfo sMic;
-    private static boolean sDevicesProbed;
+    /*
+     * The devices are the host sound server's (HostAudioDevices: its sinks and sources with AOSP's
+     * device types, followed as they come and go). Every track plays to the default output; a
+     * loopback of it to another output (the server's) carries the sound there too, so attributes
+     * route to all of those, as a policy that duplicates an output reports both devices.
+     */
+    static {
+        HostAudioDevices.setListener(new HostAudioDevices.Listener() {
+            @Override
+            public void devicesChanged(AudioDeviceInfo[] added, AudioDeviceInfo[] removed, boolean routedOutputRemoved) {
+                dispatchDevicesChanged(added, removed, routedOutputRemoved);
+            }
+        });
+    }
 
-    private static void probeDevices() {
+    /* AOSP AudioManager's NativeEventHandlerDelegate: each callback hears removals, then additions,
+     * on its own handler */
+    private static void dispatchDevicesChanged(final AudioDeviceInfo[] added, final AudioDeviceInfo[] removed,
+            boolean routedOutputRemoved) {
         synchronized (sLock) {
-            if (sDevicesProbed)
-                return;
-            sDevicesProbed = true;
-            // ALSA plug devices (PipeWire's on the Pi) convert rate and format: arbitrary rates
-            // (an empty array, as in AOSP); the PCM encodings AudioTrack converts from
-            int[] outFormats = { AudioFormat.ENCODING_PCM_16BIT, AudioFormat.ENCODING_PCM_8BIT,
-                    AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_24BIT_PACKED, AudioFormat.ENCODING_PCM_32BIT };
-            sSpeaker = new AudioDeviceInfo(1, AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, true, "", "",
-                    new int[0], new int[] { AudioFormat.CHANNEL_OUT_MONO, AudioFormat.CHANNEL_OUT_STEREO },
-                    new int[0], outFormats);
-            if (alsaHasCapture()) {
-                sMic = new AudioDeviceInfo(2, AudioDeviceInfo.TYPE_BUILTIN_MIC, false, "", "bottom",
-                        new int[0], new int[] { AudioFormat.CHANNEL_IN_MONO, AudioFormat.CHANNEL_IN_STEREO },
-                        new int[0], new int[] { AudioFormat.ENCODING_PCM_16BIT });
+            AudioDeviceInfo comm = sRequestedCommDevice;
+            if (comm != null) {
+                for (AudioDeviceInfo d : removed)
+                    if (d.getId() == comm.getId())
+                        sRequestedCommDevice = null; // AOSP: a removed communication device is cleared
             }
         }
-    }
-
-    private static boolean alsaHasCapture() {
-        try (BufferedReader r = new BufferedReader(new FileReader("/proc/asound/pcm"))) {
-            String line;
-            while ((line = r.readLine()) != null) {
-                if (line.contains("capture"))
-                    return true;
-            }
-        } catch (IOException e) {
+        for (final DeviceCallbackInfo i : sDeviceCallbacks) {
+            i.handler.post(new Runnable() {
+                @Override
+                public void run() {
+                    if (removed.length > 0)
+                        i.callback.onAudioDevicesRemoved(removed);
+                    if (added.length > 0)
+                        i.callback.onAudioDevicesAdded(added);
+                }
+            });
         }
-        return false;
+        // AOSP (AudioDeviceInventory): an output the sound was playing on going away (a USB speaker
+        // unplugged) makes audio "noisy", so that media apps pause
+        if (routedOutputRemoved)
+            broadcast(new Intent(ACTION_AUDIO_BECOMING_NOISY));
     }
 
-    /** @hide The output device every track is routed to. */
+    /** @hide The output device every track is routed to (the default output). */
     public static AudioDeviceInfo tlDefaultOutputDevice() {
-        probeDevices();
-        return sSpeaker;
+        return HostAudioDevices.current().defaultOutput;
     }
 
-    /** @hide */
+    /** @hide The default input device, or null when there is none. */
     public static AudioDeviceInfo tlDefaultInputDevice() {
-        probeDevices();
-        return sMic;
+        return HostAudioDevices.current().defaultInput;
     }
 
     public AudioDeviceInfo[] getDevices(int flags) {
         if ((flags & ~GET_DEVICES_ALL) != 0)
             throw new IllegalArgumentException("Bad flags " + flags);
-        probeDevices();
+        HostAudioDevices.Snapshot s = HostAudioDevices.current();
         List<AudioDeviceInfo> l = new ArrayList<>();
         if ((flags & GET_DEVICES_OUTPUTS) != 0)
-            l.add(sSpeaker);
-        if ((flags & GET_DEVICES_INPUTS) != 0 && sMic != null)
-            l.add(sMic);
+            l.addAll(s.outputs);
+        if ((flags & GET_DEVICES_INPUTS) != 0)
+            l.addAll(s.inputs);
         return l.toArray(new AudioDeviceInfo[0]);
     }
 
     public List<AudioDeviceInfo> getAudioDevicesForAttributes(AudioAttributes attributes) {
         Objects.requireNonNull(attributes);
-        probeDevices();
-        return Collections.singletonList(sSpeaker);
+        return Collections.unmodifiableList(new ArrayList<>(HostAudioDevices.current().routed));
     }
 
     public void registerAudioDeviceCallback(final AudioDeviceCallback callback, Handler handler) {
@@ -940,15 +940,24 @@ public class AudioManager {
         }
     }
 
-    /** No wired headset can be plugged into this device's output (the car). */
+    /** AOSP: whether a wired headset, wired headphones or a USB headset is connected (an output). */
     @Deprecated
     public boolean isWiredHeadsetOn() {
+        for (AudioDeviceInfo d : HostAudioDevices.current().outputs) {
+            int t = d.getType();
+            if (t == AudioDeviceInfo.TYPE_WIRED_HEADSET || t == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+                    || t == AudioDeviceInfo.TYPE_USB_HEADSET)
+                return true;
+        }
         return false;
     }
 
-    /** No Bluetooth on this device. */
+    /** AOSP: whether a Bluetooth A2DP output is connected (the server's, when it has one). */
     @Deprecated
     public boolean isBluetoothA2dpOn() {
+        for (AudioDeviceInfo d : HostAudioDevices.current().outputs)
+            if (d.getType() == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP)
+                return true;
         return false;
     }
 
@@ -985,12 +994,18 @@ public class AudioManager {
         synchronized (sLock) {
             boolean was = isSpeakerphoneOn();
             if (on) {
-                probeDevices();
-                sRequestedCommDevice = sSpeaker;
+                // AOSP: the communication route becomes the built-in speaker, when there is one
+                // (with none, the route and isSpeakerphoneOn() stay as they are)
+                for (AudioDeviceInfo d : HostAudioDevices.current().outputs) {
+                    if (d.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+                        sRequestedCommDevice = d;
+                        break;
+                    }
+                }
             } else if (was) {
                 sRequestedCommDevice = null;
             }
-            changed = was != on;
+            changed = was != isSpeakerphoneOn();
         }
         if (changed)
             broadcast(new Intent(ACTION_SPEAKERPHONE_STATE_CHANGED));
@@ -1049,33 +1064,82 @@ public class AudioManager {
         }
     }
 
-    public List<AudioDeviceInfo> getAvailableCommunicationDevices() {
-        probeDevices();
-        return Collections.singletonList(sSpeaker);
+    /* AOSP AudioManager.isValidCommunicationDevice: the output types a call can use */
+    private static boolean isValidCommunicationDevice(AudioDeviceInfo d) {
+        if (!d.isSink())
+            return false;
+        switch (d.getType()) {
+            case AudioDeviceInfo.TYPE_BUILTIN_EARPIECE:
+            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER:
+            case AudioDeviceInfo.TYPE_WIRED_HEADSET:
+            case AudioDeviceInfo.TYPE_BLUETOOTH_SCO:
+            case AudioDeviceInfo.TYPE_USB_DEVICE:
+            case AudioDeviceInfo.TYPE_USB_HEADSET:
+            case AudioDeviceInfo.TYPE_BUILTIN_SPEAKER_SAFE:
+            case AudioDeviceInfo.TYPE_HEARING_AID:
+            case AudioDeviceInfo.TYPE_BLE_HEADSET:
+            case AudioDeviceInfo.TYPE_BLE_SPEAKER:
+            case AudioDeviceInfo.TYPE_LINE_ANALOG:
+            case AudioDeviceInfo.TYPE_HDMI:
+            case AudioDeviceInfo.TYPE_AUX_LINE:
+            case AudioDeviceInfo.TYPE_BUS:
+                return true;
+            default:
+                return false;
+        }
     }
 
-    /** AOSP: the device communication audio is routed to; the speaker is the only one. */
+    public List<AudioDeviceInfo> getAvailableCommunicationDevices() {
+        List<AudioDeviceInfo> l = new ArrayList<>();
+        for (AudioDeviceInfo d : HostAudioDevices.current().outputs)
+            if (isValidCommunicationDevice(d))
+                l.add(d);
+        return l;
+    }
+
+    /** AOSP: the device communication audio is routed to: the one requested while it is there, else the default output. */
     public AudioDeviceInfo getCommunicationDevice() {
-        probeDevices();
-        return sSpeaker;
+        synchronized (sLock) {
+            if (sRequestedCommDevice != null)
+                return sRequestedCommDevice;
+        }
+        return tlDefaultOutputDevice();
     }
 
     public boolean setCommunicationDevice(AudioDeviceInfo device) {
         Objects.requireNonNull(device);
         if (device.getId() == 0)
             throw new IllegalArgumentException("In valid device: " + device);
-        probeDevices();
         if (!device.isSink() || !getAvailableCommunicationDevices().contains(device))
             throw new IllegalArgumentException("invalid portID " + device.getId());
+        AudioDeviceInfo before = getCommunicationDevice();
         synchronized (sLock) {
             sRequestedCommDevice = device;
         }
-        return true; // the route was already that device: no change to report
+        communicationDeviceChanged(before);
+        return true;
     }
 
     public void clearCommunicationDevice() {
+        AudioDeviceInfo before = getCommunicationDevice();
         synchronized (sLock) {
             sRequestedCommDevice = null;
+        }
+        communicationDeviceChanged(before);
+    }
+
+    /* AOSP: OnCommunicationDeviceChangedListeners hear the new communication device when it changes */
+    private void communicationDeviceChanged(AudioDeviceInfo before) {
+        final AudioDeviceInfo now = getCommunicationDevice();
+        if (Objects.equals(before, now))
+            return;
+        for (final CommDevListenerInfo li : sCommDevListeners) {
+            li.executor.execute(new Runnable() {
+                @Override
+                public void run() {
+                    li.listener.onCommunicationDeviceChanged(now);
+                }
+            });
         }
     }
 

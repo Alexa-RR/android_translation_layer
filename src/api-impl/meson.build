@@ -665,6 +665,7 @@ srcs = [
 	'android/media/AudioTimestamp.java',
 	'android/media/AudioTrack.java',
 	'android/media/ExifInterface.java',
+	'android/media/HostAudioDevices.java',
 	'android/media/MediaCodec.java',
 	'android/media/MediaCodecInfo.java',
 	'android/media/MediaCodecList.java',

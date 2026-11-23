@@ -111,15 +111,44 @@ public final class AudioDeviceInfo {
         mDescriptors = Collections.emptyList();
     }
 
-    /** @hide the internal (audio.h) device type */
+    /**
+     * @hide the internal (audio.h, audio_devices_t) device type: AOSP AudioDeviceInfo's
+     * convertDeviceTypeToInternalDevice / convertDeviceTypeToInternalInputDevice for the types the
+     * host's devices take (HostAudioDevices)
+     */
     public int getInternalType() {
+        if (mSink) {
+            switch (mType) {
+                case TYPE_BUILTIN_EARPIECE: return 0x1;
+                case TYPE_BUILTIN_SPEAKER: return INTERNAL_DEVICE_OUT_SPEAKER;
+                case TYPE_WIRED_HEADSET: return 0x4;
+                case TYPE_WIRED_HEADPHONES: return 0x8;
+                case TYPE_BLUETOOTH_SCO: return 0x10;
+                case TYPE_BLUETOOTH_A2DP: return 0x80;
+                case TYPE_HDMI: return 0x400;
+                case TYPE_USB_ACCESSORY: return 0x2000;
+                case TYPE_USB_DEVICE: return 0x4000;
+                case TYPE_LINE_ANALOG: return 0x20000;
+                case TYPE_LINE_DIGITAL: return 0x80000;
+                case TYPE_AUX_LINE: return 0x200000;
+                case TYPE_BUS: return 0x1000000;
+                case TYPE_USB_HEADSET: return 0x4000000;
+                default: return 0;
+            }
+        }
+        final int in = 0x80000000; // AUDIO_DEVICE_BIT_IN
         switch (mType) {
-            case TYPE_BUILTIN_SPEAKER:
-                return INTERNAL_DEVICE_OUT_SPEAKER;
-            case TYPE_BUILTIN_MIC:
-                return INTERNAL_DEVICE_IN_BUILTIN_MIC;
-            default:
-                return 0;
+            case TYPE_BUILTIN_MIC: return INTERNAL_DEVICE_IN_BUILTIN_MIC;
+            case TYPE_BLUETOOTH_SCO: return in | 0x8;
+            case TYPE_WIRED_HEADSET: return in | 0x10;
+            case TYPE_HDMI: return in | 0x20;
+            case TYPE_USB_ACCESSORY: return in | 0x800;
+            case TYPE_USB_DEVICE: return in | 0x1000;
+            case TYPE_LINE_ANALOG: return in | 0x8000;
+            case TYPE_LINE_DIGITAL: return in | 0x10000;
+            case TYPE_BUS: return in | 0x100000;
+            case TYPE_USB_HEADSET: return in | 0x2000000;
+            default: return 0;
         }
     }
 

@@ -54,6 +54,14 @@ if layer_shell_dep.found()
   add_project_arguments('-DATL_HAS_OSK', language: 'c')
 endif
 
+# AudioManager's devices from the host's sound server (PulseAudio, or PipeWire's pulse server);
+# without libpulse, ALSA's default output is the one device (android.media.HostAudioDevices)
+pulse_dep = dependency('libpulse', required : false)
+if pulse_dep.found()
+  extra_deps += [ pulse_dep ]
+  extra_jni_srcs += [ 'src/api-impl-jni/audio/android_media_HostAudioDevices.c' ]
+endif
+
 # dexer: dx by default; D8 from r8.jar when -Dr8_jar is given (dx emits invoke-custom for lambdas,
 # which ART cannot bootstrap here; D8 desugars them and keeps default/static interface methods)
 r8_jar = get_option('r8_jar')
