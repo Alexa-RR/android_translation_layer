@@ -250,6 +250,40 @@ public class SurfaceTexture {
 		nativeUnref(ptr);
 	}
 
+	/**
+	 * {@hide} Surface.lockCanvas: connects the CPU as the queue's producer (AOSP
+	 * NATIVE_WINDOW_API_CPU); false while another producer is connected or after release.
+	 */
+	public static boolean tlCpuConnect(long ptr) {
+		return nativeCpuConnect(ptr);
+	}
+
+	/** {@hide} the CPU producer goes (the Surface is released). */
+	public static void tlCpuDisconnect(long ptr) {
+		nativeCpuDisconnect(ptr);
+	}
+
+	/** {@hide} the size of the buffers a producer gets: {width, height}. */
+	public static int[] tlDefaultBufferSize(long ptr) {
+		int[] size = new int[2];
+		nativeGetDefaultBufferSize(ptr, size);
+		return size;
+	}
+
+	/**
+	 * {@hide} Surface.unlockCanvasAndPost: queues width x height RGBA 8888 pixels (premultiplied,
+	 * top row first, from a direct buffer) with the time it is queued (CLOCK_MONOTONIC); false
+	 * when the SurfaceTexture was released.
+	 */
+	public static boolean tlQueuePixels(long ptr, java.nio.ByteBuffer pixels, int width, int height) {
+		return nativeQueuePixels(ptr, pixels, width, height);
+	}
+
+	private static native boolean nativeCpuConnect(long ptr);
+	private static native void nativeCpuDisconnect(long ptr);
+	private static native void nativeGetDefaultBufferSize(long ptr, int[] size);
+	private static native boolean nativeQueuePixels(long ptr, java.nio.ByteBuffer pixels, int width, int height);
+
 	private static native long nativeInit(boolean isDetached, int texName, WeakReference<SurfaceTexture> weakSelf);
 	private static native void nativeFinalize(long ptr);
 	private static native void nativeGetTransformMatrix(long ptr, float[] mtx);

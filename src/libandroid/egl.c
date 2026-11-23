@@ -40,6 +40,18 @@ static int tl_direct_egl(void)
 	static int cache = -1;
 	return tl_env_flag("ATL_DIRECT_EGL", &cache);
 }
+
+/* ATL_DIRECT_EGL hands a SurfaceView's window to the driver (its wl_egl_window); a SurfaceTexture
+ * window has none, and its frames go to the SurfaceTexture's queue either way: its surfaces are
+ * always ATLSurfaces. Whether an EGL surface is one of ATL's (NULL table entry: the driver's own,
+ * a pbuffer or none) */
+static struct ANativeWindow *tl_atl_surface_window(EGLSurface surface)
+{
+	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
+	if (native_window && tl_direct_egl() && !native_window->surface_texture)
+		return NULL;
+	return native_window;
+}
 static int tl_debug_surface(void)
 {
 	static int cache = -1;
@@ -505,13 +517,12 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 	PrintConfigAttributes(display, config);
 	/* tl_surface_texture: AOSP connects the surface as the queue's producer, which fails when
 	 * another producer is connected or the SurfaceTexture was released (EGL_BAD_ALLOC) */
-	if (native_window->surface_texture && (tl_direct_egl() /* the driver has no SurfaceTexture windows */
-	                                       || !tl_surface_texture_connect(native_window->surface_texture))) {
+	if (native_window->surface_texture && !tl_surface_texture_connect(native_window->surface_texture)) {
 		ANativeWindow_release(native_window);
 		return EGL_NO_SURFACE;
 	}
 	EGLSurface surface;
-	if (tl_direct_egl()) {
+	if (tl_direct_egl() && !native_window->surface_texture) {
 		surface = eglCreateWindowSurface(display, config, native_window->egl_window, attrib_list);
 	} else {
 		ATLSurface *atl_surface = g_object_new(atl_surface_get_type(), NULL);
@@ -602,8 +613,8 @@ EGLBoolean bionic_eglDestroySurface(EGLDisplay display, EGLSurface surface)
 	}
 
 	EGLBoolean ret = EGL_TRUE;
-	if (tl_direct_egl()) {
-		ret = eglDestroySurface(display, surface);
+	if (!tl_atl_surface_window(surface)) {
+		ret = eglDestroySurface(display, surface); /* the driver's window surface (ATL_DIRECT_EGL) */
 	} else {
 		ATLSurface *atl_surface = surface;
 		if (atl_surface->surface_texture) /* AOSP: eglDestroySurface disconnects the producer */
@@ -767,9 +778,7 @@ EGLBoolean bionic_eglMakeCurrent(EGLDisplay display, EGLSurface draw, EGLSurface
 
 static EGLBoolean tl_make_current(EGLDisplay display, EGLSurface draw, EGLSurface read, EGLContext context)
 {
-	if (tl_direct_egl())
-		return eglMakeCurrent(display, draw, read, context);
-	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, draw);
+	struct ANativeWindow *native_window = tl_atl_surface_window(draw);
 	if (!native_window) {
 		/* a surface of Mesa's own (or none): from now on Mesa answers for this context */
 		EGLBoolean ret = eglMakeCurrent(display, draw, read, context);
@@ -994,7 +1003,7 @@ EGLBoolean bionic_eglPresentationTimeANDROID(EGLDisplay dpy, EGLSurface surface,
 {
 	if (surface == EGL_NO_SURFACE)
 		return EGL_FALSE;
-	if (!tl_direct_egl() && tl_table_lookup(egl_surface_hashtable, surface)) {
+	if (tl_atl_surface_window(surface)) {
 		ATLSurface *atl_surface = surface;
 		g_mutex_lock(&atl_surface->tl_queue_lock);
 		atl_surface->tl_next_present_ns = time;
@@ -1158,9 +1167,7 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 			fprintf(stderr, "[surface] eglSwapBuffers #%d surface=%p\n", swaps, (void *)surface);
 	}
 	tl_gl_flush_point(); /* gl_passes.c: the app's deferred fences go in before the frame's flush */
-	if (tl_direct_egl())
-		return eglSwapBuffers(display, surface);
-	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
+	struct ANativeWindow *native_window = tl_atl_surface_window(surface);
 	if (!native_window) {
 		return eglSwapBuffers(display, surface);
 	}
@@ -1260,9 +1267,7 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 
 EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint attribute, EGLint *value)
 {
-	if (tl_direct_egl())
-		return eglQuerySurface(display, surface, attribute, value);
-	struct ANativeWindow *native_window = tl_table_lookup(egl_surface_hashtable, surface);
+	struct ANativeWindow *native_window = tl_atl_surface_window(surface);
 	if (!native_window)
 		return eglQuerySurface(display, surface, attribute, value);
 	if (attribute == EGL_WIDTH) {
@@ -1278,8 +1283,7 @@ EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint
 
 EGLSurface bionic_eglGetCurrentSurface(EGLint readdraw)
 {
-	if (tl_direct_egl())
-		return eglGetCurrentSurface(readdraw);
+	/* the ATLSurfaces current (with ATL_DIRECT_EGL only SurfaceTexture ones are), else Mesa's */
 	EGLContext current_context = eglGetCurrentContext();
 	EGLSurface surface = NULL; /* tl_current_surface_fallback */
 	if (readdraw == EGL_READ)
@@ -1309,8 +1313,10 @@ static GLuint tl_surface_back_buffer(ATLSurface *atl_surface)
 
 void bionic_glBindFramebuffer(GLenum target, GLuint framebuffer)
 {
-	if (tl_direct_egl() || framebuffer != 0)
+	if (framebuffer != 0)
 		return glBindFramebuffer(target, framebuffer);
+	/* framebuffer 0 of a context drawing into an ATLSurface (with ATL_DIRECT_EGL only
+	 * SurfaceTexture surfaces are): that surface's back buffer */
 	ATLSurface *atl_surface = tl_table_lookup(draw_surface_hashtable, eglGetCurrentContext());
 	return glBindFramebuffer(target, atl_surface ? tl_surface_back_buffer(atl_surface) : 0);
 }

@@ -8,10 +8,15 @@
  * updateTexImage: it waits for the frame's fence, binds the image to its texture name as
  * GL_TEXTURE_EXTERNAL_OES (OES_EGL_image_external; Mesa has it on llvmpipe and V3D) and gives the
  * previous frame's buffer back to the producer. Producer and consumer may be different threads and
- * unshared contexts of the same EGL display: the EGLImage is what they share. */
+ * unshared contexts of the same EGL display: the EGLImage is what they share.
+ *
+ * The other producer is the CPU (Surface.lockCanvas / unlockCanvasAndPost, AOSP's
+ * NATIVE_WINDOW_API_CPU connection): its frames are pixels in memory, which the consumer uploads,
+ * when it latches one, into a texture of its own context whose EGLImage it binds the same way.
+ * Such a buffer holds its top row first, as Android's do, so its transform matrix flips it. */
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES2/gl2.h>
+#include <GLES3/gl3.h>
 #include <GLES2/gl2ext.h>
 #include <errno.h>
 #include <stdlib.h>
@@ -42,6 +47,11 @@ struct tl_surface_texture {
 	EGLImage released_image; /* releaseTexImage: the 1x1 black image bound in place of a frame */
 	unsigned int released_texture;
 	EGLContext released_context;
+	/* CPU frames: the texture (in cpu_context) they are uploaded into, and its image */
+	unsigned int cpu_texture;
+	EGLImage cpu_image;
+	EGLContext cpu_context;
+	int cpu_width, cpu_height;
 };
 
 static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC tl_image_target_texture;
@@ -76,6 +86,7 @@ static void tl_frame_give_back(struct tl_st_frame *frame)
 		eglDestroySync(frame->display, frame->fence);
 	if (frame->release)
 		frame->release(frame->owner, frame->buffer);
+	free(frame->pixels);
 	free(frame);
 }
 
@@ -186,6 +197,20 @@ gboolean tl_surface_texture_queue(struct tl_surface_texture *st, const struct tl
 	return TRUE;
 }
 
+gboolean tl_surface_texture_queue_pixels(struct tl_surface_texture *st, void *pixels, int width, int height, gint64 timestamp_ns)
+{
+	struct tl_st_frame frame = {
+		.image = EGL_NO_IMAGE,
+		.pixels = pixels,
+		.display = EGL_NO_DISPLAY,
+		.fence = EGL_NO_SYNC,
+		.timestamp_ns = timestamp_ns,
+		.width = width,
+		.height = height,
+	};
+	return tl_surface_texture_queue(st, &frame);
+}
+
 static GLenum tl_texture_target(void)
 {
 	static int external = -1;
@@ -205,6 +230,74 @@ static void tl_bind_image(unsigned int tex_name, EGLImage image)
 	GLenum target = tl_texture_target();
 	glBindTexture(target, tex_name);
 	tl_image_target_texture(target, image);
+}
+
+static gboolean tl_context_is_es3(void)
+{
+	const char *version = (const char *)glGetString(GL_VERSION);
+	/* "OpenGL ES 3.2 Mesa ...", "OpenGL ES 2.0 ...", "OpenGL ES-CM 1.1 ..." */
+	return version && strncmp(version, "OpenGL ES ", 10) == 0 && version[10] >= '3';
+}
+
+/* the image of a frame to bind: an EGL frame's own; a CPU frame's pixels uploaded (when upload is
+ * set, or when the consumer's context has no upload texture yet) into the consumer's upload
+ * texture. The app's unpack state is left as it was. Called by the consumer, in its context. */
+static EGLImage tl_frame_image(struct tl_surface_texture *st, struct tl_st_frame *frame, gboolean upload)
+{
+	if (!frame->pixels)
+		return frame->image;
+	EGLContext ctx = eglGetCurrentContext();
+	EGLDisplay dpy = eglGetCurrentDisplay();
+	gboolean es3 = tl_context_is_es3();
+	GLint previous_binding = 0, alignment = 4, row_length = 0, skip_rows = 0, skip_pixels = 0, unpack_buffer = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_binding);
+	glGetIntegerv(GL_UNPACK_ALIGNMENT, &alignment);
+	if (es3) {
+		glGetIntegerv(GL_UNPACK_ROW_LENGTH, &row_length);
+		glGetIntegerv(GL_UNPACK_SKIP_ROWS, &skip_rows);
+		glGetIntegerv(GL_UNPACK_SKIP_PIXELS, &skip_pixels);
+		glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &unpack_buffer);
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+		glPixelStorei(GL_UNPACK_SKIP_ROWS, 0);
+		glPixelStorei(GL_UNPACK_SKIP_PIXELS, 0);
+		if (unpack_buffer)
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+	}
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+	gboolean fresh = st->cpu_context != ctx || st->cpu_image == EGL_NO_IMAGE;
+	if (st->cpu_context == ctx && st->cpu_texture && (st->cpu_width != frame->width || st->cpu_height != frame->height)) {
+		/* another size: a texture of that size, with an image of its own */
+		eglDestroyImage(dpy, st->cpu_image);
+		glDeleteTextures(1, &st->cpu_texture);
+		st->cpu_texture = 0;
+		st->cpu_image = EGL_NO_IMAGE;
+		fresh = TRUE;
+	}
+	if (fresh) {
+		glGenTextures(1, &st->cpu_texture);
+		glBindTexture(GL_TEXTURE_2D, st->cpu_texture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, frame->width, frame->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, frame->pixels);
+		st->cpu_image = eglCreateImage(dpy, ctx, EGL_GL_TEXTURE_2D, (EGLClientBuffer)(uintptr_t)st->cpu_texture, NULL);
+		st->cpu_context = ctx;
+		st->cpu_width = frame->width;
+		st->cpu_height = frame->height;
+	} else if (upload) {
+		/* the texture is the image's storage: new pixels show through the image */
+		glBindTexture(GL_TEXTURE_2D, st->cpu_texture);
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, frame->width, frame->height, GL_RGBA, GL_UNSIGNED_BYTE, frame->pixels);
+	}
+	glBindTexture(GL_TEXTURE_2D, previous_binding);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, alignment);
+	if (es3) {
+		glPixelStorei(GL_UNPACK_ROW_LENGTH, row_length);
+		glPixelStorei(GL_UNPACK_SKIP_ROWS, skip_rows);
+		glPixelStorei(GL_UNPACK_SKIP_PIXELS, skip_pixels);
+		if (unpack_buffer)
+			glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer);
+	}
+	return st->cpu_image;
 }
 
 /* the consumer's context must be the one it is attached to (AOSP GLConsumer::checkAndUpdateEglStateLocked) */
@@ -251,7 +344,7 @@ int tl_surface_texture_update(struct tl_surface_texture *st)
 	}
 	/* AOSP: without a new frame the current one is bound again */
 	if (bind)
-		tl_bind_image(tex, bind->image);
+		tl_bind_image(tex, tl_frame_image(st, bind, next != NULL));
 	tl_frame_give_back(previous);
 	return 0;
 }
@@ -301,6 +394,13 @@ int tl_surface_texture_detach(struct tl_surface_texture *st)
 			st->released_texture = 0;
 			st->released_context = EGL_NO_CONTEXT;
 		}
+		if (st->cpu_texture && st->cpu_context == st->context) {
+			eglDestroyImage(eglGetCurrentDisplay(), st->cpu_image);
+			glDeleteTextures(1, &st->cpu_texture);
+			st->cpu_image = EGL_NO_IMAGE;
+			st->cpu_texture = 0;
+			st->cpu_context = EGL_NO_CONTEXT;
+		}
 		st->attached = FALSE;
 		st->context = EGL_NO_CONTEXT;
 		st->tex_name = 0;
@@ -325,21 +425,26 @@ int tl_surface_texture_attach(struct tl_surface_texture *st, unsigned int tex_na
 	}
 	struct tl_st_frame *bind = err ? NULL : st->current;
 	g_mutex_unlock(&st->lock);
-	/* AOSP GLConsumer::attachToContext: the current frame is bound to the new texture */
+	/* AOSP GLConsumer::attachToContext: the current frame is bound to the new texture (a CPU
+	 * frame uploaded into the new context) */
 	if (bind)
-		tl_bind_image(tex_name, bind->image);
+		tl_bind_image(tex_name, tl_frame_image(st, bind, TRUE));
 	return err;
 }
 
 void tl_surface_texture_get_transform_matrix(struct tl_surface_texture *st, float mtx[16])
 {
 	/* AOSP GLConsumer::computeTransformMatrix: the buffer's transform flags, its crop, then a
-	 * vertical flip, because Android's buffers hold the top row first. A frame here is a GL texture
-	 * the producer drew through a framebuffer, holding the bottom row first, uncropped and
-	 * untransformed: texture coordinates need no change. */
+	 * vertical flip, because Android's buffers hold the top row first. An EGL frame here is a GL
+	 * texture the producer drew through a framebuffer, holding the bottom row first, uncropped and
+	 * untransformed: texture coordinates need no change. A CPU frame holds its top row first, as
+	 * Android's buffers do, uncropped: AOSP's flip (mtxFlipV) alone. */
 	static const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
-	(void)st;
-	memcpy(mtx, identity, sizeof(identity));
+	static const float flip_v[16] = {1, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 1};
+	g_mutex_lock(&st->lock);
+	gboolean top_down = st->current && st->current->pixels;
+	g_mutex_unlock(&st->lock);
+	memcpy(mtx, top_down ? flip_v : identity, sizeof(identity));
 }
 
 gint64 tl_surface_texture_get_timestamp(struct tl_surface_texture *st)

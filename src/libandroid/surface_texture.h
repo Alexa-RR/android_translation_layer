@@ -6,9 +6,13 @@
 #include <glib.h>
 
 /* A frame a producer (an EGL window surface on the SurfaceTexture) queues: the image it drew, the
- * fence of the commands that drew it, its timestamp, and how to give the buffer back. */
+ * fence of the commands that drew it, its timestamp, and how to give the buffer back.
+ * A CPU frame (Surface.lockCanvas, AOSP's NATIVE_WINDOW_API_CPU producer) has no image: its pixels
+ * are RGBA 8888, premultiplied, top row first, width * 4 bytes a row, malloc'd and owned by the
+ * frame; the consumer uploads them when it latches the frame. */
 struct tl_st_frame {
 	EGLImage image;
+	void *pixels;
 	EGLDisplay display;
 	EGLSync fence; /* owned by the SurfaceTexture once queued (EGL_NO_SYNC: none) */
 	gint64 timestamp_ns;
@@ -37,6 +41,8 @@ gboolean tl_surface_texture_connect(struct tl_surface_texture *st);
 void tl_surface_texture_disconnect(struct tl_surface_texture *st);
 /* FALSE when the SurfaceTexture was released (the frame is given back) */
 gboolean tl_surface_texture_queue(struct tl_surface_texture *st, const struct tl_st_frame *frame);
+/* a CPU producer's frame (pixels as struct tl_st_frame describes, taken over); FALSE as above */
+gboolean tl_surface_texture_queue_pixels(struct tl_surface_texture *st, void *pixels, int width, int height, gint64 timestamp_ns);
 gboolean tl_surface_texture_is_abandoned(struct tl_surface_texture *st);
 /* returns the previous listener data */
 void *tl_surface_texture_set_frame_listener(struct tl_surface_texture *st, void (*listener)(void *data), void *data);

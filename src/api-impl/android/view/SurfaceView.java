@@ -114,7 +114,17 @@ public class SurfaceView extends View {
 		return mSurfaceHolder;
 	}
 
-	final Surface mSurface = new Surface();
+	final Surface mSurface = new Surface(this);
+
+	/* Surface.lockCanvas / unlockCanvasAndPost on this view's surface: the holder's canvas (null
+	 * while the view has no size), posted to the widget */
+	Canvas tlLockCanvas() {
+		return mSurfaceHolder.lockCanvas();
+	}
+
+	void tlUnlockCanvasAndPost(Canvas canvas) {
+		mSurfaceHolder.unlockCanvasAndPost(canvas);
+	}
 
 	private final SurfaceHolder mSurfaceHolder = new SurfaceHolder() {
 		private static final String LOG_TAG = "SurfaceHolder";

@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "../defines.h"
 #include "../util.h"
@@ -132,6 +133,48 @@ JNIEXPORT jlong JNICALL Java_android_graphics_SurfaceTexture_nativeRef(JNIEnv *e
 JNIEXPORT void JNICALL Java_android_graphics_SurfaceTexture_nativeUnref(JNIEnv *env, jclass cls, jlong ptr)
 {
 	tl_surface_texture_unref(st_of(ptr));
+}
+
+/* the CPU producer of Surface.lockCanvas (AOSP Surface::lock connects NATIVE_WINDOW_API_CPU) */
+JNIEXPORT jboolean JNICALL Java_android_graphics_SurfaceTexture_nativeCpuConnect(JNIEnv *env, jclass cls, jlong ptr)
+{
+	return tl_surface_texture_connect(st_of(ptr));
+}
+
+JNIEXPORT void JNICALL Java_android_graphics_SurfaceTexture_nativeCpuDisconnect(JNIEnv *env, jclass cls, jlong ptr)
+{
+	tl_surface_texture_disconnect(st_of(ptr));
+}
+
+JNIEXPORT void JNICALL Java_android_graphics_SurfaceTexture_nativeGetDefaultBufferSize(JNIEnv *env, jclass cls, jlong ptr, jintArray size)
+{
+	jint wh[2];
+	int w, h;
+	tl_surface_texture_get_default_buffer_size(st_of(ptr), &w, &h);
+	wh[0] = w;
+	wh[1] = h;
+	(*env)->SetIntArrayRegion(env, size, 0, 2, wh);
+}
+
+JNIEXPORT jboolean JNICALL Java_android_graphics_SurfaceTexture_nativeQueuePixels(JNIEnv *env, jclass cls, jlong ptr, jobject pixels, jint width, jint height)
+{
+	void *src = (*env)->GetDirectBufferAddress(env, pixels);
+	jlong capacity = (*env)->GetDirectBufferCapacity(env, pixels);
+	size_t size = (size_t)width * (size_t)height * 4;
+	if (!src || width <= 0 || height <= 0 || capacity < (jlong)size) {
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/IllegalArgumentException"), "pixels must be a direct buffer of width * height * 4 bytes");
+		return JNI_FALSE;
+	}
+	void *copy = malloc(size);
+	if (!copy) {
+		(*env)->ThrowNew(env, (*env)->FindClass(env, "java/lang/OutOfMemoryError"), "no memory for a frame");
+		return JNI_FALSE;
+	}
+	memcpy(copy, src, size);
+	/* AOSP Surface::queueBuffer: the auto timestamp is systemTime(SYSTEM_TIME_MONOTONIC) */
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return tl_surface_texture_queue_pixels(st_of(ptr), copy, width, height, (gint64)now.tv_sec * 1000000000 + now.tv_nsec);
 }
 
 JNIEXPORT void JNICALL Java_android_graphics_SurfaceTexture_nativeFinalize(JNIEnv *env, jclass cls, jlong ptr)
