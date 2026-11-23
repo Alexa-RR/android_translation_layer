@@ -61,26 +61,102 @@ public final class ATLPackageSettings {
 
 	/*
 	 * Framework permissions AOSP added after the framework-res.apk ATL ships (its manifest is from
-	 * an older release and is prebuilt), with their AOSP protection levels (core/res
-	 * AndroidManifest.xml, android12/13; "instant" and app-op flags do not apply here).
+	 * an older release and is prebuilt), with their AOSP protection levels: every normal and
+	 * dangerous <permission> of core/res/AndroidManifest.xml (android14-release) that
+	 * framework-res does not define, without the ones marked permissionFlags="removed" (AOSP grants
+	 * those to nobody). Signature-level ones are left out: no app that is not platform-signed can
+	 * hold them, which is what an unknown permission gives too. ("instant" does not apply here; an
+	 * app-op flag is honoured by AppOpsManager.)
 	 */
 	private static final String[][] NEWER_FRAMEWORK_PERMISSIONS = {
-		{"android.permission.FOREGROUND_SERVICE", "normal"},             /* 28 */
-		{"android.permission.REQUEST_DELETE_PACKAGES", "normal"},        /* 28 */
-		{"android.permission.USE_FULL_SCREEN_INTENT", "normal"},         /* 29 */
-		{"android.permission.ACCESS_BACKGROUND_LOCATION", "dangerous"},  /* 29 */
-		{"android.permission.ACTIVITY_RECOGNITION", "dangerous"},        /* 29 */
-		{"android.permission.QUERY_ALL_PACKAGES", "normal"},             /* 30 */
-		{"android.permission.HIGH_SAMPLING_RATE_SENSORS", "normal"},     /* 31 */
-		{"android.permission.BLUETOOTH_SCAN", "dangerous"},              /* 31 */
-		{"android.permission.BLUETOOTH_CONNECT", "dangerous"},           /* 31 */
-		{"android.permission.BLUETOOTH_ADVERTISE", "dangerous"},         /* 31 */
-		{"android.permission.POST_NOTIFICATIONS", "dangerous"},          /* 33 */
+		{"android.permission.ACCEPT_HANDOVER", "dangerous"},
+		{"android.permission.ACCESS_BACKGROUND_LOCATION", "dangerous"},
+		{"android.permission.ACCESS_MEDIA_LOCATION", "dangerous"},
+		{"android.permission.ACTIVITY_RECOGNITION", "dangerous"},
+		{"android.permission.ANSWER_PHONE_CALLS", "dangerous"},
+		{"android.permission.BLUETOOTH_ADVERTISE", "dangerous"},
+		{"android.permission.BLUETOOTH_CONNECT", "dangerous"},
+		{"android.permission.BLUETOOTH_SCAN", "dangerous"},
+		{"android.permission.BODY_SENSORS_BACKGROUND", "dangerous"},
+		{"android.permission.CALL_COMPANION_APP", "normal"},
+		{"android.permission.CREDENTIAL_MANAGER_QUERY_CANDIDATE_CREDENTIALS", "normal"},
+		{"android.permission.CREDENTIAL_MANAGER_SET_ALLOWED_PROVIDERS", "normal"},
+		{"android.permission.CREDENTIAL_MANAGER_SET_ORIGIN", "normal"},
+		{"android.permission.DELIVER_COMPANION_MESSAGES", "normal"},
+		{"android.permission.DETECT_SCREEN_CAPTURE", "normal"},
+		{"android.permission.ENFORCE_UPDATE_OWNERSHIP", "normal"},
+		{"android.permission.FOREGROUND_SERVICE", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_CAMERA", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_DATA_SYNC", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_FILE_MANAGEMENT", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_HEALTH", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_LOCATION", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_MICROPHONE", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_PHONE_CALL", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_REMOTE_MESSAGING", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_SPECIAL_USE", "normal"},
+		{"android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED", "normal"},
+		{"android.permission.HIDE_OVERLAY_WINDOWS", "normal"},
+		{"android.permission.HIGH_SAMPLING_RATE_SENSORS", "normal"},
+		{"android.permission.MANAGE_OWN_CALLS", "normal"},
+		{"android.permission.NEARBY_WIFI_DEVICES", "dangerous"},
+		{"android.permission.NFC_PREFERRED_PAYMENT_INFO", "normal"},
+		{"android.permission.NFC_TRANSACTION_EVENT", "normal"},
+		{"android.permission.POST_NOTIFICATIONS", "dangerous"},
+		{"android.permission.QUERY_ALL_PACKAGES", "normal"},
+		{"android.permission.READ_BASIC_PHONE_STATE", "normal"},
+		{"android.permission.READ_MEDIA_AUDIO", "dangerous"},
+		{"android.permission.READ_MEDIA_IMAGES", "dangerous"},
+		{"android.permission.READ_MEDIA_VIDEO", "dangerous"},
+		{"android.permission.READ_MEDIA_VISUAL_USER_SELECTED", "dangerous"},
+		{"android.permission.READ_NEARBY_STREAMING_POLICY", "normal"},
+		{"android.permission.READ_PHONE_NUMBERS", "dangerous"},
+		{"android.permission.REQUEST_COMPANION_PROFILE_GLASSES", "normal"},
+		{"android.permission.REQUEST_COMPANION_PROFILE_WATCH", "normal"},
+		{"android.permission.REQUEST_COMPANION_RUN_IN_BACKGROUND", "normal"},
+		{"android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND", "normal"},
+		{"android.permission.REQUEST_COMPANION_USE_DATA_IN_BACKGROUND", "normal"},
+		{"android.permission.REQUEST_DELETE_PACKAGES", "normal"},
+		{"android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE", "normal"},
+		{"android.permission.REQUEST_PASSWORD_COMPLEXITY", "normal"},
+		{"android.permission.RUN_USER_INITIATED_JOBS", "normal"},
+		{"android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION", "normal"},
+		{"android.permission.USE_BIOMETRIC", "normal"},
+		{"android.permission.USE_EXACT_ALARM", "normal"},
+		{"android.permission.USE_FULL_SCREEN_INTENT", "normal"},
+		{"android.permission.UWB_RANGING", "dangerous"},
+		/* platform components that are part of this runtime rather than separate packages: the
+		 * download provider (DownloadManager; packages/providers/DownloadProvider) */
+		{"android.permission.DOWNLOAD_WITHOUT_NOTIFICATION", "normal"},
+		/* the car app host (ATLCarHost: the role of the Android Auto / Templates host, which
+		 * defines the car app library's permissions) */
+		{"androidx.car.app.NAVIGATION_TEMPLATES", "normal"},
+		{"androidx.car.app.MAP_TEMPLATES", "normal"},
+		{"androidx.car.app.ACCESS_SURFACE", "normal"},
 	};
+
+	/*
+	 * The permissions of Google Play services, the Google services framework and the Play Store,
+	 * which this runtime's stand-ins for those packages (ATLLoadedApp.play_services, gstub) play:
+	 * an app's <uses-permission> of them is granted as on a device with those packages.
+	 */
+	private static final String[][] PLAY_SERVICES_PERMISSIONS = {
+		{"com.google.android.c2dm.permission.RECEIVE", "normal"},
+		{"com.google.android.c2dm.permission.SEND", "signature"},
+		{"com.google.android.gms.permission.AD_ID", "normal"},
+		{"com.google.android.providers.gsf.permission.READ_GSERVICES", "normal"},
+		{"com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE", "normal"},
+	};
+	private static final HashMap<String, Integer> sPlayServicesPermissions = new HashMap<>();
 
 	static {
 		for (String[] p : NEWER_FRAMEWORK_PERMISSIONS)
 			definePlatformPermission(p[0], "dangerous".equals(p[1]) ? PermissionInfo.PROTECTION_DANGEROUS : PermissionInfo.PROTECTION_NORMAL);
+		for (String[] p : PLAY_SERVICES_PERMISSIONS)
+			sPlayServicesPermissions.put(p[0], "signature".equals(p[1]) ? PermissionInfo.PROTECTION_SIGNATURE : PermissionInfo.PROTECTION_NORMAL);
 		android.atl.car.CarServicePermissions.register();
 	}
 
@@ -369,11 +445,13 @@ public final class ATLPackageSettings {
 		return privilegedPermission && privilegedApp;
 	}
 
-	/** The permissions granted to the package at install. */
+	/** The permissions the package holds (PackageInfo.requestedPermissionsFlags): the running app's (isGrantedToApp), another's from its install. */
 	public static HashSet<String> grantedPermissions(PackageParser.Package pkg) {
+		ATLLoadedApp primary = ATLLoadedApp.getPrimaryApplication();
+		boolean running = primary != null && primary.pkg != null && primary.pkg.packageName.equals(pkg.packageName);
 		HashSet<String> granted = new HashSet<>();
 		for (String p : pkg.requestedPermissions) {
-			if (isGranted(pkg, p))
+			if (running ? isGrantedToApp(pkg, p) : isGranted(pkg, p))
 				granted.add(p);
 		}
 		return granted;
@@ -382,5 +460,105 @@ public final class ATLPackageSettings {
 	/** PackageManager.checkPermission for a package other than the running app and the framework. */
 	public static int checkPermission(PackageParser.Package pkg, String permission) {
 		return isGranted(pkg, permission) ? PackageManager.PERMISSION_GRANTED : PackageManager.PERMISSION_DENIED;
+	}
+
+	/* ---- the running app ---- */
+
+	private static final String DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION_SUFFIX = ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION";
+
+	/** the protection level of a permission the package defines itself (<permission>), or null */
+	private static Integer ownProtectionLevel(PackageParser.Package pkg, String permission) {
+		if (pkg.permissions == null)
+			return null;
+		for (PackageParser.Permission p : pkg.permissions) {
+			if (permission.equals(p.info.name))
+				return p.info.protectionLevel;
+		}
+		return null;
+	}
+
+	/**
+	 * Whether the user granted a runtime (dangerous) permission. This device has no permission
+	 * controller to ask: the owner accepted the app's permissions by installing it on the car, so
+	 * a runtime permission the app requests counts as granted, except those the host does not let
+	 * apps use, which count as denied by the user: location without a location source
+	 * (ATL_UGLY_ENABLE_LOCATION or ATL_LOCATION_SOURCE, which LocationManager needs too) and the
+	 * microphone without ATL_UGLY_ENABLE_MICROPHONE (AudioRecord refuses to record without it).
+	 */
+	public static boolean isRuntimePermissionGranted(String permission) {
+		switch (permission) {
+			case "android.permission.ACCESS_FINE_LOCATION":
+			case "android.permission.ACCESS_COARSE_LOCATION":
+			case "android.permission.ACCESS_BACKGROUND_LOCATION":
+				return System.getenv("ATL_UGLY_ENABLE_LOCATION") != null || System.getenv("ATL_LOCATION_SOURCE") != null;
+			case "android.permission.RECORD_AUDIO":
+				return System.getenv("ATL_UGLY_ENABLE_MICROPHONE") != null;
+			default:
+				return true;
+		}
+	}
+
+	/**
+	 * Whether the running app holds a permission: exactly what its manifest requests
+	 * (requestedPermissions: <uses-permission> within maxSdkVersion, <uses-permission-sdk-23>,
+	 * and the implicit and split permissions PackageParser adds for its target SDK), granted by
+	 * the permission's protection level as PermissionManagerService grants them: normal ones at
+	 * install, dangerous ones by the user's decision (isRuntimePermissionGranted), signature ones
+	 * when the app is signed with the certificate of the package defining them (its own
+	 * permissions, the platform's when platform-signed), privileged ones only to privileged
+	 * apps. A permission nobody defines is held by no one.
+	 */
+	public static boolean isGrantedToApp(PackageParser.Package pkg, String permission) {
+		if (pkg == null || permission == null)
+			return false;
+		Integer own = ownProtectionLevel(pkg, permission);
+		if (!pkg.requestedPermissions.contains(permission)) {
+			/* AndroidX ContextCompat.registerReceiver(RECEIVER_NOT_EXPORTED) below API 33 protects
+			 * the receiver with <package>.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION, which androidx.core's
+			 * manifest defines (signature) for the app; the app's own broadcasts to it carry it */
+			return own != null && permission.equals(pkg.packageName + DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION_SUFFIX);
+		}
+		Integer level = protectionLevel(permission);
+		boolean definedByPlatform = level != null;
+		if (level == null)
+			level = own;
+		if (level == null)
+			level = sPlayServicesPermissions.get(permission);
+		if (level == null)
+			return false;
+		int base = level & PermissionInfo.PROTECTION_MASK_BASE;
+		switch (base) {
+			case PermissionInfo.PROTECTION_NORMAL:
+				return true;
+			case PermissionInfo.PROTECTION_DANGEROUS:
+				return isRuntimePermissionGranted(permission);
+			default:
+				break;
+		}
+		/* signature (and signature|privileged): the definer's certificate */
+		if (!definedByPlatform)
+			return own != null; // its own signature permission; the Play services ones belong to Google's key
+		if (isPlatformSigned(pkg))
+			return true;
+		boolean privilegedPermission = (level & PermissionInfo.PROTECTION_FLAG_SYSTEM) != 0 || base == PermissionInfo.PROTECTION_SIGNATURE_OR_SYSTEM;
+		return privilegedPermission && (pkg.applicationInfo.flags & ApplicationInfo.FLAG_PRIVILEGED) != 0;
+	}
+
+	/**
+	 * Whether a stand-in for a Google package (ATLLoadedApp.play_services) holds a permission: Play
+	 * services is a privileged system app signed with Google's key, holding its own permissions and
+	 * the platform permissions it needs; the user's runtime decisions apply to it as to any app.
+	 */
+	public static boolean isGrantedToPlayServicesStandIn(String permission) {
+		if (permission == null)
+			return false;
+		if (sPlayServicesPermissions.containsKey(permission))
+			return true;
+		Integer level = protectionLevel(permission);
+		if (level == null)
+			return false;
+		if ((level & PermissionInfo.PROTECTION_MASK_BASE) == PermissionInfo.PROTECTION_DANGEROUS)
+			return isRuntimePermissionGranted(permission);
+		return true;
 	}
 }

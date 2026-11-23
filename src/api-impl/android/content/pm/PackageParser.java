@@ -131,22 +131,49 @@ public class PackageParser {
 	 * permissions.
 	 * @hide
 	 */
-	public static final PackageParser.SplitPermissionInfo SPLIT_PERMISSIONS[] =
-	    new PackageParser.SplitPermissionInfo[] {
-		    // READ_EXTERNAL_STORAGE is always required when an app requests
-		    // WRITE_EXTERNAL_STORAGE, because we can't have an app that has
-		    // write access without read access.  The hack here with the target
-		    // target SDK version ensures that this grant is always done.
-		    new PackageParser.SplitPermissionInfo(android.Manifest.permission.WRITE_EXTERNAL_STORAGE,
-	                                                  new String[] {android.Manifest.permission.READ_EXTERNAL_STORAGE},
-	                                                  android.os.Build.VERSION_CODES.CUR_DEVELOPMENT + 1),
-		    new PackageParser.SplitPermissionInfo(android.Manifest.permission.READ_CONTACTS,
-	                                                  new String[] {android.Manifest.permission.READ_CALL_LOG},
-	                                                  android.os.Build.VERSION_CODES.JELLY_BEAN),
-		    new PackageParser.SplitPermissionInfo(android.Manifest.permission.WRITE_CONTACTS,
-	                                                  new String[] {android.Manifest.permission.WRITE_CALL_LOG},
-	                                                  android.os.Build.VERSION_CODES.JELLY_BEAN)
-	    };
+	public static final PackageParser.SplitPermissionInfo SPLIT_PERMISSIONS[] = splitPermissions();
+
+	/*
+	 * AOSP frameworks/base/data/etc/platform.xml (android14-release), <split-permission> in file
+	 * order: an app that targets an SDK below targetSdk and requests the root permission also
+	 * requests the new one (no targetSdk: always, CUR_DEVELOPMENT + 1). Applied in this order, so
+	 * a permission an earlier split added can be the root of a later one, as in AOSP.
+	 */
+	private static PackageParser.SplitPermissionInfo[] splitPermissions() {
+		final int always = android.os.Build.VERSION_CODES.CUR_DEVELOPMENT + 1;
+		final String p = "android.permission.";
+		String[][] splits = {
+			{"ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION", null},
+			{"WRITE_EXTERNAL_STORAGE", "READ_EXTERNAL_STORAGE", null},
+			{"READ_CONTACTS", "READ_CALL_LOG", "16"},
+			{"WRITE_CONTACTS", "WRITE_CALL_LOG", "16"},
+			{"ACCESS_FINE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "29"},
+			{"ACCESS_COARSE_LOCATION", "ACCESS_BACKGROUND_LOCATION", "29"},
+			{"READ_EXTERNAL_STORAGE", "ACCESS_MEDIA_LOCATION", "29"},
+			{"WRITE_EXTERNAL_STORAGE", "ACCESS_MEDIA_LOCATION", "29"},
+			{"BLUETOOTH", "BLUETOOTH_SCAN", "31"},
+			{"BLUETOOTH", "BLUETOOTH_CONNECT", "31"},
+			{"BLUETOOTH", "BLUETOOTH_ADVERTISE", "31"},
+			{"BLUETOOTH_ADMIN", "BLUETOOTH_SCAN", "31"},
+			{"BLUETOOTH_ADMIN", "BLUETOOTH_CONNECT", "31"},
+			{"BLUETOOTH_ADMIN", "BLUETOOTH_ADVERTISE", "31"},
+			{"BODY_SENSORS", "BODY_SENSORS_BACKGROUND", "33"},
+			{"READ_EXTERNAL_STORAGE", "READ_MEDIA_AUDIO", "33"},
+			{"READ_EXTERNAL_STORAGE", "READ_MEDIA_VIDEO", "33"},
+			{"READ_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES", "33"},
+			{"WRITE_EXTERNAL_STORAGE", "READ_MEDIA_AUDIO", "33"},
+			{"WRITE_EXTERNAL_STORAGE", "READ_MEDIA_VIDEO", "33"},
+			{"WRITE_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES", "33"},
+			{"READ_MEDIA_IMAGES", "READ_MEDIA_VISUAL_USER_SELECTED", null},
+			{"READ_MEDIA_VIDEO", "READ_MEDIA_VISUAL_USER_SELECTED", null},
+			{"ACCESS_MEDIA_LOCATION", "READ_MEDIA_VISUAL_USER_SELECTED", null},
+		};
+		PackageParser.SplitPermissionInfo[] out = new PackageParser.SplitPermissionInfo[splits.length];
+		for (int i = 0; i < splits.length; i++)
+			out[i] = new PackageParser.SplitPermissionInfo(p + splits[i][0], new String[] {p + splits[i][1]},
+			                                               splits[i][2] == null ? always : Integer.parseInt(splits[i][2]));
+		return out;
+	}
 
 	private String mArchiveSourcePath;
 	private String[] mSeparateProcesses;

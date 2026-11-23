@@ -270,17 +270,22 @@ public final class Settings {
     }
 
     /**
-     * AOSP: whether the app may draw overlay windows (the SYSTEM_ALERT_WINDOW app op). This device
-     * grants every permission an app requests (PackageManager.checkPermission), so it is true when
-     * the manifest requests SYSTEM_ALERT_WINDOW.
+     * AOSP: whether the app may draw overlay windows: the SYSTEM_ALERT_WINDOW app op
+     * (isCallingPackageAllowedToPerformAppOpsProtectedOperation), which falls back to the
+     * permission while the op is at its default mode.
      */
     public static boolean canDrawOverlays(Context context) {
-        return requests(context, "android.permission.SYSTEM_ALERT_WINDOW");
+        return appOpAllows(context, android.app.AppOpsManager.OPSTR_SYSTEM_ALERT_WINDOW, "android.permission.SYSTEM_ALERT_WINDOW");
     }
 
-    private static boolean requests(Context context, String permission) {
-        java.util.List<String> requested = android.atl.ATLLoadedApp.getPrimaryApplication().pkg.requestedPermissions;
-        return requested != null && requested.contains(permission);
+    private static boolean appOpAllows(Context context, String op, String permission) {
+        int uid = android.os.Process.myUid();
+        String pkg = context.getOpPackageName();
+        android.app.AppOpsManager ops = new android.app.AppOpsManager(context);
+        int mode = ops.noteOpNoThrow(op, uid, pkg, null, null);
+        if (mode == android.app.AppOpsManager.MODE_DEFAULT)
+            return context.checkCallingOrSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        return mode == android.app.AppOpsManager.MODE_ALLOWED;
     }
 
     /** System settings: preferences an app with WRITE_SETTINGS may change. */
@@ -308,9 +313,9 @@ public final class Settings {
             return getUriFor(CONTENT_URI, name);
         }
 
-        /** AOSP: whether the app may write system settings (WRITE_SETTINGS, granted here when requested). */
+        /** AOSP: whether the app may write system settings: the WRITE_SETTINGS app op, else the permission. */
         public static boolean canWrite(Context context) {
-            return requests(context, "android.permission.WRITE_SETTINGS");
+            return appOpAllows(context, android.app.AppOpsManager.OPSTR_WRITE_SETTINGS, "android.permission.WRITE_SETTINGS");
         }
 
         public static String getString(ContentResolver resolver, String name) {

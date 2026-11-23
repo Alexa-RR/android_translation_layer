@@ -1395,7 +1395,8 @@ public class PackageManager {
 	public PackageInfo getPackageInfo(String packageName, int flags) throws NameNotFoundException {
 		ATLLoadedApp primary = ATLLoadedApp.getPrimaryApplication();
 		if (packageName.equals(primary.pkg.packageName)) {
-			return PackageParser.generatePackageInfo(primary.pkg, new int[0], flags, 0, 0, new HashSet<>(), new PackageUserState());
+			/* AOSP: requestedPermissionsFlags shows what the app holds */
+			return PackageParser.generatePackageInfo(primary.pkg, new int[0], flags, 0, 0, android.atl.ATLPackageSettings.grantedPermissions(primary.pkg), new PackageUserState());
 		}
 		if (packageName.equals("atl") || packageName.equals("android")) {
 			/* the framework package (framework-res.apk): system uid, FLAG_SYSTEM, the platform
@@ -1904,36 +1905,11 @@ public class PackageManager {
 				return PERMISSION_DENIED;
 			return android.atl.ATLPackageSettings.checkPermission(other, permName);
 		}
-		/* the app ATL runs (below: its permission model, the car owner consented to the app) */
-		if (permName.endsWith(".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"))
-			return PERMISSION_GRANTED;
-
-		switch (permName) {
-			// TODO: we shouldn't just automatically grant these once we have bubblewrap set up
-			// for now, the app can access anything it wants, so no point telling it otherwise
-			case "android.permission.WRITE_EXTERNAL_STORAGE":
-			case "android.permission.READ_EXTERNAL_STORAGE":
-			case "com.google.android.c2dm.permission.SEND":
-				return PERMISSION_GRANTED;
-			case "android.permission.ACCESS_NETWORK_STATE":
-				return PERMISSION_GRANTED;
-			// only tell the app that it can access location if it *actually* can
-			// (until we find apps that refuse to launch without being lied to anyway)
-			case "android.permission.ACCESS_FINE_LOCATION":
-			case "android.permission.ACCESS_COARSE_LOCATION":
-				if (System.getenv("ATL_UGLY_ENABLE_LOCATION") != null)
-					return PERMISSION_GRANTED;
-				else
-					return PERMISSION_DENIED;
-			case "android.permission.RECORD_AUDIO":
-				if (System.getenv("ATL_UGLY_ENABLE_MICROPHONE") != null)
-					return PERMISSION_GRANTED;
-				else
-					return PERMISSION_DENIED;
-			default:
-				/* teslalinux: single-app device, the car owner already consented; grant everything. */
-				return PERMISSION_GRANTED;
-		}
+		/* the Play services stand-ins: Google's privileged system packages */
+		if (!pkgName.equals(ATLLoadedApp.getPrimaryApplication().pkg.packageName))
+			return android.atl.ATLPackageSettings.isGrantedToPlayServicesStandIn(permName) ? PERMISSION_GRANTED : PERMISSION_DENIED;
+		/* the app ATL runs: what its manifest requests, by protection level (ATLPackageSettings) */
+		return android.atl.ATLPackageSettings.isGrantedToApp(ATLLoadedApp.getPrimaryApplication().pkg, permName) ? PERMISSION_GRANTED : PERMISSION_DENIED;
 	}
 
 	/**
