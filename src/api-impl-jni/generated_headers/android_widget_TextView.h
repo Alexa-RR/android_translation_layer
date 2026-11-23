@@ -213,6 +213,14 @@ extern "C" {
 #define android_widget_TextView_TEXT_DIRECTION_LTR 3L
 #undef android_widget_TextView_TEXT_DIRECTION_RTL
 #define android_widget_TextView_TEXT_DIRECTION_RTL 4L
+#undef android_widget_TextView_TEXT_DIRECTION_FIRST_STRONG_LTR
+#define android_widget_TextView_TEXT_DIRECTION_FIRST_STRONG_LTR 6L
+#undef android_widget_TextView_TEXT_DIRECTION_FIRST_STRONG_RTL
+#define android_widget_TextView_TEXT_DIRECTION_FIRST_STRONG_RTL 7L
+#undef android_widget_TextView_PUBLIC_STATUS_BAR_VISIBILITY_MASK
+#define android_widget_TextView_PUBLIC_STATUS_BAR_VISIBILITY_MASK 16375L
+#undef android_widget_TextView_POPULATING_ACCESSIBILITY_EVENT_TYPES
+#define android_widget_TextView_POPULATING_ACCESSIBILITY_EVENT_TYPES 172479L
 #undef android_widget_TextView_TL_UNDEFINED_PADDING
 #define android_widget_TextView_TL_UNDEFINED_PADDING -2147483648L
 #undef android_widget_TextView_LAYER_TYPE_NONE
@@ -361,11 +369,11 @@ JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setTextColor
 
 /*
  * Class:     android_widget_TextView
- * Method:    native_setGravity
- * Signature: (JI)V
+ * Method:    native_setAlignment
+ * Signature: (JIZI)V
  */
-JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setGravity
-  (JNIEnv *, jobject, jlong, jint);
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setAlignment
+  (JNIEnv *, jobject, jlong, jint, jboolean, jint);
 
 /*
  * Class:     android_widget_TextView

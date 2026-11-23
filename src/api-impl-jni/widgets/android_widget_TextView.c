@@ -382,26 +382,31 @@ JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setCompoundPadding(J
 	gtk_widget_set_margin_end(child, rtl ? left : right);
 }
 
-/* ---- teslalinux: text gravity (tl_textview_gravity) ---- */
-JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setGravity(JNIEnv *env, jobject this, jlong widget_ptr, jint gravity)
+/* ---- teslalinux: text alignment (tl_textview_gravity) ----
+ * TextView.tlUpdateAlignment resolves AOSP's Layout.Alignment (gravity, textAlignment, layout
+ * direction, and for ALIGN_NORMAL/OPPOSITE the paragraph direction from the text direction
+ * heuristic) to the side the text goes to: ALIGN (0 left, 1 centre, 2 right). PANGO_RTL is the
+ * direction Pango gives the first paragraph (its first strong character, else the widget's).
+ * GTK mirrors xalign and the justification for an RTL widget, and Pango swaps left/right again for
+ * a paragraph whose direction is not the widget's: so the justification is mirrored exactly when
+ * the paragraph is RTL, which also aligns every further paragraph to its own start for
+ * ALIGN_NORMAL (the justification is then LEFT whatever the direction) as AOSP's layouts do. */
+JNIEXPORT void JNICALL Java_android_widget_TextView_native_1setAlignment(JNIEnv *env, jobject this, jlong widget_ptr, jint align, jboolean pango_rtl, jint gravity)
 {
 	GtkWidget *widget = GTK_WIDGET(_PTR(widget_ptr));
 	GtkWidget *child = GTK_IS_BOX(widget) ? gtk_widget_get_first_child(widget) : widget;
 	if (!child)
 		return;
-	int h = gravity & 0x7;                      /* Gravity.HORIZONTAL_GRAVITY_MASK: CENTER_HORIZONTAL 1, LEFT 3, RIGHT 5 */
-	int relative = (gravity & 0x800000) != 0;   /* Gravity.RELATIVE_LAYOUT_DIRECTION: START/END */
-	int v = gravity & 0x70;                     /* Gravity.VERTICAL_GRAVITY_MASK: CENTER_VERTICAL 0x10, TOP 0x30, BOTTOM 0x50 */
-	gboolean rtl = gtk_widget_get_direction(child) == GTK_TEXT_DIR_RTL;
-	float xalign;
-	if (h == 1)
-		xalign = 0.5f;
-	else if (relative)
-		xalign = (h == 5) ? 1.f : 0.f;          /* GTK mirrors xalign for RTL, like START/END */
-	else
-		xalign = ((h == 5) != rtl) ? 1.f : 0.f; /* absolute LEFT/RIGHT */
+	int v = gravity & 0x70; /* Gravity.VERTICAL_GRAVITY_MASK: CENTER_VERTICAL 0x10, TOP 0x30, BOTTOM 0x50 */
+	gboolean widget_rtl = gtk_widget_get_direction(child) == GTK_TEXT_DIR_RTL;
+	float visual = align == 1 ? 0.5f : (align == 2 ? 1.f : 0.f);
+	float xalign = widget_rtl ? 1.f - visual : visual;
 	float yalign = v == 0x10 ? 0.5f : (v == 0x50 ? 1.f : 0.f);
-	GtkJustification justify = h == 1 ? GTK_JUSTIFY_CENTER : ((xalign == 1.f) != rtl ? GTK_JUSTIFY_RIGHT : GTK_JUSTIFY_LEFT);
+	GtkJustification justify;
+	if (align == 1)
+		justify = GTK_JUSTIFY_CENTER;
+	else
+		justify = ((align == 2) != (pango_rtl != 0)) ? GTK_JUSTIFY_RIGHT : GTK_JUSTIFY_LEFT;
 	if (GTK_IS_LABEL(child)) {
 		gtk_label_set_xalign(GTK_LABEL(child), xalign);
 		gtk_label_set_yalign(GTK_LABEL(child), yalign);

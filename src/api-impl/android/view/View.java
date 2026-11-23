@@ -647,6 +647,10 @@ public class View implements Drawable.Callback {
 	public static final int TEXT_DIRECTION_LTR = 3; // 0x3
 
 	public static final int TEXT_DIRECTION_RTL = 4; // 0x4
+	/** AOSP: the first strong character decides; LTR when there is none */
+	public static final int TEXT_DIRECTION_FIRST_STRONG_LTR = 6; // 0x6
+	/** AOSP: the first strong character decides; RTL when there is none */
+	public static final int TEXT_DIRECTION_FIRST_STRONG_RTL = 7; // 0x7
 
 	public static final Property<View, Float> SCALE_X = new FloatProperty<View>("scaleX") {
 		@Override

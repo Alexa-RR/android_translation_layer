@@ -284,8 +284,121 @@ public class TextView extends View {
 
 	/* teslalinux (+text) 18: replaced by the AOSP implementation in TextView.java+text.frag */
 
+	/* Copyright (C) 2006 The Android Open Source Project */
+	/** AOSP: the heuristic that gives a paragraph of this view's text its direction. */
 	public TextDirectionHeuristic getTextDirectionHeuristic() {
-		return TextDirectionHeuristics.LTR;
+		if (getTransformationMethod() instanceof android.text.method.PasswordTransformationMethod) {
+			// passwords fields should be LTR
+			return TextDirectionHeuristics.LTR;
+		}
+		if ((getInputType() & android.text.InputType.TYPE_MASK_CLASS) == android.text.InputType.TYPE_CLASS_PHONE) {
+			// Phone numbers must be in the direction of the locale's digits. Most locales have LTR
+			// digits, but some locales, such as those written in the Adlam or N'Ko scripts, have
+			// RTL digits.
+			final android.icu.text.DecimalFormatSymbols symbols = android.icu.text.DecimalFormatSymbols.getInstance(java.util.Locale.getDefault());
+			final String zero = symbols.getDigitStrings()[0];
+			// In case the zero digit is multi-codepoint, just use the first codepoint to determine
+			// direction.
+			final int firstCodepoint = zero.codePointAt(0);
+			final byte digitDirection = Character.getDirectionality(firstCodepoint);
+			if (digitDirection == Character.DIRECTIONALITY_RIGHT_TO_LEFT || digitDirection == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC) {
+				return TextDirectionHeuristics.RTL;
+			} else {
+				return TextDirectionHeuristics.LTR;
+			}
+		}
+		// Always need to resolve layout direction first
+		final boolean defaultIsRtl = (getLayoutDirection() == LAYOUT_DIRECTION_RTL);
+		// Now, we can select the heuristic
+		switch (getTextDirection()) {
+			default:
+			case TEXT_DIRECTION_FIRST_STRONG:
+				return (defaultIsRtl ? TextDirectionHeuristics.FIRSTSTRONG_RTL : TextDirectionHeuristics.FIRSTSTRONG_LTR);
+			case TEXT_DIRECTION_ANY_RTL:
+				return TextDirectionHeuristics.ANYRTL_LTR;
+			case TEXT_DIRECTION_LTR:
+				return TextDirectionHeuristics.LTR;
+			case TEXT_DIRECTION_RTL:
+				return TextDirectionHeuristics.RTL;
+			case TEXT_DIRECTION_LOCALE:
+				return TextDirectionHeuristics.LOCALE;
+			case TEXT_DIRECTION_FIRST_STRONG_LTR:
+				return TextDirectionHeuristics.FIRSTSTRONG_LTR;
+			case TEXT_DIRECTION_FIRST_STRONG_RTL:
+				return TextDirectionHeuristics.FIRSTSTRONG_RTL;
+		}
+	}
+
+	/**
+	 * The side GTK draws the text on: AOSP's Layout.Alignment (getLayoutAlignment) with ALIGN_NORMAL
+	 * and ALIGN_OPPOSITE taken against the paragraph direction the text direction heuristic gives the
+	 * first paragraph, as StaticLayout does (a Hebrew paragraph with gravity START is aligned right
+	 * in an LTR layout).
+	 */
+	private void tlUpdateAlignment() {
+		if (widget == 0)
+			return;
+		CharSequence s = this instanceof EditText ? text : tlShown;
+		if (s == null)
+			s = "";
+		int end = 0;
+		while (end < s.length() && s.charAt(end) != '\n')
+			end++;
+		final boolean paraRtl = getTextDirectionHeuristic().isRtl(s, 0, end);
+		int align; // 0 left, 1 centre, 2 right
+		switch (getLayoutAlignment()) {
+			case ALIGN_NORMAL:
+				align = paraRtl ? 2 : 0;
+				break;
+			case ALIGN_OPPOSITE:
+				align = paraRtl ? 0 : 2;
+				break;
+			case ALIGN_CENTER:
+				align = 1;
+				break;
+			case ALIGN_RIGHT:
+				align = 2;
+				break;
+			case ALIGN_LEFT:
+			default:
+				align = 0;
+				break;
+		}
+		/* the direction Pango gives the first paragraph: its first strong character, else the
+		 * widget's (the base direction) */
+		boolean pangoRtl = isLayoutRtl();
+		for (int i = 0; i < end; ) {
+			final int cp = Character.codePointAt(s, i);
+			final byte d = Character.getDirectionality(cp);
+			if (d == Character.DIRECTIONALITY_LEFT_TO_RIGHT) {
+				pangoRtl = false;
+				break;
+			}
+			if (d == Character.DIRECTIONALITY_RIGHT_TO_LEFT || d == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC) {
+				pangoRtl = true;
+				break;
+			}
+			i += Character.charCount(cp);
+		}
+		native_setAlignment(widget, align, pangoRtl, gravity);
+	}
+
+	@Override
+	public void setTextAlignment(int textAlignment) {
+		super.setTextAlignment(textAlignment);
+		tlUpdateAlignment();
+	}
+
+	@Override
+	public void setTextDirection(int textDirection) {
+		super.setTextDirection(textDirection);
+		tlUpdateAlignment();
+	}
+
+	@Override
+	public void onRtlPropertiesChanged(int layoutDirection) {
+		super.onRtlPropertiesChanged(layoutDirection);
+		tlUpdateAlignment();
 	}
 
 	/* teslalinux (+text) 19: replaced by the AOSP implementation in TextView.java+text.frag */
@@ -429,15 +542,13 @@ public class TextView extends View {
 			invalidate();
 		}
 		this.gravity = gravity;
-		if (widget != 0) {
-			native_setGravity(widget, gravity);
-		}
+		tlUpdateAlignment();
 		if (newLayout) {
 			requestLayout();
 		}
 	}
 
-	private native void native_setGravity(long widget, int gravity);
+	private native void native_setAlignment(long widget, int align, boolean pangoRtl, int gravity);
 	/* teslalinux: compound padding (a CompoundButton's button, a Switch's track) keeps the GTK label clear of the drawable */
 	private int tlCompoundLeft, tlCompoundRight;
 
@@ -532,6 +643,7 @@ public class TextView extends View {
 	private void tlShowTextOrHint() {
 		final boolean hint = !(this instanceof EditText) && (text == null || text.length() == 0) && tlHint != null && tlHint.length() > 0;
 		tlShown = hint ? tlHint : mTransformed;
+		tlUpdateAlignment();
 		tlRenderText();
 		if (hint != tlShowingHint) {
 			tlShowingHint = hint;
