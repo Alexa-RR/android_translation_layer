@@ -213,6 +213,8 @@ extern "C" {
 #define android_widget_Spinner_TEXT_DIRECTION_LTR 3L
 #undef android_widget_Spinner_TEXT_DIRECTION_RTL
 #define android_widget_Spinner_TEXT_DIRECTION_RTL 4L
+#undef android_widget_Spinner_TL_UNDEFINED_PADDING
+#define android_widget_Spinner_TL_UNDEFINED_PADDING -2147483648L
 #undef android_widget_Spinner_LAYER_TYPE_NONE
 #define android_widget_Spinner_LAYER_TYPE_NONE 0L
 #undef android_widget_Spinner_LAYER_TYPE_SOFTWARE

@@ -403,8 +403,8 @@ public class RelativeLayout extends ViewGroup {
 		// So, instead of running the code twice, we just set the width to a "default display width"
 		// before the computation and then, as a last pass, we will update their real position with
 		// an offset equals to "DEFAULT_WIDTH - width".
-		final int layoutDirection = View.LAYOUT_DIRECTION_LTR;
-		if (/*isLayoutRtl()*/ false && myWidth == -1) {
+		final int layoutDirection = getLayoutDirection();
+		if (isLayoutRtl() && myWidth == -1) {
 			myWidth = DEFAULT_WIDTH;
 		}
 		View[] views = mSortedHorizontalChildren;
@@ -434,7 +434,7 @@ public class RelativeLayout extends ViewGroup {
 					offsetVerticalAxis = true;
 				}
 				if (isWrapContentWidth) {
-					if (/*isLayoutRtl()*/ false) {
+					if (isLayoutRtl()) {
 						if (targetSdkVersion < Build.VERSION_CODES.KITKAT) {
 							width = Math.max(width, myWidth - params.mLeft);
 						} else {
@@ -559,7 +559,7 @@ public class RelativeLayout extends ViewGroup {
 				}
 			}
 		}
-		if (/*isLayoutRtl()*/ false) {
+		if (isLayoutRtl()) {
 			final int offsetWidth = myWidth - width;
 			for (int i = 0; i < count; i++) {
 				final View child = views[i];
@@ -741,7 +741,7 @@ public class RelativeLayout extends ViewGroup {
 
 	private boolean positionChildHorizontal(View child, LayoutParams params, int myWidth,
 	                                        boolean wrapContent) {
-		final int layoutDirection = /*getLayoutDirection()*/ View.LAYOUT_DIRECTION_LTR;
+		final int layoutDirection = getLayoutDirection();
 		int[] rules = params.getRules(layoutDirection);
 		if (params.mLeft == VALUE_NOT_SET && params.mRight != VALUE_NOT_SET) {
 			// Right is fixed, but left varies
@@ -768,7 +768,7 @@ public class RelativeLayout extends ViewGroup {
 	}
 
 	private void positionAtEdge(View child, LayoutParams params, int myWidth) {
-		if (/*isLayoutRtl()*/ false) {
+		if (isLayoutRtl()) {
 			params.mRight = myWidth - getPaddingRight() - params.rightMargin;
 			params.mLeft = params.mRight - child.getMeasuredWidth();
 		} else {
@@ -914,7 +914,7 @@ public class RelativeLayout extends ViewGroup {
 			View v = node.view;
 			// Find the first non-GONE view up the chain
 			while (v.getVisibility() == View.GONE) {
-				rules = ((LayoutParams)v.getLayoutParams()).getRules(/*v.getLayoutDirection()*/ View.LAYOUT_DIRECTION_LTR);
+				rules = ((LayoutParams)v.getLayoutParams()).getRules(v.getLayoutDirection());
 				node = mGraph.mKeyNodes.get((rules[relation]));
 				// ignore self dependency. for more info look in git commit: da3003
 				if (node == null || v == node.view)
@@ -1499,12 +1499,12 @@ public class RelativeLayout extends ViewGroup {
 				resolveRules(layoutDirection);
 			}
 			// This will set the layout direction.
-			// super.resolveLayoutDirection(layoutDirection);
+			super.resolveLayoutDirection(layoutDirection);
 		}
 
 		private boolean shouldResolveLayoutDirection(int layoutDirection) {
 			return (mNeedsLayoutResolution || hasRelativeRules())
-			    && (mRulesChanged || layoutDirection != /*getLayoutDirection()*/ View.LAYOUT_DIRECTION_LTR);
+			    && (mRulesChanged || layoutDirection != getLayoutDirection());
 		}
 	}
 	private static class DependencyGraph {

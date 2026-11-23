@@ -707,7 +707,7 @@ public class GridLayout extends ViewGroup {
 		Spec spec = horizontal ? p.columnSpec : p.rowSpec;
 		Axis axis = horizontal ? mHorizontalAxis : mVerticalAxis;
 		Interval span = spec.span;
-		boolean leading1 = (horizontal && /*isLayoutRtl()*/ false) ? !leading : leading;
+		boolean leading1 = (horizontal && isLayoutRtl()) ? !leading : leading;
 		boolean isAtEdge = leading1 ? (span.min == 0) : (span.max == axis.getCount());
 
 		return getDefaultMargin(c, isAtEdge, horizontal, leading);
@@ -922,7 +922,7 @@ public class GridLayout extends ViewGroup {
 	// Draw grid
 
 	private void drawLine(Canvas graphics, int x1, int y1, int x2, int y2, Paint paint) {
-		if (/*isLayoutRtl()*/ false) {
+		if (isLayoutRtl()) {
 			int width = getWidth();
 			graphics.drawLine(width - x1, y1, width - x2, y2, paint);
 		} else {
@@ -1217,7 +1217,7 @@ public class GridLayout extends ViewGroup {
 
 			int dx = x1 + gravityOffsetX + alignmentOffsetX;
 
-			int cx = !/*isLayoutRtl()*/ false ? paddingLeft + leftMargin + dx : targetWidth - width - paddingRight - rightMargin - dx;
+			int cx = !isLayoutRtl() ? paddingLeft + leftMargin + dx : targetWidth - width - paddingRight - rightMargin - dx;
 			int cy = paddingTop + y1 + gravityOffsetY + alignmentOffsetY + topMargin;
 
 			if (width != c.getMeasuredWidth() || height != c.getMeasuredHeight()) {
@@ -2897,12 +2897,12 @@ public class GridLayout extends ViewGroup {
 		return new Alignment() {
 			@Override
 			int getGravityOffset(View view, int cellDelta) {
-				return (!/*view.isLayoutRtl()*/ false ? ltr : rtl).getGravityOffset(view, cellDelta);
+				return (!view.isLayoutRtl() ? ltr : rtl).getGravityOffset(view, cellDelta);
 			}
 
 			@Override
 			public int getAlignmentValue(View view, int viewSize, int mode) {
-				return (!/*view.isLayoutRtl()*/ false ? ltr : rtl).getAlignmentValue(view, viewSize, mode);
+				return (!view.isLayoutRtl() ? ltr : rtl).getAlignmentValue(view, viewSize, mode);
 			}
 		};
 	}

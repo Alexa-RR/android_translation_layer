@@ -1128,16 +1128,33 @@ public class View implements Drawable.Callback {
 			} else {
 				paddingLeft = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingLeft, paddingLeft);
 				paddingRight = a.getDimensionPixelSize(com.android.internal.R.styleable.View_paddingRight, paddingRight);
-
-				if (paddingStart >= 0)
+				/* AOSP: start/end override left/right once the layout direction is resolved (LTR
+				 * until then; resolvePadding at the first measure) */
+				tlPaddingLeftInitial = paddingLeft;
+				tlPaddingRightInitial = paddingRight;
+				if (paddingStart >= 0) {
+					tlUserPaddingStart = paddingStart;
 					paddingLeft = paddingStart;
+				}
 
-				if (paddingEnd >= 0)
+				if (paddingEnd >= 0) {
+					tlUserPaddingEnd = paddingEnd;
 					paddingRight = paddingEnd;
+				}
 			}
+		}
+		if (tlUserPaddingStart == TL_UNDEFINED_PADDING && tlUserPaddingEnd == TL_UNDEFINED_PADDING) {
+			tlPaddingLeftInitial = paddingLeft;
+			tlPaddingRightInitial = paddingRight;
 		}
 
 		native_setPadding(widget, paddingLeft, paddingTop, paddingRight, paddingBottom);
+
+		/* AOSP: layoutDirection (ltr, rtl, inherit, locale) and textDirection are View attributes too */
+		if (a.hasValue(com.android.internal.R.styleable.View_layoutDirection))
+			setLayoutDirection(a.getInt(com.android.internal.R.styleable.View_layoutDirection, LAYOUT_DIRECTION_INHERIT));
+		if (a.hasValue(com.android.internal.R.styleable.View_textDirection))
+			setTextDirection(a.getInt(com.android.internal.R.styleable.View_textDirection, TEXT_DIRECTION_INHERIT));
 
 		if (a.hasValue(com.android.internal.R.styleable.View_tag))
 			tag = a.getText(com.android.internal.R.styleable.View_tag);
@@ -1710,6 +1727,9 @@ public class View implements Drawable.Callback {
 
 	public void setPadding(int left, int top, int right, int bottom) {
 		tlPaddingRelative = false; // AOSP: absolute padding replaces the relative (start/end) one
+		tlUserPaddingStart = tlUserPaddingEnd = TL_UNDEFINED_PADDING;
+		tlPaddingLeftInitial = left;
+		tlPaddingRightInitial = right;
 		if (tlOutlineProvider == ViewOutlineProvider.PADDED_BOUNDS && (paddingLeft != left || paddingTop != top || paddingRight != right || paddingBottom != bottom))
 			tlPostRebuildOutline();
 		paddingLeft = left;
@@ -1820,12 +1840,18 @@ public class View implements Drawable.Callback {
 		return paddingBottom;
 	}
 
+	/** AOSP: the padding at the start of the resolved layout direction (right in RTL) */
 	public int getPaddingStart() {
-		return paddingLeft;
+		if (tlRtlPropertiesDirty)
+			tlResolvePadding(getLayoutDirection());
+		return isLayoutRtl() ? paddingRight : paddingLeft;
 	}
 
+	/** AOSP: the padding at the end of the resolved layout direction (left in RTL) */
 	public int getPaddingEnd() {
-		return paddingRight;
+		if (tlRtlPropertiesDirty)
+			tlResolvePadding(getLayoutDirection());
+		return isLayoutRtl() ? paddingLeft : paddingRight;
 	}
 
 	/** AOSP: invalidate() from any thread, on the next event loop pass */
@@ -1962,6 +1988,8 @@ public class View implements Drawable.Callback {
 
 	@Export
 	public final void measure(int widthMeasureSpec, int heightMeasureSpec) {
+		if (tlRtlPropertiesDirty)
+			tlResolveRtlPropertiesIfNeeded();
 		if (layoutRequested || widthMeasureSpec != oldWidthMeasureSpec || heightMeasureSpec != oldHeightMeasureSpec) {
 			layoutRequested = false;
 			oldWidthMeasureSpec = widthMeasureSpec;
@@ -2658,7 +2686,11 @@ public class View implements Drawable.Callback {
 	public boolean isClickable() { return mClickable; }
 	public boolean isLongClickable() { return mLongClickable; }
 
-	public int getLayoutDirection() { return LAYOUT_DIRECTION_LTR; }
+	/** AOSP: the resolved layout direction (LTR or RTL); see tlResolveLayoutDirection. */
+	public int getLayoutDirection() {
+		final int r = tlResolvedLayoutDirection;
+		return r >= 0 ? r : tlResolveLayoutDirection();
+	}
 
 	public void setBackground(Drawable background) {
 		setBackgroundDrawable(background);
@@ -2704,10 +2736,15 @@ public class View implements Drawable.Callback {
 		postInvalidate();
 	}
 
-	/** AOSP: start/end padding; the layout direction is always LTR here, so start is left */
+	/** AOSP: start/end padding, right/left in RTL; kept as start/end for a later direction change */
 	public void setPaddingRelative(int start, int top, int end, int bottom) {
-		setPadding(start, top, end, bottom);
+		if (isLayoutRtl())
+			setPadding(end, top, start, bottom);
+		else
+			setPadding(start, top, end, bottom);
 		tlPaddingRelative = true;
+		tlUserPaddingStart = start;
+		tlUserPaddingEnd = end;
 	}
 
 	private native boolean nativeIsAttachedToWindow(long widget);
@@ -2817,7 +2854,11 @@ public class View implements Drawable.Callback {
 		}
 	}
 
-	public boolean isLayoutDirectionResolved() { return true; }
+	/** AOSP: the layout direction has been resolved (a view with INHERIT and no parent cannot be yet) */
+	public boolean isLayoutDirectionResolved() {
+		getLayoutDirection();
+		return tlResolvedLayoutDirection >= 0;
+	}
 
 	/** AOSP: the padding was set as start/end (setPaddingRelative, paddingStart/End attributes) */
 	public boolean isPaddingRelative() { return tlPaddingRelative; }
@@ -3004,21 +3045,47 @@ public class View implements Drawable.Callback {
 	/** AOSP: an OnClickListener is attached */
 	public boolean hasOnClickListeners() { return on_click_listener != null; }
 
+	/** AOSP: the raw text alignment (GRAVITY by default); getTextAlignment resolves INHERIT */
+	private int tlRawTextAlignment = TEXT_ALIGNMENT_GRAVITY;
+
 	public void setTextAlignment(int textAlignment) {
+		if (textAlignment < TEXT_ALIGNMENT_INHERIT || textAlignment > TEXT_ALIGNMENT_VIEW_END)
+			return;
+		tlRawTextAlignment = textAlignment;
+		tlApplyTextAlignment(textAlignment);
+		requestLayout();
+		invalidate();
+	}
+
+	/**
+	 * AOSP: the resolved text alignment; INHERIT takes the parent's, at the root it is GRAVITY
+	 * (TEXT_ALIGNMENT_RESOLVED_DEFAULT).
+	 */
+	public int getTextAlignment() {
+		if (tlRawTextAlignment != TEXT_ALIGNMENT_INHERIT)
+			return tlRawTextAlignment;
+		if (parent instanceof View)
+			return ((View) parent).getTextAlignment();
+		return TEXT_ALIGNMENT_GRAVITY;
+	}
+
+	/** The GTK alignment class of the text; VIEW_START/END follow the layout direction. */
+	private void tlApplyTextAlignment(int textAlignment) {
 		String[] classesToRemove = {"ATL-text-align-left", "ATL-text-align-center", "ATL-text-align-right"};
 		native_removeClasses(widget, classesToRemove);
 
+		final boolean rtl = (textAlignment == TEXT_ALIGNMENT_VIEW_START || textAlignment == TEXT_ALIGNMENT_VIEW_END) && isLayoutRtl();
 		switch (textAlignment) {
 			case TEXT_ALIGNMENT_CENTER:
 				native_addClass(widget, "ATL-text-align-center");
 				break;
 			case TEXT_ALIGNMENT_TEXT_START:
 			case TEXT_ALIGNMENT_VIEW_START:
-				native_addClass(widget, "ATL-text-align-left");
+				native_addClass(widget, rtl ? "ATL-text-align-right" : "ATL-text-align-left");
 				break;
 			case TEXT_ALIGNMENT_TEXT_END:
 			case TEXT_ALIGNMENT_VIEW_END:
-				native_addClass(widget, "ATL-text-align-right");
+				native_addClass(widget, rtl ? "ATL-text-align-left" : "ATL-text-align-right");
 				break;
 		}
 	}
@@ -3122,12 +3189,138 @@ public class View implements Drawable.Callback {
 	}
 
 	/**
-	 * AOSP: stores the raw layout direction (INHERIT by default). teslalinux: resolving it against
-	 * the parent and the locale (RTL mirroring) is not done yet (TODO-real.md); getLayoutDirection
-	 * still resolves to LTR.
+	 * AOSP: sets the raw layout direction (INHERIT by default); the resolved direction of this view
+	 * and of the children that inherit it is resolved again and the view is laid out again.
 	 */
 	public void setLayoutDirection(int layoutDirection) {
-		tlRawLayoutDirection = layoutDirection;
+		if (tlRawLayoutDirection != layoutDirection) {
+			tlRawLayoutDirection = layoutDirection;
+			tlResetResolvedLayoutDirection();
+			invalidate();
+		}
+	}
+
+	/* ---- teslalinux: AOSP layout direction resolution (View.resolveLayoutDirection & co) ----
+	 * The raw direction resolves as in AOSP: LTR/RTL as set, LOCALE from the default locale's script,
+	 * INHERIT from the parent; a window root inherits the direction of its configuration (AOSP's
+	 * ViewRootImpl gives the DecorView the configuration's direction), a view without a parent that is
+	 * not in a window cannot resolve yet (LTR until it can). Everything is LTR for an app without
+	 * android:supportsRtl or targeting API < 17 (AOSP's RTL compatibility mode). The result is cached
+	 * and reset when the raw direction or the parent changes, down the children that inherit it; the
+	 * next measure applies it (resolveRtlPropertiesIfNeeded): start/end padding to left/right, the
+	 * background's direction, the layout params' start/end margins, onResolveDrawables and
+	 * onRtlPropertiesChanged. */
+	private int tlResolvedLayoutDirection = -1;
+	private boolean tlRtlPropertiesDirty = true;
+	private static int sTlRtlSupport = -1; /* the app's RTL support: -1 not known yet */
+
+	private boolean tlRtlCompatibilityMode() {
+		if (sTlRtlSupport < 0) {
+			android.content.pm.ApplicationInfo ai = getContext() != null ? getContext().getApplicationInfo() : null;
+			if (ai == null)
+				return true;
+			sTlRtlSupport = (ai.hasRtlSupport() && ai.targetSdkVersion >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1) ? 1 : 0;
+		}
+		return sTlRtlSupport == 0;
+	}
+
+	/** A view without a parent view that is in a window: the window's root (AOSP's DecorView). */
+	private boolean tlIsWindowRoot() {
+		return !(parent instanceof View) && (parent != null || isAttachedToWindow());
+	}
+
+	private int tlResolveLayoutDirection() {
+		int r = LAYOUT_DIRECTION_LTR;
+		boolean resolved = true;
+		if (!tlRtlCompatibilityMode()) {
+			switch (tlRawLayoutDirection) {
+				case LAYOUT_DIRECTION_RTL:
+					r = LAYOUT_DIRECTION_RTL;
+					break;
+				case LAYOUT_DIRECTION_LOCALE:
+					r = android.text.TextUtils.getLayoutDirectionFromLocale(java.util.Locale.getDefault());
+					break;
+				case LAYOUT_DIRECTION_INHERIT:
+					if (parent instanceof View) {
+						View p = (View) parent;
+						r = p.getLayoutDirection();
+						resolved = p.tlResolvedLayoutDirection >= 0;
+					} else if (tlIsWindowRoot()) {
+						r = getContext().getResources().getConfiguration().getLayoutDirection();
+					} else {
+						resolved = false;
+					}
+					break;
+				default:
+					break;
+			}
+		}
+		if (resolved)
+			tlResolvedLayoutDirection = r;
+		return r;
+	}
+
+	/** AOSP resetResolvedLayoutDirection (+ the padding, drawables and params that follow it): this
+	 * view and the children inheriting its direction resolve again at their next measure. */
+	void tlResetResolvedLayoutDirection() {
+		tlResolvedLayoutDirection = -1;
+		if (!tlRtlPropertiesDirty) {
+			tlRtlPropertiesDirty = true;
+			requestLayout();
+		}
+		if (this instanceof ViewGroup)
+			((ViewGroup) this).tlResetChildrenLayoutDirection();
+	}
+
+	/** AOSP resolveRtlPropertiesIfNeeded (from measure): applies the resolved direction. */
+	private void tlResolveRtlPropertiesIfNeeded() {
+		final int dir = getLayoutDirection();
+		if (tlResolvedLayoutDirection < 0)
+			return; /* cannot resolve yet: again once it has a parent or a window */
+		tlRtlPropertiesDirty = false;
+		tlResolvePadding(dir);
+		if (background != null)
+			background.setLayoutDirection(dir);
+		onResolveDrawables(dir);
+		ViewGroup.LayoutParams lp = getLayoutParams();
+		if (lp != null)
+			lp.resolveLayoutDirection(dir);
+		if (tlRawTextAlignment == TEXT_ALIGNMENT_VIEW_START || tlRawTextAlignment == TEXT_ALIGNMENT_VIEW_END)
+			tlApplyTextAlignment(tlRawTextAlignment);
+		onRtlPropertiesChanged(dir);
+	}
+
+	/* AOSP padding: start/end as set (UNDEFINED: not set) and the left/right that hold where they are not */
+	private static final int TL_UNDEFINED_PADDING = Integer.MIN_VALUE;
+	private int tlUserPaddingStart = TL_UNDEFINED_PADDING, tlUserPaddingEnd = TL_UNDEFINED_PADDING;
+	private int tlPaddingLeftInitial, tlPaddingRightInitial;
+
+	/** AOSP resolvePadding: start/end become right/left in RTL, left/right in LTR. */
+	private void tlResolvePadding(int dir) {
+		if (tlUserPaddingStart == TL_UNDEFINED_PADDING && tlUserPaddingEnd == TL_UNDEFINED_PADDING)
+			return;
+		final boolean rtl = dir == LAYOUT_DIRECTION_RTL;
+		final int start = tlUserPaddingStart, end = tlUserPaddingEnd;
+		int left, right;
+		if (rtl) {
+			right = start != TL_UNDEFINED_PADDING ? start : tlPaddingRightInitial;
+			left = end != TL_UNDEFINED_PADDING ? end : tlPaddingLeftInitial;
+		} else {
+			left = start != TL_UNDEFINED_PADDING ? start : tlPaddingLeftInitial;
+			right = end != TL_UNDEFINED_PADDING ? end : tlPaddingRightInitial;
+		}
+		if (left != paddingLeft || right != paddingRight)
+			tlSetPaddingInternal(left, paddingTop, right, paddingBottom);
+	}
+
+	private void tlSetPaddingInternal(int left, int top, int right, int bottom) {
+		if (tlOutlineProvider == ViewOutlineProvider.PADDED_BOUNDS && (paddingLeft != left || paddingTop != top || paddingRight != right || paddingBottom != bottom))
+			tlPostRebuildOutline();
+		paddingLeft = left;
+		paddingTop = top;
+		paddingRight = right;
+		paddingBottom = bottom;
+		native_setPadding(widget, left, top, right, bottom); /* as setPadding (from measure: in time for onMeasure) */
 	}
 
 	public ColorStateList getBackgroundTintList() { return tlBgTintList; }
@@ -3212,8 +3405,6 @@ public class View implements Drawable.Callback {
 		removeLongPressCallback();
 		removeTapCallback();
 	}
-
-	public int getTextAlignment() { return 0; }
 
 	public View findViewWithTag(Object tag) {
 		if (Objects.equals(tag, this.tag))
@@ -4637,11 +4828,15 @@ public class View implements Drawable.Callback {
 	public static final int IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS = 0x00000004;
 
 	/**
-	 * AOSP: whether the layout direction can be resolved (INHERIT with no parent cannot). ATL resolves
-	 * every view's direction (getLayoutDirection/isLayoutDirectionResolved), so it always can.
+	 * AOSP: whether the layout direction can be resolved: INHERIT needs a parent that can (or a
+	 * window, for a window's root), every other direction can.
 	 */
 	public boolean canResolveLayoutDirection() {
-		return true;
+		if (tlRawLayoutDirection != LAYOUT_DIRECTION_INHERIT)
+			return true;
+		if (parent instanceof View)
+			return ((View) parent).canResolveLayoutDirection();
+		return tlIsWindowRoot();
 	}
 
 	/* AOSP aggregated visibility: a view learns whether it is actually visible (own visibility, ancestors, window) */

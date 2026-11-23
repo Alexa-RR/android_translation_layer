@@ -371,7 +371,7 @@ public class LinearLayout extends ViewGroup {
 
 	void drawDividersHorizontal(Canvas canvas) {
 		final int count = getVirtualChildCount();
-		final boolean isLayoutRtl = /*isLayoutRtl()*/ false;
+		final boolean isLayoutRtl = isLayoutRtl();
 		for (int i = 0; i < count; i++) {
 			final View child = getVirtualChildAt(i);
 			if (child != null && child.getVisibility() != GONE) {
@@ -1480,7 +1480,7 @@ public class LinearLayout extends ViewGroup {
 	 * @param bottom
 	 */
 	void layoutHorizontal(int left, int top, int right, int bottom) {
-		final boolean isLayoutRtl = /*isLayoutRtl()*/ false;
+		final boolean isLayoutRtl = isLayoutRtl();
 		int childTop;
 		int childLeft;
 		// Where bottom of child should go

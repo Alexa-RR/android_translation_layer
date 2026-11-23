@@ -113,6 +113,9 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 		tlBeforeChildAdded(child);
 		child.parent = this;
+		/* AOSP addViewInner: a child inheriting the layout direction resolves it again (resetRtlProperties) */
+		if (child.getRawLayoutDirection() == LAYOUT_DIRECTION_INHERIT)
+			child.tlResetResolvedLayoutDirection();
 		child.setLayoutParams(params);
 		if (index < 0)
 			index = children.size();
@@ -165,6 +168,17 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	// This internal method is used to share code between removeView and removeViewInLayout.
 	// Reusing removeView in removeViewInLayout is not possible, because e.g.
 	// ViewPager overrides removeView to call removeViewInLayout
+	/** The children inheriting the layout direction resolve it again (View.tlResetResolvedLayoutDirection). */
+	void tlResetChildrenLayoutDirection() {
+		if (children == null)
+			return; /* from View's constructor (a layoutDirection attribute), before the list exists */
+		for (int i = 0, n = children.size(); i < n; i++) {
+			View c = children.get(i);
+			if (c.getRawLayoutDirection() == LAYOUT_DIRECTION_INHERIT)
+				c.tlResetResolvedLayoutDirection();
+		}
+	}
+
 	protected void removeViewInternal(View child) {
 		if (child == null || child.parent != this)
 			return;
@@ -180,6 +194,8 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 				getViewTreeObserver().dispatchOnGlobalFocusChange(child, null);
 		}
 		child.parent = null;
+		if (child.getRawLayoutDirection() == LAYOUT_DIRECTION_INHERIT)
+			child.tlResetResolvedLayoutDirection(); /* it inherited through this group */
 		children.remove(child);
 		tlRemoveChildWidget(child);
 		onViewRemoved(child);
@@ -213,6 +229,8 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 		for (Iterator<View> it = children.iterator(); it.hasNext();) {
 			View child = it.next();
 			child.parent = null;
+			if (child.getRawLayoutDirection() == LAYOUT_DIRECTION_INHERIT)
+				child.tlResetResolvedLayoutDirection();
 			it.remove();
 			tlRemoveChildWidget(child);
 			onViewRemoved(child);
@@ -1269,6 +1287,26 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 	public void childDrawableStateChanged(View child) {
 		if (tlAddStatesFromChildren)
 			refreshDrawableState();
+	}
+
+	/**
+	 * AOSP: the children with duplicateParentState take this group's new state too
+	 * (FLAG_NOTIFY_CHILDREN_ON_DRAWABLE_STATE_CHANGE); with addStatesFromChildren that would loop,
+	 * which AOSP refuses the same way.
+	 */
+	@Override
+	protected void drawableStateChanged() {
+		super.drawableStateChanged();
+		if (children == null)
+			return;
+		for (int i = 0, n = children.size(); i < n; i++) {
+			View child = children.get(i);
+			if (child.isDuplicateParentStateEnabled()) {
+				if (tlAddStatesFromChildren)
+					throw new IllegalStateException("addStateFromChildren cannot be enabled if a child has duplicateParentState set to true");
+				child.refreshDrawableState();
+			}
+		}
 	}
 
 	@Override

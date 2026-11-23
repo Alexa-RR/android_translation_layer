@@ -331,17 +331,15 @@ public class ExpandableListView extends ListView {
 	 * RTL not supported)
 	 */
 	private boolean isRtlCompatibilityMode() {
-		//final int targetSdkVersion = mContext.getApplicationInfo().targetSdkVersion;
-		//return targetSdkVersion < JELLY_BEAN_MR1 || !hasRtlSupport();
-		return true;
+		final int targetSdkVersion = getContext().getApplicationInfo().targetSdkVersion;
+		return targetSdkVersion < android.os.Build.VERSION_CODES.JELLY_BEAN_MR1 || !hasRtlSupport();
 	}
 
 	/**
 	 * Return true if the application tag in the AndroidManifest has set "supportRtl" to true
 	 */
 	private boolean hasRtlSupport() {
-		//return mContext.getApplicationInfo().hasRtlSupport();
-		return false;
+		return getContext().getApplicationInfo().hasRtlSupport();
 	}
 
 	public void onRtlPropertiesChanged(int layoutDirection) {
@@ -354,7 +352,7 @@ public class ExpandableListView extends ListView {
 	 * indicator when defined.
 	 */
 	private void resolveIndicator() {
-		final boolean isLayoutRtl = false /*isLayoutRtl()*/;
+		final boolean isLayoutRtl = isLayoutRtl();
 		if (isLayoutRtl) {
 			if (mIndicatorStart >= 0) {
 				mIndicatorRight = mIndicatorStart;
@@ -380,7 +378,7 @@ public class ExpandableListView extends ListView {
 	 * left/right child indicator when defined.
 	 */
 	private void resolveChildIndicator() {
-		final boolean isLayoutRtl = false /*isLayoutRtl()*/;
+		final boolean isLayoutRtl = isLayoutRtl();
 		if (isLayoutRtl) {
 			if (mChildIndicatorStart >= CHILD_INDICATOR_INHERIT) {
 				mChildIndicatorRight = mChildIndicatorStart;
@@ -461,7 +459,7 @@ public class ExpandableListView extends ListView {
 			// Get more expandable list-related info for this item
 			pos = mConnector.getUnflattenedPos(childFlPos);
 
-			final boolean isLayoutRtl = false /*isLayoutRtl()*/;
+			final boolean isLayoutRtl = isLayoutRtl();
 			final int width = getWidth();
 
 			// If this item type and the previous item type are different, then we need to change

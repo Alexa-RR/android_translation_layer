@@ -213,6 +213,8 @@ extern "C" {
 #define android_view_ViewGroup_TEXT_DIRECTION_LTR 3L
 #undef android_view_ViewGroup_TEXT_DIRECTION_RTL
 #define android_view_ViewGroup_TEXT_DIRECTION_RTL 4L
+#undef android_view_ViewGroup_TL_UNDEFINED_PADDING
+#define android_view_ViewGroup_TL_UNDEFINED_PADDING -2147483648L
 #undef android_view_ViewGroup_LAYER_TYPE_NONE
 #define android_view_ViewGroup_LAYER_TYPE_NONE 0L
 #undef android_view_ViewGroup_LAYER_TYPE_SOFTWARE
