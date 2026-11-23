@@ -17,14 +17,21 @@
 package android.bluetooth;
 
 import android.os.Parcel;
+import android.os.ParcelUuid;
 import android.os.Parcelable;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Represents a remote Bluetooth device (AOSP API).
  *
  * teslalinux: AOSP asks the Bluetooth stack (through the adapter service) for everything but the
- * address. There is no Bluetooth stack on this device, so the queries answer as AOSP does when the
- * adapter service is not up: no name, no class, BOND_NONE, DEVICE_TYPE_UNKNOWN.
+ * address; here the stack is BlueZ (TlBluez.nativeDescribeDevice: what BlueZ knows of the device
+ * from its advertisements, inquiry results and pairing). While Bluetooth is off, or for a device
+ * BlueZ never saw, the queries answer as AOSP does when the adapter service has nothing: no name,
+ * no class, no UUIDs, BOND_NONE, DEVICE_TYPE_UNKNOWN. Bonding and connections (createBond, GATT,
+ * sockets) are not implemented by this runtime and report that they could not start (false).
  */
 public final class BluetoothDevice implements Parcelable {
     public static final int ERROR = Integer.MIN_VALUE;
@@ -66,51 +73,131 @@ public final class BluetoothDevice implements Parcelable {
     public static final int PHY_OPTION_S2 = 1;
     public static final int PHY_OPTION_S8 = 2;
 
+    /** AOSP (API 33): the LE address types. */
+    public static final int ADDRESS_TYPE_PUBLIC = 0;
+    public static final int ADDRESS_TYPE_RANDOM = 1;
+    public static final int ADDRESS_TYPE_UNKNOWN = 0xFFFF;
+
     private final String mAddress;
+    private final int mAddressType;
 
     /** @hide AOSP: only the adapter creates devices, after checking the address. */
     BluetoothDevice(String address) {
+        this(address, ADDRESS_TYPE_PUBLIC);
+    }
+
+    /** @hide */
+    BluetoothDevice(String address, int addressType) {
         if (!BluetoothAdapter.checkBluetoothAddress(address)) {
             throw new IllegalArgumentException(address + " is not a valid Bluetooth address");
         }
         mAddress = address;
+        mAddressType = addressType;
     }
 
     public String getAddress() {
         return mAddress;
     }
 
-    /** AOSP: null when the adapter service is not available. */
+    /** AOSP (API 35): the address type the device was created with. */
+    public int getAddressType() {
+        return mAddressType;
+    }
+
+    /** What BlueZ knows of this device ("key=value" lines), empty while Bluetooth is off. */
+    private List<String[]> describe() {
+        List<String[]> out = new ArrayList<>();
+        if (BluetoothAdapter.tlState() != BluetoothAdapter.STATE_ON)
+            return out;
+        for (String line : TlBluez.nativeDescribeDevice(mAddress).split("\n")) {
+            int eq = line.indexOf('=');
+            if (eq > 0)
+                out.add(new String[] {line.substring(0, eq), line.substring(eq + 1)});
+        }
+        return out;
+    }
+
+    private String fact(String key) {
+        for (String[] kv : describe()) {
+            if (kv[0].equals(key))
+                return kv[1];
+        }
+        return null;
+    }
+
+    /** AOSP: the remote device's name, null when the stack does not know it. */
     public String getName() {
-        return null;
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "getName");
+        return fact("name");
     }
 
+    /** AOSP: the alias (user-set name), the name when none is set; BlueZ's Alias defaults to the name. */
     public String getAlias() {
-        return null;
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "getAlias");
+        return fact("name");
     }
 
+    /** AOSP: classic, LE, dual or unknown, from what the stack has seen of the device. */
     public int getType() {
-        return DEVICE_TYPE_UNKNOWN;
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "getType");
+        boolean le = false, bredr = false;
+        for (String[] kv : describe()) {
+            if (kv[0].equals("le"))
+                le = true;
+            else if (kv[0].equals("bredr"))
+                bredr = true;
+        }
+        return le && bredr ? DEVICE_TYPE_DUAL : le ? DEVICE_TYPE_LE : bredr ? DEVICE_TYPE_CLASSIC : DEVICE_TYPE_UNKNOWN;
     }
 
-    /** AOSP: null when the adapter service is not available. */
+    /** AOSP: the Class of Device from inquiry, null when none is known (LE-only devices). */
     public BluetoothClass getBluetoothClass() {
-        return null;
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "getBluetoothClass");
+        String cls = fact("class");
+        if (cls == null)
+            return null;
+        try {
+            return new BluetoothClass((int) Long.parseLong(cls));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
+    /** AOSP: BOND_BONDED for a paired device (BlueZ's Bonded, or Paired), else BOND_NONE. */
     public int getBondState() {
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "getBondState");
+        for (String[] kv : describe()) {
+            if ((kv[0].equals("bonded") || kv[0].equals("paired")) && kv[1].equals("1"))
+                return BOND_BONDED;
+        }
         return BOND_NONE;
     }
 
+    /** AOSP: pairing is not implemented by this runtime; false, as when the stack cannot start it. */
     public boolean createBond() {
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH_ADMIN, "createBond");
         return false;
     }
 
-    public android.os.ParcelUuid[] getUuids() {
-        return null;
+    /** AOSP: the service UUIDs the stack knows for the device, null when none. */
+    public ParcelUuid[] getUuids() {
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "getUuids");
+        List<ParcelUuid> uuids = new ArrayList<>();
+        for (String[] kv : describe()) {
+            if (kv[0].equals("uuid")) {
+                try {
+                    uuids.add(ParcelUuid.fromString(kv[1]));
+                } catch (IllegalArgumentException e) {
+                    // not a UUID
+                }
+            }
+        }
+        return uuids.isEmpty() ? null : uuids.toArray(new ParcelUuid[0]);
     }
 
+    /** AOSP: an SDP query is not implemented by this runtime (no classic connections); false. */
     public boolean fetchUuidsWithSdp() {
+        TlBluez.enforce(TlBluez.BLUETOOTH_CONNECT, TlBluez.BLUETOOTH, "fetchUuidsWithSdp");
         return false;
     }
 
@@ -137,11 +224,12 @@ public final class BluetoothDevice implements Parcelable {
     @Override
     public void writeToParcel(Parcel out, int flags) {
         out.writeString(mAddress);
+        out.writeInt(mAddressType);
     }
 
     public static final Parcelable.Creator<BluetoothDevice> CREATOR = new Parcelable.Creator<BluetoothDevice>() {
         public BluetoothDevice createFromParcel(Parcel in) {
-            return new BluetoothDevice(in.readString());
+            return new BluetoothDevice(in.readString(), in.readInt());
         }
 
         public BluetoothDevice[] newArray(int size) {

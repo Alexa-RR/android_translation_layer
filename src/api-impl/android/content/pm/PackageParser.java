@@ -475,6 +475,9 @@ public class PackageParser {
 					if (grantedPermissions != null && grantedPermissions.contains(perm)) {
 						pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_GRANTED;
 					}
+					if (p.requestedPermissionsNeverForLocation.contains(perm)) {
+						pi.requestedPermissionsFlags[i] |= PackageInfo.REQUESTED_PERMISSION_NEVER_FOR_LOCATION;
+					}
 				}
 			}
 		}
@@ -1476,8 +1479,18 @@ public class PackageParser {
 
 		sa.recycle();
 
+		/* android:usesPermissionFlags (API 31; newer than this framework-res's styleable), by its
+		 * resource id */
+		int usesPermissionFlags = 0;
+		for (int i = 0; i < attrs.getAttributeCount(); i++) {
+			if (attrs.getAttributeNameResource(i) == 0x01010644 /* android.R.attr.usesPermissionFlags */)
+				usesPermissionFlags = attrs.getAttributeIntValue(i, 0);
+		}
+
 		if ((maxSdkVersion == 0) || (maxSdkVersion >= Build.VERSION.RESOURCES_SDK_INT)) {
 			if (name != null) {
+				if ((usesPermissionFlags & PackageInfo.REQUESTED_PERMISSION_NEVER_FOR_LOCATION) != 0)
+					pkg.requestedPermissionsNeverForLocation.add(name);
 				int index = pkg.requestedPermissions.indexOf(name);
 				if (index == -1) {
 					pkg.requestedPermissions.add(name.intern());
@@ -3314,6 +3327,8 @@ public class PackageParser {
 
 		public final ArrayList<String> requestedPermissions = new ArrayList<String>();
 		public final ArrayList<Boolean> requestedPermissionsRequired = new ArrayList<Boolean>();
+		/** the requested permissions whose usesPermissionFlags hold neverForLocation (PackageInfo.REQUESTED_PERMISSION_NEVER_FOR_LOCATION) */
+		public final java.util.HashSet<String> requestedPermissionsNeverForLocation = new java.util.HashSet<String>();
 
 		public ArrayList<String> protectedBroadcasts;
 
