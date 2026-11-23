@@ -59,7 +59,21 @@ public final class ViewDump {
 					}
 					TRIGGER.delete();
 					View decor = activity.getWindow() != null ? activity.getWindow().getDecorView() : null;
-					if (command.startsWith("config")) {
+					if (command.startsWith("trace")) {
+						// "trace SECONDS [FILE]": ART method tracing of every thread for SECONDS (default
+						// 10) into FILE (default /tmp/atl-method.trace), in the dmtrace format
+						String[] args = command.trim().split("\\s+");
+						int secs = args.length > 1 ? Integer.parseInt(args[1]) : 10;
+						final String file = args.length > 2 ? args[2] : "/tmp/atl-method.trace";
+						android.os.Debug.startMethodTracing(file, 128 * 1024 * 1024);
+						Log.i(TAG, "trace started: " + file + " for " + secs + " s");
+						handler.postDelayed(new Runnable() {
+							public void run() {
+								android.os.Debug.stopMethodTracing();
+								Log.i(TAG, "trace written: " + file);
+							}
+						}, secs * 1000L);
+					} else if (command.startsWith("config")) {
 						// "config": the Configuration and DisplayMetrics the app sees
 						android.content.res.Resources res = activity.getResources();
 						Log.i(TAG, "config " + res.getConfiguration());
