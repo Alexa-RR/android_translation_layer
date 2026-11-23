@@ -339,13 +339,51 @@ public final class ObjectAnimator extends ValueAnimator {
 	 */
 	public static ObjectAnimator ofFloat(Object target, String xPropertyName, String yPropertyName,
 	                                     Path path) {
-		// PathKeyframes keyframes = KeyframeSet.ofPath(path);
-		// PropertyValuesHolder x = PropertyValuesHolder.ofKeyframes(xPropertyName,
-		// 		keyframes.createXFloatKeyframes());
-		// PropertyValuesHolder y = PropertyValuesHolder.ofKeyframes(yPropertyName,
-		// 		keyframes.createYFloatKeyframes());
-		// return ofPropertyValuesHolder(target, x, y);
-		return new ObjectAnimator();
+		PathKeyframes keyframes = new PathKeyframes(path);
+		PropertyValuesHolder x = PropertyValuesHolder.ofKeyframes(xPropertyName, keyframes.createXFloatKeyframes());
+		PropertyValuesHolder y = PropertyValuesHolder.ofKeyframes(yPropertyName, keyframes.createYFloatKeyframes());
+		return ofPropertyValuesHolder(target, x, y);
+	}
+
+	/** AOSP API 21: int coordinates along the path into two properties. */
+	public static ObjectAnimator ofInt(Object target, String xPropertyName, String yPropertyName, Path path) {
+		PathKeyframes keyframes = new PathKeyframes(path);
+		PropertyValuesHolder x = PropertyValuesHolder.ofKeyframes(xPropertyName, keyframes.createXIntKeyframes());
+		PropertyValuesHolder y = PropertyValuesHolder.ofKeyframes(yPropertyName, keyframes.createYIntKeyframes());
+		return ofPropertyValuesHolder(target, x, y);
+	}
+
+	public static <T> ObjectAnimator ofInt(T target, Property<T, Integer> xProperty, Property<T, Integer> yProperty, Path path) {
+		PathKeyframes keyframes = new PathKeyframes(path);
+		PropertyValuesHolder x = PropertyValuesHolder.ofKeyframes(xProperty, keyframes.createXIntKeyframes());
+		PropertyValuesHolder y = PropertyValuesHolder.ofKeyframes(yProperty, keyframes.createYIntKeyframes());
+		return ofPropertyValuesHolder(target, x, y);
+	}
+
+	/** AOSP API 21: the point along the path through a setter of two float arguments. */
+	public static ObjectAnimator ofMultiFloat(Object target, String propertyName, Path path) {
+		return ofPropertyValuesHolder(target, PropertyValuesHolder.ofMultiFloat(propertyName, path));
+	}
+
+	public static ObjectAnimator ofMultiInt(Object target, String propertyName, Path path) {
+		return ofPropertyValuesHolder(target, PropertyValuesHolder.ofMultiInt(propertyName, path));
+	}
+
+	public static ObjectAnimator ofMultiFloat(Object target, String propertyName, float[][] values) {
+		return ofPropertyValuesHolder(target, PropertyValuesHolder.ofMultiFloat(propertyName, values));
+	}
+
+	public static ObjectAnimator ofMultiInt(Object target, String propertyName, int[][] values) {
+		return ofPropertyValuesHolder(target, PropertyValuesHolder.ofMultiInt(propertyName, values));
+	}
+
+	/** AOSP API 21: the point along the path, converted to the property's type. */
+	public static ObjectAnimator ofObject(Object target, String propertyName, TypeConverter<android.graphics.PointF, ?> converter, Path path) {
+		return ofPropertyValuesHolder(target, PropertyValuesHolder.ofObject(propertyName, converter, path));
+	}
+
+	public static <T, V> ObjectAnimator ofObject(T target, Property<T, V> property, TypeConverter<android.graphics.PointF, V> converter, Path path) {
+		return ofPropertyValuesHolder(target, PropertyValuesHolder.ofObject(property, converter, path));
 	}
 
 	/**
@@ -383,13 +421,10 @@ public final class ObjectAnimator extends ValueAnimator {
 	 */
 	public static <T> ObjectAnimator ofFloat(T target, Property<T, Float> xProperty,
 	                                         Property<T, Float> yProperty, Path path) {
-		// PathKeyframes keyframes = KeyframeSet.ofPath(path);
-		// PropertyValuesHolder x = PropertyValuesHolder.ofKeyframes(xProperty,
-		// 		keyframes.createXFloatKeyframes());
-		// PropertyValuesHolder y = PropertyValuesHolder.ofKeyframes(yProperty,
-		// 		keyframes.createYFloatKeyframes());
-		// return ofPropertyValuesHolder(target, x, y);
-		return new ObjectAnimator();
+		PathKeyframes keyframes = new PathKeyframes(path);
+		PropertyValuesHolder x = PropertyValuesHolder.ofKeyframes(xProperty, keyframes.createXFloatKeyframes());
+		PropertyValuesHolder y = PropertyValuesHolder.ofKeyframes(yProperty, keyframes.createYFloatKeyframes());
+		return ofPropertyValuesHolder(target, x, y);
 	}
 
 	/**
