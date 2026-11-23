@@ -11,6 +11,14 @@ extern "C" {
 #define android_graphics_Bitmap_DENSITY_NONE 0L
 /*
  * Class:     android_graphics_Bitmap
+ * Method:    native_gouraud
+ * Signature: (JII[F[I[I)J
+ */
+JNIEXPORT jlong JNICALL Java_android_graphics_Bitmap_native_1gouraud
+  (JNIEnv *, jclass, jlong, jint, jint, jfloatArray, jintArray, jintArray);
+
+/*
+ * Class:     android_graphics_Bitmap
  * Method:    native_create_snapshot
  * Signature: (J)J
  */
@@ -67,11 +75,51 @@ JNIEXPORT jlong JNICALL Java_android_graphics_Bitmap_native_1ref_1texture
 
 /*
  * Class:     android_graphics_Bitmap
- * Method:    native_get_pixels
- * Signature: (J[IIIIIII)V
+ * Method:    native_pixels_from_texture
+ * Signature: (JII)J
  */
-JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1get_1pixels
-  (JNIEnv *, jclass, jlong, jintArray, jint, jint, jint, jint, jint, jint);
+JNIEXPORT jlong JNICALL Java_android_graphics_Bitmap_native_1pixels_1from_1texture
+  (JNIEnv *, jclass, jlong, jint, jint);
+
+/*
+ * Class:     android_graphics_Bitmap
+ * Method:    native_pixels_to_texture
+ * Signature: (JII)J
+ */
+JNIEXPORT jlong JNICALL Java_android_graphics_Bitmap_native_1pixels_1to_1texture
+  (JNIEnv *, jclass, jlong, jint, jint);
+
+/*
+ * Class:     android_graphics_Bitmap
+ * Method:    native_pixels_free
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1pixels_1free
+  (JNIEnv *, jclass, jlong);
+
+/*
+ * Class:     android_graphics_Bitmap
+ * Method:    native_pixels_read
+ * Signature: (JI[IIIIIII)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1pixels_1read
+  (JNIEnv *, jclass, jlong, jint, jintArray, jint, jint, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Bitmap
+ * Method:    native_pixels_write
+ * Signature: (JI[IIIIIIII)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1pixels_1write
+  (JNIEnv *, jclass, jlong, jint, jintArray, jint, jint, jint, jint, jint, jint, jint);
+
+/*
+ * Class:     android_graphics_Bitmap
+ * Method:    native_pixels_put_raw
+ * Signature: (JII[BIZ)V
+ */
+JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1pixels_1put_1raw
+  (JNIEnv *, jclass, jlong, jint, jint, jbyteArray, jint, jboolean);
 
 /*
  * Class:     android_graphics_Bitmap
@@ -88,14 +136,6 @@ JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1copy_1to_1buffer
  */
 JNIEXPORT jbyteArray JNICALL Java_android_graphics_Bitmap_native_1save_1to_1png
   (JNIEnv *, jclass, jlong);
-
-/*
- * Class:     android_graphics_Bitmap
- * Method:    native_set_pixels
- * Signature: (J[IIIIIII)V
- */
-JNIEXPORT void JNICALL Java_android_graphics_Bitmap_native_1set_1pixels
-  (JNIEnv *, jclass, jlong, jintArray, jint, jint, jint, jint, jint, jint);
 
 /*
  * Class:     android_graphics_Bitmap

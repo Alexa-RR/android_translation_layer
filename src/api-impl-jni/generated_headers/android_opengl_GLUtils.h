@@ -9,11 +9,35 @@ extern "C" {
 #endif
 /*
  * Class:     android_opengl_GLUtils
+ * Method:    native_getInternalFormat
+ * Signature: (Landroid/graphics/Bitmap;)I
+ */
+JNIEXPORT jint JNICALL Java_android_opengl_GLUtils_native_1getInternalFormat
+  (JNIEnv *, jclass, jobject);
+
+/*
+ * Class:     android_opengl_GLUtils
+ * Method:    native_getType
+ * Signature: (Landroid/graphics/Bitmap;)I
+ */
+JNIEXPORT jint JNICALL Java_android_opengl_GLUtils_native_1getType
+  (JNIEnv *, jclass, jobject);
+
+/*
+ * Class:     android_opengl_GLUtils
  * Method:    native_texImage2D
  * Signature: (IIILandroid/graphics/Bitmap;II)I
  */
 JNIEXPORT jint JNICALL Java_android_opengl_GLUtils_native_1texImage2D
   (JNIEnv *, jclass, jint, jint, jint, jobject, jint, jint);
+
+/*
+ * Class:     android_opengl_GLUtils
+ * Method:    native_texSubImage2D
+ * Signature: (IIIILandroid/graphics/Bitmap;II)I
+ */
+JNIEXPORT jint JNICALL Java_android_opengl_GLUtils_native_1texSubImage2D
+  (JNIEnv *, jclass, jint, jint, jint, jint, jobject, jint, jint);
 
 #ifdef __cplusplus
 }

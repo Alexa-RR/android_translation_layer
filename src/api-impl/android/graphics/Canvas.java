@@ -333,13 +333,39 @@ public class Canvas {
 		return clipRect(rect.left, rect.top, rect.right, rect.bottom);
 	}
 
-	/** AOSP (API 28+): only INTERSECT and DIFFERENCE are valid. */
+	/** AOSP: the app's target SDK, set when the application is bound (ActivityThread.handleBindApplication). */
+	private static int sCompatibilityVersion = 0;
+
+	/** @hide AOSP: the target SDK version the canvas behaviour follows. */
+	public static void setCompatibilityVersion(int apiLevel) {
+		sCompatibilityVersion = apiLevel;
+	}
+
+	/** @hide */
+	public static int tlCompatibilityVersion() {
+		return sCompatibilityVersion;
+	}
+
+	/**
+	 * AOSP: an app targeting API 28 (P) or later may only intersect or subtract its clip. The other
+	 * Region.Ops (REPLACE, UNION, XOR, REVERSE_DIFFERENCE) expand the clip; older apps keep them.
+	 */
+	public static void checkValidClipOp(Region.Op op) {
+		if (sCompatibilityVersion >= 28 && op != Region.Op.INTERSECT && op != Region.Op.DIFFERENCE)
+			throw new IllegalArgumentException("Invalid Region.Op - only INTERSECT and DIFFERENCE are allowed");
+	}
+
 	public boolean clipRect(float left, float top, float right, float bottom, Region.Op op) {
+		checkValidClipOp(op);
 		if (op == Region.Op.INTERSECT)
 			return clipRect(left, top, right, bottom);
 		if (op == Region.Op.DIFFERENCE)
 			return clipOutRect(left, top, right, bottom);
-		throw new IllegalArgumentException("Invalid Region.Op - only INTERSECT and DIFFERENCE are allowed");
+		if (tlNoTarget())
+			return false;
+		synchronized (this.bitmap) {
+			return gc().clipRect(left, top, right, bottom, op);
+		}
 	}
 
 	public boolean clipRect(Rect rect, Region.Op op) {
@@ -371,6 +397,7 @@ public class Canvas {
 	}
 
 	public boolean clipPath(Path path, Region.Op op) {
+		checkValidClipOp(op);
 		if (tlNoTarget())
 			return false;
 		synchronized (this.bitmap) {
@@ -689,11 +716,15 @@ public class Canvas {
 		drawBitmap(colors, offset, stride, (float) x, (float) y, width, height, hasAlpha, paint);
 	}
 
+	private static void checkRange(int length, int index, int count) {
+		if ((index | count) < 0 || index + count > length)
+			throw new ArrayIndexOutOfBoundsException();
+	}
+
 	/**
-	 * AOSP: the bitmap distorted over a mesh of (meshWidth+1) x (meshHeight+1) vertices. Each
-	 * mesh cell is two triangles, each drawn as the bitmap under the affine map of its texture
-	 * triangle onto the vertex triangle, clipped to that triangle (exact for every triangle).
-	 * The optional per-vertex colours multiply the bitmap; they are averaged per triangle.
+	 * AOSP: the bitmap distorted over a mesh of (meshWidth+1) x (meshHeight+1) vertices: Skia draws
+	 * it as vertices (two triangles per cell) with the bitmap as a clamped image shader sampled at
+	 * the vertices' bitmap coordinates, modulated by the optional per-vertex colours.
 	 */
 	public void drawBitmapMesh(Bitmap bitmap, int meshWidth, int meshHeight, float[] verts, int vertOffset, int[] colors, int colorOffset, Paint paint) {
 		if ((meshWidth | meshHeight | vertOffset | colorOffset) < 0)
@@ -701,106 +732,210 @@ public class Canvas {
 		if (meshWidth == 0 || meshHeight == 0)
 			return;
 		int count = (meshWidth + 1) * (meshHeight + 1);
-		if (verts.length < vertOffset + count * 2 || (colors != null && colors.length < colorOffset + count))
-			throw new ArrayIndexOutOfBoundsException();
+		checkRange(verts.length, vertOffset, count * 2);
+		if (colors != null)
+			checkRange(colors.length, colorOffset, count);
 		float bw = bitmap.getWidth(), bh = bitmap.getHeight();
+		float[] pos = new float[count * 2], tex = new float[count * 2];
+		int[] cols = colors != null ? new int[count] : null;
+		for (int i = 0; i < count; i++) {
+			int mx = i % (meshWidth + 1), my = i / (meshWidth + 1);
+			pos[i * 2] = verts[vertOffset + i * 2];
+			pos[i * 2 + 1] = verts[vertOffset + i * 2 + 1];
+			tex[i * 2] = bw * mx / meshWidth;
+			tex[i * 2 + 1] = bh * my / meshHeight;
+			if (cols != null)
+				cols[i] = colors[colorOffset + i];
+		}
+		int[] tris = new int[meshWidth * meshHeight * 6];
+		int k = 0;
 		for (int my = 0; my < meshHeight; my++) {
 			for (int mx = 0; mx < meshWidth; mx++) {
 				int i00 = my * (meshWidth + 1) + mx, i10 = i00 + 1, i01 = i00 + meshWidth + 1, i11 = i01 + 1;
-				float u0 = bw * mx / meshWidth, u1 = bw * (mx + 1) / meshWidth;
-				float v0 = bh * my / meshHeight, v1 = bh * (my + 1) / meshHeight;
-				tlMeshTriangle(bitmap, verts, vertOffset, colors, colorOffset, paint, i00, i10, i11, new float[] { u0, v0, u1, v0, u1, v1 });
-				tlMeshTriangle(bitmap, verts, vertOffset, colors, colorOffset, paint, i00, i11, i01, new float[] { u0, v0, u1, v1, u0, v1 });
+				tris[k++] = i00; tris[k++] = i10; tris[k++] = i11;
+				tris[k++] = i00; tris[k++] = i11; tris[k++] = i01;
 			}
 		}
-	}
-
-	private void tlMeshTriangle(Bitmap bitmap, float[] verts, int vo, int[] colors, int co, Paint paint, int a, int b, int c, float[] tex) {
-		float[] dst = { verts[vo + a * 2], verts[vo + a * 2 + 1], verts[vo + b * 2], verts[vo + b * 2 + 1], verts[vo + c * 2], verts[vo + c * 2 + 1] };
-		Matrix m = new Matrix();
-		if (!m.setPolyToPoly(tex, 0, dst, 0, 3))
-			return;
-		Paint p = paint != null ? new Paint(paint) : new Paint();
-		if (colors != null) {
-			int c0 = colors[co + a], c1 = colors[co + b], c2 = colors[co + c];
-			int avg = Color.argb((Color.alpha(c0) + Color.alpha(c1) + Color.alpha(c2)) / 3, (Color.red(c0) + Color.red(c1) + Color.red(c2)) / 3,
-			                     (Color.green(c0) + Color.green(c1) + Color.green(c2)) / 3, (Color.blue(c0) + Color.blue(c1) + Color.blue(c2)) / 3);
-			p.setColorFilter(new PorterDuffColorFilter(avg, PorterDuff.Mode.MULTIPLY));
-		}
-		Path tri = new Path();
-		tri.moveTo(tex[0], tex[1]);
-		tri.lineTo(tex[2], tex[3]);
-		tri.lineTo(tex[4], tex[5]);
-		tri.close();
-		save();
-		concat(m);
-		clipPath(tri);
-		drawBitmap(bitmap, 0, 0, p);
-		restore();
+		tlDrawTriangles(tris, pos, tex, cols, bitmap, paint != null ? paint : new Paint());
 	}
 
 	/**
-	 * AOSP: triangles from vertices. With texs, the paint's shader is sampled at the texture
-	 * coordinates (each triangle is drawn under the affine map from its texture triangle);
-	 * without, the shader is in canvas coordinates. Per-vertex colours are averaged per triangle.
+	 * AOSP: triangles from vertices (vertexCount counts floats, two per vertex). With texs the paint's
+	 * shader is sampled at the texture coordinates, without them at the positions. Per-vertex colours
+	 * are interpolated across each triangle and modulate the shader's colour (Skia's kModulate); with
+	 * no shader they are the colours drawn.
 	 */
 	public void drawVertices(VertexMode mode, int vertexCount, float[] verts, int vertOffset, float[] texs, int texOffset,
 	                         int[] colors, int colorOffset, short[] indices, int indexOffset, int indexCount, Paint paint) {
-		if (vertexCount < 0 || verts.length < vertOffset + vertexCount)
-			throw new ArrayIndexOutOfBoundsException();
-		int n = indices != null ? indexCount : vertexCount / 2;
-		int[] idx = new int[Math.max(0, n)];
-		for (int i = 0; i < idx.length; i++)
-			idx[i] = indices != null ? indices[indexOffset + i] : i;
-		java.util.ArrayList<int[]> tris = new java.util.ArrayList<>();
-		if (mode == VertexMode.TRIANGLES) {
-			for (int i = 0; i + 2 < idx.length; i += 3)
-				tris.add(new int[] { idx[i], idx[i + 1], idx[i + 2] });
-		} else if (mode == VertexMode.TRIANGLE_STRIP) {
-			for (int i = 0; i + 2 < idx.length; i++)
-				tris.add(new int[] { idx[i], idx[i + 1], idx[i + 2] });
-		} else {
-			for (int i = 1; i + 1 < idx.length; i++)
-				tris.add(new int[] { idx[0], idx[i], idx[i + 1] });
+		checkRange(verts.length, vertOffset, vertexCount);
+		if (texs != null)
+			checkRange(texs.length, texOffset, vertexCount);
+		if (colors != null)
+			checkRange(colors.length, colorOffset, vertexCount / 2);
+		if (indices != null)
+			checkRange(indices.length, indexOffset, indexCount);
+		int nv = vertexCount / 2;
+		float[] pos = new float[nv * 2];
+		System.arraycopy(verts, vertOffset, pos, 0, nv * 2);
+		float[] tex = null;
+		if (texs != null && paint.getShader() != null) {
+			tex = new float[nv * 2];
+			System.arraycopy(texs, texOffset, tex, 0, nv * 2);
 		}
-		for (int[] t : tris) {
-			Path tri = new Path();
-			tri.moveTo(verts[vertOffset + t[0] * 2], verts[vertOffset + t[0] * 2 + 1]);
-			tri.lineTo(verts[vertOffset + t[1] * 2], verts[vertOffset + t[1] * 2 + 1]);
-			tri.lineTo(verts[vertOffset + t[2] * 2], verts[vertOffset + t[2] * 2 + 1]);
-			tri.close();
-			Paint p = new Paint(paint);
-			p.setStyle(Paint.Style.FILL);
-			if (colors != null) {
-				int c0 = colors[colorOffset + t[0]], c1 = colors[colorOffset + t[1]], c2 = colors[colorOffset + t[2]];
-				int avg = Color.argb((Color.alpha(c0) + Color.alpha(c1) + Color.alpha(c2)) / 3, (Color.red(c0) + Color.red(c1) + Color.red(c2)) / 3,
-				                     (Color.green(c0) + Color.green(c1) + Color.green(c2)) / 3, (Color.blue(c0) + Color.blue(c1) + Color.blue(c2)) / 3);
-				if (paint.getShader() == null)
-					p.setColor(avg);
-				else
-					p.setColorFilter(new PorterDuffColorFilter(avg, PorterDuff.Mode.MULTIPLY));
+		int[] cols = null;
+		if (colors != null) {
+			cols = new int[nv];
+			System.arraycopy(colors, colorOffset, cols, 0, nv);
+		}
+		int n = indices != null ? indexCount : nv;
+		int[] idx = new int[Math.max(0, n)];
+		for (int i = 0; i < idx.length; i++) {
+			idx[i] = indices != null ? (indices[indexOffset + i] & 0xffff) : i;
+			if (idx[i] >= nv)
+				return; // Skia draws nothing for an index beyond the vertices
+		}
+		java.util.ArrayList<Integer> tl = new java.util.ArrayList<>();
+		if (mode == VertexMode.TRIANGLES) {
+			for (int i = 0; i + 2 < idx.length; i += 3) {
+				tl.add(idx[i]); tl.add(idx[i + 1]); tl.add(idx[i + 2]);
 			}
-			if (texs != null && paint.getShader() != null) {
-				float[] tex = { texs[texOffset + t[0] * 2], texs[texOffset + t[0] * 2 + 1], texs[texOffset + t[1] * 2], texs[texOffset + t[1] * 2 + 1],
-				                texs[texOffset + t[2] * 2], texs[texOffset + t[2] * 2 + 1] };
-				float[] dst = { verts[vertOffset + t[0] * 2], verts[vertOffset + t[0] * 2 + 1], verts[vertOffset + t[1] * 2], verts[vertOffset + t[1] * 2 + 1],
-				                verts[vertOffset + t[2] * 2], verts[vertOffset + t[2] * 2 + 1] };
+		} else if (mode == VertexMode.TRIANGLE_STRIP) {
+			for (int i = 0; i + 2 < idx.length; i++) {
+				tl.add(idx[i]); tl.add(idx[i + 1]); tl.add(idx[i + 2]);
+			}
+		} else {
+			for (int i = 1; i + 1 < idx.length; i++) {
+				tl.add(idx[0]); tl.add(idx[i]); tl.add(idx[i + 1]);
+			}
+		}
+		int[] tris = new int[tl.size()];
+		for (int i = 0; i < tris.length; i++)
+			tris[i] = tl.get(i);
+		tlDrawTriangles(tris, pos, tex, cols, null, paint);
+	}
+
+	/** A triangle path through three vertices of pos. */
+	private static Path tlTriangle(float[] pos, int a, int b, int c) {
+		Path tri = new Path();
+		tri.moveTo(pos[a * 2], pos[a * 2 + 1]);
+		tri.lineTo(pos[b * 2], pos[b * 2 + 1]);
+		tri.lineTo(pos[c * 2], pos[c * 2 + 1]);
+		tri.close();
+		return tri;
+	}
+
+	/**
+	 * The triangles' source colours without the vertex colours: the bitmap (mesh) or the paint's
+	 * shader under the affine map of each texture triangle onto its vertex triangle, the shader at the
+	 * positions without texture coordinates, or the paint's colour.
+	 */
+	private void tlDrawTriangleSources(int[] tris, float[] pos, float[] tex, Bitmap mesh, Paint paint) {
+		for (int t = 0; t + 2 < tris.length; t += 3) {
+			int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+			Path tri = tlTriangle(pos, a, b, c);
+			if (tex != null && (mesh != null || paint.getShader() != null)) {
+				float[] src = { tex[a * 2], tex[a * 2 + 1], tex[b * 2], tex[b * 2 + 1], tex[c * 2], tex[c * 2 + 1] };
+				float[] dst = { pos[a * 2], pos[a * 2 + 1], pos[b * 2], pos[b * 2 + 1], pos[c * 2], pos[c * 2 + 1] };
 				Matrix m = new Matrix();
-				if (!m.setPolyToPoly(tex, 0, dst, 0, 3))
+				if (!m.setPolyToPoly(src, 0, dst, 0, 3))
 					continue;
-				Path texTri = new Path();
-				texTri.moveTo(tex[0], tex[1]);
-				texTri.lineTo(tex[2], tex[3]);
-				texTri.lineTo(tex[4], tex[5]);
-				texTri.close();
 				save();
+				clipPath(tri);
 				concat(m);
-				drawPath(texTri, p);
+				if (mesh != null) {
+					// the clamped image shader: the bitmap with its edges spread beyond it
+					Paint p = new Paint(paint);
+					p.setStyle(Paint.Style.FILL);
+					p.setShader(new BitmapShader(mesh, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+					Path texTri = tlTriangle(src, 0, 1, 2);
+					drawPath(texTri, p);
+				} else {
+					Paint p = new Paint(paint);
+					p.setStyle(Paint.Style.FILL);
+					drawPath(tlTriangle(src, 0, 1, 2), p);
+				}
 				restore();
 			} else {
+				Paint p = new Paint(paint);
+				p.setStyle(Paint.Style.FILL);
 				drawPath(tri, p);
 			}
 		}
+	}
+
+	private void tlDrawTriangles(int[] tris, float[] pos, float[] tex, int[] colors, Bitmap mesh, Paint paint) {
+		if (tris.length < 3)
+			return;
+		if (colors == null) {
+			tlDrawTriangleSources(tris, pos, tex, mesh, paint);
+			return;
+		}
+		// Gouraud: the colours are interpolated per pixel in device space (native, cairo's mesh
+		// shading), modulating the source drawn into a device-aligned offscreen bitmap
+		Matrix m = getMatrix();
+		float[] dev = pos.clone();
+		m.mapPoints(dev);
+		float l = Float.MAX_VALUE, t = Float.MAX_VALUE, r = -Float.MAX_VALUE, b = -Float.MAX_VALUE;
+		for (int i = 0; i < tris.length; i++) {
+			float x = dev[tris[i] * 2], y = dev[tris[i] * 2 + 1];
+			l = Math.min(l, x);
+			r = Math.max(r, x);
+			t = Math.min(t, y);
+			b = Math.max(b, y);
+		}
+		Rect clip = new Rect();
+		if (!getClipBounds(clip))
+			return;
+		RectF devClip = new RectF(clip);
+		m.mapRect(devClip);
+		l = Math.max(l, devClip.left - 1);
+		t = Math.max(t, devClip.top - 1);
+		r = Math.min(r, devClip.right + 1);
+		b = Math.min(b, devClip.bottom + 1);
+		int il = (int) Math.floor(l), it = (int) Math.floor(t);
+		int w = (int) Math.ceil(r) - il, h = (int) Math.ceil(b) - it;
+		if (w <= 0 || h <= 0)
+			return;
+		if ((long) w * h > 4096L * 4096L)
+			return; // larger than any raster canvas Skia would allocate here
+		for (int i = 0; i < dev.length; i += 2) {
+			dev[i] -= il;
+			dev[i + 1] -= it;
+		}
+		long source = 0;
+		Bitmap offscreen = null;
+		boolean shaded = mesh != null || paint.getShader() != null;
+		if (shaded) {
+			offscreen = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+			Canvas oc = new Canvas(offscreen);
+			oc.translate(-il, -it);
+			oc.concat(m);
+			Paint sp = new Paint(paint);
+			sp.setAlpha(255);
+			sp.setColorFilter(null);
+			sp.setXfermode(null);
+			sp.setMaskFilter(null);
+			oc.tlDrawTriangleSources(tris, pos, tex, mesh, sp);
+			source = offscreen.tlPixelsForNative();
+		}
+		long texture = Bitmap.native_gouraud(source, w, h, dev, colors, tris);
+		if (offscreen != null)
+			offscreen.recycle();
+		if (texture == 0)
+			return;
+		Bitmap result = new Bitmap(texture);
+		// the paint's alpha, colour filter and transfer mode act on the modulated colours
+		Paint cp = new Paint(paint);
+		cp.setShader(null);
+		cp.setStyle(Paint.Style.FILL);
+		cp.setMaskFilter(null);
+		if (!shaded)
+			cp.setColorFilter(paint.getColorFilter());
+		save();
+		setMatrix(null);
+		drawBitmap(result, il, it, cp);
+		restore();
+		result.recycle();
 	}
 
 	public void drawPicture(Picture picture) {
@@ -895,14 +1030,15 @@ public class Canvas {
 		drawText(text, index, count, x, y, paint);
 	}
 
-	/** AOSP: each character at its own position (pos holds x, y pairs). */
+	/**
+	 * AOSP (BaseCanvas): each character drawn on its own at its position (pos holds x, y pairs), with
+	 * the paint as it is (its alignment applies to each character).
+	 */
 	public void drawPosText(char[] text, int index, int count, float[] pos, Paint paint) {
 		if (index < 0 || index + count > text.length || count * 2 > pos.length)
 			throw new IndexOutOfBoundsException();
-		Paint p = new Paint(paint);
-		p.setTextAlign(Paint.Align.LEFT);
 		for (int i = 0; i < count; i++)
-			drawText(String.valueOf(text[index + i]), pos[i * 2], pos[i * 2 + 1], p);
+			drawText(text, index + i, 1, pos[i * 2], pos[i * 2 + 1], paint);
 	}
 
 	public void drawPosText(String text, float[] pos, Paint paint) {

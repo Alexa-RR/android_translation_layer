@@ -173,22 +173,143 @@ public final class Bitmap implements Parcelable {
 	@Export
 	public synchronized long getTexture() {
 		if (texture == 0) {
-			texture = native_create_texture(snapshot, width, height, stride, config.gdk_memory_format);
-			snapshot = 0;
+			if (tlPixels != 0) {
+				texture = native_pixels_to_texture(tlPixels, width, height);
+			} else {
+				texture = native_create_texture(snapshot, width, height, stride, config.gdk_memory_format);
+				snapshot = 0;
+			}
 		}
 		return texture;
 	}
 
+	/** The snapshot to draw into: the bitmap's content changes, its pixel memory (if any) is dropped. */
 	synchronized long getSnapshot() {
 		notifyPixelsChanged();
 		if (snapshot == 0) {
-			snapshot = native_create_snapshot(texture);
+			snapshot = native_create_snapshot(getTexture());
 			texture = 0;
 		}
+		tlDropPixels();
 		return snapshot;
 	}
 
+	/**
+	 * The bitmap's pixel memory (native, premultiplied RGBA rows of width * 4 bytes, as Skia keeps a
+	 * raster N32 bitmap), made from the current content when needed. It stays the content until the
+	 * bitmap is drawn into; the texture drawn is made from it.
+	 */
+	private synchronized long tlPixels() {
+		if (tlPixels == 0)
+			tlPixels = native_pixels_from_texture(getTexture(), width, height);
+		return tlPixels;
+	}
+
+	/** After a write into the pixel memory: the texture made from the old pixels is stale. */
+	private synchronized void tlPixelsWritten() {
+		if (texture != 0) {
+			native_recycle(texture, 0);
+			texture = 0;
+		}
+		notifyPixelsChanged();
+	}
+
+	/** The pixel memory for a native reader in this package (Canvas.drawVertices). */
+	synchronized long tlPixelsForNative() {
+		return tlPixels();
+	}
+
+	/**
+	 * Canvas.drawVertices with vertex colours: the triangles (vertex indices, three per triangle) at
+	 * the device positions, their colours interpolated across each one (Gouraud, as Skia), modulating
+	 * the premultiplied source pixels (width x height, 0: the colours alone). A texture, or 0.
+	 */
+	static native long native_gouraud(long sourcePixels, int width, int height, float[] positions, int[] colors, int[] triangles);
+
+	/** AndroidBitmap_lockPixels: the pixel memory itself (premultiplied RGBA rows of width * 4 bytes). */
+	@Export
+	public synchronized long tlLockPixels() {
+		return tlPixels();
+	}
+
+	/** AndroidBitmap_unlockPixels: native code may have written the pixel memory. */
+	@Export
+	public synchronized void tlUnlockPixels() {
+		tlPixelsWritten();
+	}
+
+	/** AndroidBitmap_unlockPixels of a layout kept as a texture (RGBA_F16, un-premultiplied 8888). */
+	@Export
+	public synchronized void tlSetTexture(long newTexture) {
+		tlDropPixels();
+		native_recycle(texture, snapshot);
+		snapshot = 0;
+		texture = newTexture;
+		notifyPixelsChanged();
+	}
+
+	private synchronized void tlDropPixels() {
+		if (tlPixels != 0) {
+			native_pixels_free(tlPixels);
+			tlPixels = 0;
+		}
+	}
+
+	/** Skia's pixel storage for setPixels: 0 8888 (and F16, kept at 8 bits), 1 565, 2 4444, 3 A8. */
+	private int tlStorage() {
+		switch (config) {
+			case RGB_565: return 1;
+			case ARGB_4444: return 2;
+			case ALPHA_8: return 3;
+			default: return 0;
+		}
+	}
+
+	private void checkRecycled(String errorMessage) {
+		if (recycled)
+			throw new IllegalStateException(errorMessage);
+	}
+
+	private void checkHardware(String errorMessage) {
+		if (config == Config.HARDWARE)
+			throw new IllegalStateException(errorMessage);
+	}
+
+	private static void checkXYSign(int x, int y) {
+		if (x < 0)
+			throw new IllegalArgumentException("x must be >= 0");
+		if (y < 0)
+			throw new IllegalArgumentException("y must be >= 0");
+	}
+
+	private void checkPixelAccess(int x, int y) {
+		checkXYSign(x, y);
+		if (x >= getWidth())
+			throw new IllegalArgumentException("x must be < bitmap.width()");
+		if (y >= getHeight())
+			throw new IllegalArgumentException("y must be < bitmap.height()");
+	}
+
+	private void checkPixelsAccess(int x, int y, int width, int height, int offset, int stride, int pixels[]) {
+		checkXYSign(x, y);
+		if (width < 0)
+			throw new IllegalArgumentException("width must be >= 0");
+		if (height < 0)
+			throw new IllegalArgumentException("height must be >= 0");
+		if (x + width > getWidth())
+			throw new IllegalArgumentException("x + width must be <= bitmap.width()");
+		if (y + height > getHeight())
+			throw new IllegalArgumentException("y + height must be <= bitmap.height()");
+		if (Math.abs(stride) < width)
+			throw new IllegalArgumentException("abs(stride) must be >= width");
+		int lastScanline = offset + (height - 1) * stride;
+		int length = pixels.length;
+		if (offset < 0 || (offset + width > length) || lastScanline < 0 || (lastScanline + width > length))
+			throw new ArrayIndexOutOfBoundsException();
+	}
+
 	public void eraseColor(int color) {
+		tlDropPixels();
 		if (color == Color.TRANSPARENT) {
 			native_recycle(texture, snapshot);
 			snapshot = native_erase_color(color, width, height);
@@ -207,6 +328,7 @@ public final class Bitmap implements Parcelable {
 
 	@Export
 	public void recycle() {
+		tlDropPixels();
 		native_recycle(texture, snapshot);
 		texture = 0;
 		snapshot = 0;
@@ -220,6 +342,9 @@ public final class Bitmap implements Parcelable {
 
 	// used by BitmapFactory to satify Options.inBitmap if set
 	void transferFrom(Bitmap src) {
+		src.getTexture();
+		src.tlDropPixels();
+		tlDropPixels();
 		native_recycle(this.texture, this.snapshot);
 		this.texture = src.texture;
 		this.snapshot = src.snapshot;
@@ -314,8 +439,41 @@ public final class Bitmap implements Parcelable {
 		return bitmap;
 	}
 
+	/**
+	 * AOSP: the rectangle as un-premultiplied colour ints. The pixel memory stays for further reads
+	 * (a loop of getPixel calls reads it directly) until the bitmap is drawn into.
+	 */
 	public void getPixels(int[] pixels, int offset, int stride, int x, int y, int width, int height) {
-		native_get_pixels(getTexture(), pixels, offset, stride, x, y, width, height);
+		checkRecycled("Can't call getPixels() on a recycled bitmap");
+		checkHardware("unable to getPixels(), pixel access is not supported on Config#HARDWARE bitmaps");
+		if (width == 0 || height == 0)
+			return;
+		checkPixelsAccess(x, y, width, height, offset, stride, pixels);
+		synchronized (this) {
+			native_pixels_read(tlPixels(), this.width, pixels, offset, stride, x, y, width, height);
+		}
+	}
+
+	public int getPixel(int x, int y) {
+		checkRecycled("Can't call getPixel() on a recycled bitmap");
+		checkHardware("unable to getPixel(), pixel access is not supported on Config#HARDWARE bitmaps");
+		checkPixelAccess(x, y);
+		int[] p = new int[1];
+		synchronized (this) {
+			native_pixels_read(tlPixels(), this.width, p, 0, 1, x, y, 1, 1);
+		}
+		return p[0];
+	}
+
+	public void setPixel(int x, int y, int color) {
+		checkRecycled("Can't call setPixel() on a recycled bitmap");
+		if (!isMutable())
+			throw new IllegalStateException();
+		checkPixelAccess(x, y);
+		synchronized (this) {
+			native_pixels_write(tlPixels(), this.width, new int[] { color }, 0, 1, x, y, 1, 1, tlStorage());
+			tlPixelsWritten();
+		}
 	}
 
 	/**
@@ -377,8 +535,18 @@ public final class Bitmap implements Parcelable {
 		return true;
 	}
 
+	/** AOSP: the rectangle's pixels are replaced by the colours (premultiplied, in the bitmap's config). */
 	public void setPixels(int[] pixels, int offset, int stride, int x, int y, int width, int height) {
-		native_set_pixels(getSnapshot(), pixels, offset, stride, x, y, width, height);
+		checkRecycled("Can't call setPixels() on a recycled bitmap");
+		if (!isMutable())
+			throw new IllegalStateException();
+		if (width == 0 || height == 0)
+			return;
+		checkPixelsAccess(x, y, width, height, offset, stride, pixels);
+		synchronized (this) {
+			native_pixels_write(tlPixels(), this.width, pixels, offset, stride, x, y, width, height, tlStorage());
+			tlPixelsWritten();
+		}
 	}
 
 	/**
@@ -395,6 +563,7 @@ public final class Bitmap implements Parcelable {
 			tlAllocation = getAllocationByteCount();
 		if ((long) stride * height > tlAllocation)
 			throw new IllegalArgumentException("Bitmap not large enough to support new configuration");
+		tlDropPixels();
 		native_recycle(texture, snapshot);
 		texture = 0;
 		snapshot = 0;
@@ -435,16 +604,18 @@ public final class Bitmap implements Parcelable {
 	private static native long native_erase_color(int color, int width, int height);
 	private static native void native_recycle(long texture, long snapshot);
 	private static native long native_ref_texture(long texture);
-	private static native void native_get_pixels(long texture, int[] pixels, int offset, int stride, int x, int y, int width, int height);
+	private static native long native_pixels_from_texture(long texture, int width, int height);
+	private static native long native_pixels_to_texture(long pixels, int width, int height);
+	private static native void native_pixels_free(long pixels);
+	private static native void native_pixels_read(long pixels, int bitmapWidth, int[] out, int offset, int stride, int x, int y, int width, int height);
+	private static native void native_pixels_write(long pixels, int bitmapWidth, int[] in, int offset, int stride, int x, int y, int width, int height, int storage);
+	private static native void native_pixels_put_raw(long pixels, int width, int height, byte[] raw, int rowBytes, boolean premultiplied);
 	private static native void native_copy_to_buffer(long texture, Buffer buffer, int memory_format, int stride);
 	private static native byte[] native_save_to_png(long texture);
-	private static native void native_set_pixels(long snapshot, int[] pixels, int offset, int stride, int x, int y, int width, int height);
 
 
 	/* teslalinux: Bitmap additions */
 	private boolean tlMipMap;
-	public int getPixel(int x, int y) { int[] p = new int[1]; getPixels(p, 0, 1, x, y, 1, 1); return p[0]; }
-	public void setPixel(int x, int y, int color) { setPixels(new int[] { color }, 0, 1, x, y, 1, 1); }
 	public boolean hasMipMap() { return tlMipMap; }
 	public void setHasMipMap(boolean hasMipMap) { tlMipMap = hasMipMap; }
 	public Bitmap asShared() { return this; }
@@ -490,6 +661,7 @@ public final class Bitmap implements Parcelable {
 	 * with the bitmap's previous content into a fresh snapshot). The snapshot is owned by the bitmap.
 	 */
 	public synchronized void tlSetSnapshot(long s) {
+		tlDropPixels();
 		native_recycle(texture, snapshot);
 		texture = 0;
 		snapshot = s;
@@ -498,6 +670,8 @@ public final class Bitmap implements Parcelable {
 	/** AOSP: the density the bitmap was made for (the display density by default). */
 	private int tlDensity = -1;
 	private boolean tlPremultiplied = true;
+	/** The pixel memory (see tlPixels()), 0 when the content is only a texture or a snapshot. */
+	private long tlPixels;
 	private int tlAllocation;
 	private ColorSpace tlColorSpace;
 	private Gainmap tlGainmap;
@@ -632,6 +806,19 @@ public final class Bitmap implements Parcelable {
 				bb.asIntBuffer().put(tmp);
 			}
 		}
+		if (config == Config.ARGB_8888) {
+			// the bytes are the pixel memory itself (AOSP copies them as they are)
+			synchronized (this) {
+				tlDropPixels();
+				native_recycle(texture, snapshot);
+				texture = 0;
+				snapshot = 0;
+				tlPixels = native_pixels_from_texture(0, width, height);
+				native_pixels_put_raw(tlPixels, width, height, raw, stride, tlPremultiplied || !hasAlpha);
+				tlPixelsWritten();
+			}
+			return;
+		}
 		int[] px = new int[width * height];
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
@@ -664,6 +851,7 @@ public final class Bitmap implements Parcelable {
 				px[y * width + x] = c;
 			}
 		}
+		tlDropPixels();
 		native_recycle(texture, snapshot);
 		texture = 0;
 		snapshot = native_erase_color(0, width, height);

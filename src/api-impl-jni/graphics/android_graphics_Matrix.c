@@ -1,10 +1,14 @@
 #include <graphene.h>
+#include <math.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "../defines.h"
 #include "../util.h"
 
 #include "../generated_headers/android_graphics_Matrix.h"
+
+static void m3_get(graphene_matrix_t *matrix, float m[9]);
 
 /* AOSP Matrix(Matrix src): a copy of src, or the identity (src 0). The copy was missing: every
  * new Matrix(m) was the identity (GskCanvas.save() lost the canvas matrix it tracks). */
@@ -183,27 +187,33 @@ JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1setRectToRect(JN
 
 JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1mapPoints(JNIEnv *env, jclass class, jlong matrix_ptr, jfloatArray dst_ref, jint dst_idx, jfloatArray src_ref, jint src_idx, jint count, jboolean is_pts)
 {
-	graphene_matrix_t *matrix = (graphene_matrix_t *)_PTR(matrix_ptr);
-	graphene_matrix_t matrix_cpy;
-	if (!is_pts) {
-		// remove translation
-		graphene_matrix_init_from_matrix(&matrix_cpy, matrix);
-		graphene_point3d_t translation = GRAPHENE_POINT3D_INIT(
-		    -graphene_matrix_get_x_translation(matrix),
-		    -graphene_matrix_get_y_translation(matrix),
-		    -graphene_matrix_get_z_translation(matrix));
-		graphene_matrix_translate(&matrix_cpy, &translation);
-		matrix = &matrix_cpy;
-	}
+	/* SkMatrix::mapPoints / mapVectors: with perspective a point is divided by its w (graphene's 2D
+	 * transform ignored the perspective row); a vector is the mapped point minus the mapped origin */
+	float m[9];
+	m3_get((graphene_matrix_t *)_PTR(matrix_ptr), m);
+	const int persp = m[6] != 0 || m[7] != 0 || m[8] != 1;
 	jfloat *src = (*env)->GetFloatArrayElements(env, src_ref, NULL);
 	jfloat *dst = (*env)->GetFloatArrayElements(env, dst_ref, NULL);
-	graphene_point_t p;
-	graphene_point_t res;
 	for (int i = 0; i < count; i++) {
-		p = GRAPHENE_POINT_INIT(src[src_idx + i * 2], src[src_idx + i * 2 + 1]);
-		graphene_matrix_transform_point(matrix, &p, &res);
-		dst[dst_idx + i * 2] = res.x;
-		dst[dst_idx + i * 2 + 1] = res.y;
+		float x = src[src_idx + i * 2], y = src[src_idx + i * 2 + 1];
+		float rx = m[0] * x + m[1] * y, ry = m[3] * x + m[4] * y;
+		if (is_pts || persp) {
+			rx += m[2];
+			ry += m[5];
+		}
+		if (persp) {
+			float w = m[6] * x + m[7] * y + m[8];
+			w = w ? 1 / w : 0;
+			rx *= w;
+			ry *= w;
+			if (!is_pts) {
+				float w0 = m[8] ? 1 / m[8] : 0;
+				rx -= m[2] * w0;
+				ry -= m[5] * w0;
+			}
+		}
+		dst[dst_idx + i * 2] = rx;
+		dst[dst_idx + i * 2 + 1] = ry;
 	}
 	(*env)->ReleaseFloatArrayElements(env, src_ref, src, 0);
 	(*env)->ReleaseFloatArrayElements(env, dst_ref, dst, 0);
@@ -308,6 +318,292 @@ JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1setRotate__JF(JNIEnv
 {
 	graphene_matrix_t *matrix = (graphene_matrix_t *)_PTR(matrix_ptr);
 	graphene_matrix_rotate_z(matrix, degrees);
+}
+
+/* ---- the 3x3 operations Skia's SkMatrix has (they were declared in Matrix.java without natives) ----
+ * In Skia's layout: m[0] scaleX, m[1] skewX, m[2] transX, m[3] skewY, m[4] scaleY, m[5] transY,
+ * m[6] persp0, m[7] persp1, m[8] persp2; a point is mapped as a column vector (M * p). */
+
+enum { SX, KX, TX, KY, SY, TY, P0, P1, P2 };
+
+static void m3_get(graphene_matrix_t *matrix, float m[9])
+{
+	m[SX] = graphene_matrix_get_value(matrix, 0, 0);
+	m[KX] = graphene_matrix_get_value(matrix, 1, 0);
+	m[TX] = graphene_matrix_get_value(matrix, 3, 0);
+	m[KY] = graphene_matrix_get_value(matrix, 0, 1);
+	m[SY] = graphene_matrix_get_value(matrix, 1, 1);
+	m[TY] = graphene_matrix_get_value(matrix, 3, 1);
+	m[P0] = graphene_matrix_get_value(matrix, 0, 3);
+	m[P1] = graphene_matrix_get_value(matrix, 1, 3);
+	m[P2] = graphene_matrix_get_value(matrix, 3, 3);
+}
+
+static void m3_set(graphene_matrix_t *matrix, const float m[9])
+{
+	float values4x4[4][4] = {
+		{m[SX], m[KY], 0, m[P0]},
+		{m[KX], m[SY], 0, m[P1]},
+		{    0,     0, 1,     0},
+		{m[TX], m[TY], 0, m[P2]},
+	};
+	graphene_matrix_init_from_float(matrix, *values4x4);
+}
+
+/* r = a * b (b applied first) */
+static void m3_mul(float r[9], const float a[9], const float b[9])
+{
+	float t[9];
+	for (int i = 0; i < 3; i++)
+		for (int j = 0; j < 3; j++)
+			t[i * 3 + j] = a[i * 3 + 0] * b[0 * 3 + j] + a[i * 3 + 1] * b[1 * 3 + j] + a[i * 3 + 2] * b[2 * 3 + j];
+	memcpy(r, t, sizeof(t));
+}
+
+static int m3_invert(float r[9], const float m[9])
+{
+	double det = (double)m[0] * ((double)m[4] * m[8] - (double)m[5] * m[7])
+	           - (double)m[1] * ((double)m[3] * m[8] - (double)m[5] * m[6])
+	           + (double)m[2] * ((double)m[3] * m[7] - (double)m[4] * m[6]);
+	if (!isfinite(det) || fabs(det) < 1e-12) /* Skia: SK_ScalarNearlyZero^3 */
+		return 0;
+	double inv = 1.0 / det;
+	float t[9] = {
+		(float)(((double)m[4] * m[8] - (double)m[5] * m[7]) * inv),
+		(float)(((double)m[2] * m[7] - (double)m[1] * m[8]) * inv),
+		(float)(((double)m[1] * m[5] - (double)m[2] * m[4]) * inv),
+		(float)(((double)m[5] * m[6] - (double)m[3] * m[8]) * inv),
+		(float)(((double)m[0] * m[8] - (double)m[2] * m[6]) * inv),
+		(float)(((double)m[2] * m[3] - (double)m[0] * m[5]) * inv),
+		(float)(((double)m[3] * m[7] - (double)m[4] * m[6]) * inv),
+		(float)(((double)m[1] * m[6] - (double)m[0] * m[7]) * inv),
+		(float)(((double)m[0] * m[4] - (double)m[1] * m[3]) * inv),
+	};
+	memcpy(r, t, sizeof(t));
+	return 1;
+}
+
+static void m3_identity(float m[9])
+{
+	static const float id[9] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+	memcpy(m, id, sizeof(id));
+}
+
+/* SkMatrix::setSkew(kx, ky, px, py) */
+static void m3_skew(float m[9], float kx, float ky, float px, float py)
+{
+	m3_identity(m);
+	m[KX] = kx;
+	m[KY] = ky;
+	m[TX] = -kx * py;
+	m[TY] = -ky * px;
+}
+
+JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1setSkew__JFFFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat kx, jfloat ky, jfloat px, jfloat py)
+{
+	float m[9];
+	m3_skew(m, kx, ky, px, py);
+	m3_set(_PTR(matrix_ptr), m);
+}
+
+JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1setSkew__JFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat kx, jfloat ky)
+{
+	Java_android_graphics_Matrix_native_1setSkew__JFFFF(env, class, matrix_ptr, kx, ky, 0, 0);
+}
+
+JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1preSkew__JFFFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat kx, jfloat ky, jfloat px, jfloat py)
+{
+	float m[9], s[9];
+	m3_get(_PTR(matrix_ptr), m);
+	m3_skew(s, kx, ky, px, py);
+	m3_mul(m, m, s);
+	m3_set(_PTR(matrix_ptr), m);
+	return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1preSkew__JFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat kx, jfloat ky)
+{
+	return Java_android_graphics_Matrix_native_1preSkew__JFFFF(env, class, matrix_ptr, kx, ky, 0, 0);
+}
+
+JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1postSkew__JFFFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat kx, jfloat ky, jfloat px, jfloat py)
+{
+	float m[9], s[9];
+	m3_get(_PTR(matrix_ptr), m);
+	m3_skew(s, kx, ky, px, py);
+	m3_mul(m, s, m);
+	m3_set(_PTR(matrix_ptr), m);
+	return JNI_TRUE;
+}
+
+JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1postSkew__JFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat kx, jfloat ky)
+{
+	return Java_android_graphics_Matrix_native_1postSkew__JFFFF(env, class, matrix_ptr, kx, ky, 0, 0);
+}
+
+/* SkMatrix::setSinCos(sinV, cosV, px, py): the rotation with those values about (px, py) */
+JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1setSinCos__JFFFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat sin_v, jfloat cos_v, jfloat px, jfloat py)
+{
+	float m[9];
+	const float one_minus_cos = 1 - cos_v;
+	m3_identity(m);
+	m[SX] = cos_v;
+	m[KX] = -sin_v;
+	m[TX] = sin_v * py + one_minus_cos * px;
+	m[KY] = sin_v;
+	m[SY] = cos_v;
+	m[TY] = -sin_v * px + one_minus_cos * py;
+	m3_set(_PTR(matrix_ptr), m);
+}
+
+JNIEXPORT void JNICALL Java_android_graphics_Matrix_native_1setSinCos__JFF(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat sin_v, jfloat cos_v)
+{
+	Java_android_graphics_Matrix_native_1setSinCos__JFFFF(env, class, matrix_ptr, sin_v, cos_v, 0, 0);
+}
+
+/* AOSP setConcat(a, b): this = a * b (b applied first) */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1setConcat(JNIEnv *env, jclass class, jlong matrix_ptr, jlong a_ptr, jlong b_ptr)
+{
+	float a[9], b[9], r[9];
+	m3_get(_PTR(a_ptr), a);
+	m3_get(_PTR(b_ptr), b);
+	m3_mul(r, a, b);
+	m3_set(_PTR(matrix_ptr), r);
+	return JNI_TRUE;
+}
+
+/* SkMatrix::mapRadius: the geometric mean of the lengths of the mapped vectors (r, 0) and (0, r) */
+JNIEXPORT jfloat JNICALL Java_android_graphics_Matrix_native_1mapRadius(JNIEnv *env, jclass class, jlong matrix_ptr, jfloat radius)
+{
+	float m[9];
+	m3_get(_PTR(matrix_ptr), m);
+	float v[2][2] = { { radius, 0 }, { 0, radius } };
+	float len[2];
+	for (int i = 0; i < 2; i++) {
+		float x = v[i][0], y = v[i][1];
+		float mx, my;
+		if (m[P0] == 0 && m[P1] == 0 && m[P2] == 1) {
+			mx = m[SX] * x + m[KX] * y;
+			my = m[KY] * x + m[SY] * y;
+		} else {
+			/* perspective (SkMatrix::mapVectors): the mapped point minus the mapped origin */
+			float w = m[P0] * x + m[P1] * y + m[P2], w0 = m[P2];
+			mx = (m[SX] * x + m[KX] * y + m[TX]) / w - m[TX] / w0;
+			my = (m[KY] * x + m[SY] * y + m[TY]) / w - m[TY] / w0;
+		}
+		len[i] = sqrtf(mx * mx + my * my);
+	}
+	return sqrtf(len[0] * len[1]);
+}
+
+/* SkMatrix's PolyMapProcs: a matrix taking the unit square's corners (or two/three of them) to the points */
+static int poly2(const float *p, float m[9])
+{
+	m[SX] = p[3] - p[1];
+	m[KY] = p[0] - p[2];
+	m[P0] = 0;
+	m[KX] = p[2] - p[0];
+	m[SY] = p[3] - p[1];
+	m[P1] = 0;
+	m[TX] = p[0];
+	m[TY] = p[1];
+	m[P2] = 1;
+	return 1;
+}
+
+static int poly3(const float *p, float m[9])
+{
+	m[SX] = p[4] - p[0];
+	m[KY] = p[5] - p[1];
+	m[P0] = 0;
+	m[KX] = p[2] - p[0];
+	m[SY] = p[3] - p[1];
+	m[P1] = 0;
+	m[TX] = p[0];
+	m[TY] = p[1];
+	m[P2] = 1;
+	return 1;
+}
+
+/* Skia's checkForZero: SkScalarNearlyZero(x * x), SK_ScalarNearlyZero being 1 / 4096 */
+static int nearly_zero(float x)
+{
+	return fabsf(x * x) <= 1.0f / 4096;
+}
+
+static int poly4(const float *p, float m[9])
+{
+	float a1, a2;
+	float x0 = p[4] - p[0], y0 = p[5] - p[1];
+	float x1 = p[4] - p[2], y1 = p[5] - p[3];
+	float x2 = p[4] - p[6], y2 = p[5] - p[7];
+	/* abs(x2) > abs(y2) */
+	if (x2 > 0 ? (y2 > 0 ? x2 > y2 : x2 > -y2) : (y2 > 0 ? -x2 > y2 : x2 < y2)) {
+		float denom = x1 * y2 / x2 - y1;
+		if (nearly_zero(denom))
+			return 0;
+		a1 = (((x0 - x1) * y2 / x2) - y0 + y1) / denom;
+	} else {
+		float denom = x1 - y1 * x2 / y2;
+		if (nearly_zero(denom))
+			return 0;
+		a1 = (x0 - x1 - (y0 - y1) * x2 / y2) / denom;
+	}
+	/* abs(x1) > abs(y1) */
+	if (x1 > 0 ? (y1 > 0 ? x1 > y1 : x1 > -y1) : (y1 > 0 ? -x1 > y1 : x1 < y1)) {
+		float denom = y2 - x2 * y1 / x1;
+		if (nearly_zero(denom))
+			return 0;
+		a2 = (y0 - y2 - (x0 - x2) * y1 / x1) / denom;
+	} else {
+		float denom = y2 * x1 / y1 - x2;
+		if (nearly_zero(denom))
+			return 0;
+		a2 = ((y0 - y2) * x1 / y1 - x0 + x2) / denom;
+	}
+	m[SX] = a2 * p[6] + p[6] - p[0];
+	m[KY] = a2 * p[7] + p[7] - p[1];
+	m[P0] = a2;
+	m[KX] = a1 * p[2] + p[2] - p[0];
+	m[SY] = a1 * p[3] + p[3] - p[1];
+	m[P1] = a1;
+	m[TX] = p[0];
+	m[TY] = p[1];
+	m[P2] = 1;
+	return 1;
+}
+
+/* SkMatrix::setPolyToPoly: src's points onto dst's (0 to 4 points); false when they are degenerate */
+JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1setPolyToPoly(JNIEnv *env, jclass class, jlong matrix_ptr, jfloatArray src_ref, jint src_index, jfloatArray dst_ref, jint dst_index, jint count)
+{
+	if (count < 0 || count > 4)
+		return JNI_FALSE;
+	float src[8], dst[8], m[9];
+	(*env)->GetFloatArrayRegion(env, src_ref, src_index, count * 2, src);
+	(*env)->GetFloatArrayRegion(env, dst_ref, dst_index, count * 2, dst);
+	if ((*env)->ExceptionCheck(env))
+		return JNI_FALSE;
+	if (count == 0) {
+		m3_identity(m);
+		m3_set(_PTR(matrix_ptr), m);
+		return JNI_TRUE;
+	}
+	if (count == 1) {
+		m3_identity(m);
+		m[TX] = dst[0] - src[0];
+		m[TY] = dst[1] - src[1];
+		m3_set(_PTR(matrix_ptr), m);
+		return JNI_TRUE;
+	}
+	int (*proc)(const float *, float *) = count == 2 ? poly2 : count == 3 ? poly3 : poly4;
+	float temp[9], result[9];
+	if (!proc(src, temp) || !m3_invert(result, temp))
+		return JNI_FALSE;
+	if (!proc(dst, temp))
+		return JNI_FALSE;
+	m3_mul(m, temp, result);
+	m3_set(_PTR(matrix_ptr), m);
+	return JNI_TRUE;
 }
 
 JNIEXPORT jboolean JNICALL Java_android_graphics_Matrix_native_1rectStaysRect(JNIEnv *env, jclass class, jlong matrix_ptr)

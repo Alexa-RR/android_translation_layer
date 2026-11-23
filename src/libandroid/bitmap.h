@@ -4,14 +4,19 @@
 #include <jni.h>
 #include <stdint.h>
 
+/* the NDK's AndroidBitmapFormat values (android/bitmap.h) */
 enum {
-	ANDROID_BITMAP_FORMAT_A_8,
-	ANDROID_BITMAP_FORMAT_RGBA_4444,
-	ANDROID_BITMAP_FORMAT_RGBA_8888,
-	ANDROID_BITMAP_FORMAT_RGB_565,
-	ANDROID_BITMAP_FORMAT_RGBA_F16,
-	ANDROID_BITMAP_FORMAT_RGBA_1010102,
+	ANDROID_BITMAP_FORMAT_NONE = 0,
+	ANDROID_BITMAP_FORMAT_RGBA_8888 = 1,
+	ANDROID_BITMAP_FORMAT_RGB_565 = 4,
+	ANDROID_BITMAP_FORMAT_RGBA_4444 = 7,
+	ANDROID_BITMAP_FORMAT_A_8 = 8,
+	ANDROID_BITMAP_FORMAT_RGBA_F16 = 9,
+	ANDROID_BITMAP_FORMAT_RGBA_1010102 = 10,
 };
+
+int AndroidBitmap_lockPixels(JNIEnv *env, jobject bitmap, void **pixels);
+int AndroidBitmap_unlockPixels(JNIEnv *env, jobject bitmap);
 
 struct AndroidBitmapInfo {
 	uint32_t width;

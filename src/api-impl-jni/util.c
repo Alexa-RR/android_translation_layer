@@ -32,6 +32,16 @@ int attribute_set_get_int(JNIEnv *env, jobject attrs, char *attribute, char *sch
 
 JavaVM *jvm;
 
+/* the VM is known as soon as the library is loaded (Runtime.loadLibrary calls JNI_OnLoad), also
+ * without android-translation-layer's main (a plain dalvikvm, where GObject disposal from the
+ * finalizer thread needs get_jni_env); main sets the same VM again */
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved)
+{
+	if (!jvm)
+		jvm = vm;
+	return JNI_VERSION_1_6;
+}
+
 // TODO: use this everywhere, not just for gdb helper functions
 JNIEnv *get_jni_env(void)
 {

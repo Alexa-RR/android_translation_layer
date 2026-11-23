@@ -27,6 +27,12 @@ static void java_paintable_snapshot(GdkPaintable *gdk_paintable, GdkSnapshot *sn
 	J__Drawable__draw(env, paintable->drawable, canvas);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
+	/* what the drawable's draw left open (saves, clips, an expanded clip's recording) is closed
+	 * before GTK's snapshot goes on */
+	J__GskCanvas__tlCloseRecording(env, canvas);
+	if ((*env)->ExceptionCheck(env))
+		(*env)->ExceptionDescribe(env);
+	(*env)->DeleteLocalRef(env, canvas);
 }
 
 static int java_paintable_get_intrinsic_width(GdkPaintable *gdk_paintable)

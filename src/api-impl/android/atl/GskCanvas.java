@@ -37,6 +37,10 @@ public class GskCanvas extends DisplayListCanvas {
 		int save_count = getSaveCount();
 		if (save_count <= 1)
 			throw new IllegalStateException("No more saves to restore");
+		// a level whose clip was expanded (legacy Region.Ops) drew into a target that left out the
+		// clips of the levels below; they apply again from here on
+		boolean expanded = tlLevelExpanded(save_count);
+		boolean layerLevel = tlLayers != null && !tlLayers.isEmpty() && tlLayers.get(tlLayers.size() - 1).level == save_count;
 		if (push_history != null && push_history.length > save_count && push_history[save_count] > 0) {
 			native_pop(snapshot, push_history[save_count]);
 			push_history[save_count] = 0;
@@ -45,6 +49,8 @@ public class GskCanvas extends DisplayListCanvas {
 		tlClipPop();
 		native_restore(snapshot);
 		tlRestored(save_count);
+		if (expanded && !layerLevel)
+			tlRetarget();
 	}
 
 	@Override
@@ -455,6 +461,7 @@ public class GskCanvas extends DisplayListCanvas {
 	 * the base level (Compose clips a layer with clipPath without a save). GTK otherwise popped them
 	 * itself when the snapshot became a node, with a warning per recording.
 	 */
+	@Export
 	public void tlCloseRecording() {
 		if (snapshot == 0)
 			return;
@@ -464,6 +471,177 @@ public class GskCanvas extends DisplayListCanvas {
 			native_pop(snapshot, push_history[1]);
 			push_history[1] = 0;
 		}
+		// the canvas may draw again into another snapshot (a widget's canvas is reused every frame)
+		tlClips = null;
+		clip_stack = null;
+		if (tlWidgetOuter != 0) {
+			// what was drawn after an expanded clip goes into the widget's snapshot now
+			long node = native_layerFinish(snapshot);
+			snapshot = tlWidgetOuter;
+			tlWidgetOuter = 0;
+			tlBaseComposable = false;
+			if (node != 0) {
+				native_appendNode(snapshot, node);
+				native_nodeUnref(node);
+			}
+		}
+	}
+
+	/* ---- teslalinux: the clip ops that expand the clip (apps targeting API 27 or lower) ----
+	 * AOSP keeps REPLACE, UNION, XOR and REVERSE_DIFFERENCE for apps targeting below P (Skia's
+	 * region clip ops, Android 12's SkiaCanvas). GSK clips only nest, so the new clip is computed as
+	 * one path (the current clip from the recorded clip records, composed with the shape through the
+	 * path ops) and the drawing goes on in a target of its own, where that path is the only clip of
+	 * the current level and the clips below it are left out. Restoring the level brings them back
+	 * (the drawing goes on in a target with the clips replayed). A target the canvas cannot read back
+	 * (a widget's snapshot) gets a recording of its own, put into it when the canvas is closed. */
+
+	private static final int TL_CLIP_DEVICE = 3;
+	/** The widget snapshot a recording of this canvas goes into on tlCloseRecording (0: none). */
+	private long tlWidgetOuter;
+
+	private boolean tlLevelExpanded(int level) {
+		if (tlClips != null)
+			for (TlClip c : tlClips)
+				if (c.level == level && c.kind == TL_CLIP_DEVICE)
+					return true;
+		return false;
+	}
+
+	/** The canvas's whole area in its base coordinates (Skia's device bounds). */
+	private RectF tlDeviceRect() {
+		if (tlBaseBitmap != null)
+			return new RectF(0, 0, tlBaseBitmap.getWidth(), tlBaseBitmap.getHeight());
+		int w = getWidth(), h = getHeight();
+		if (w <= 0 || h <= 0) {
+			android.util.DisplayMetrics dm = android.content.res.Resources.getSystem().getDisplayMetrics();
+			w = dm.widthPixels;
+			h = dm.heightPixels;
+		}
+		return new RectF(0, 0, w, h);
+	}
+
+	/** A recorded clip's shape in base coordinates, filled without inversion (what it clips to or out). */
+	private static Path tlRecordShape(TlClip c) {
+		Path p = new Path();
+		if (c.kind == TL_CLIP_RECT) {
+			p.addRect(c.l, c.t, c.r, c.b, Path.Direction.CW);
+		} else {
+			p.set(c.path);
+			Path.FillType ft = p.getFillType();
+			if (ft == Path.FillType.INVERSE_WINDING)
+				p.setFillType(Path.FillType.WINDING);
+			else if (ft == Path.FillType.INVERSE_EVEN_ODD)
+				p.setFillType(Path.FillType.EVEN_ODD);
+		}
+		if (c.kind != TL_CLIP_DEVICE)
+			p.transform(tlMatrix(c.matrix));
+		return p;
+	}
+
+	/** The current clip as a path in base coordinates. */
+	private Path tlCurrentClipPath() {
+		int from = 0;
+		if (tlClips != null)
+			for (int i = 0; i < tlClips.size(); i++)
+				if (tlClips.get(i).kind == TL_CLIP_DEVICE)
+					from = i;
+		Path clip = new Path();
+		if (tlClips != null && from < tlClips.size() && tlClips.get(from).kind == TL_CLIP_DEVICE) {
+			clip.set(tlClips.get(from).path);
+			from++;
+		} else {
+			clip.addRect(tlDeviceRect(), Path.Direction.CW);
+			from = 0;
+		}
+		if (tlClips != null)
+			for (int i = from; i < tlClips.size(); i++) {
+				TlClip c = tlClips.get(i);
+				clip.op(tlRecordShape(c), c.kind == TL_CLIP_OUT ? Path.Op.DIFFERENCE : Path.Op.INTERSECT);
+			}
+		return clip;
+	}
+
+	@Override
+	public boolean clipRect(float left, float top, float right, float bottom, Region.Op op) {
+		if (op == Region.Op.INTERSECT)
+			return clipRect(left, top, right, bottom);
+		if (op == Region.Op.DIFFERENCE)
+			return clipOutRect(left, top, right, bottom);
+		checkValidClipOp(op);
+		Path p = new Path();
+		p.addRect(left, top, right, bottom, Path.Direction.CW);
+		return tlClipExpand(p, op);
+	}
+
+	/** REPLACE, UNION, XOR, REVERSE_DIFFERENCE with a shape in local coordinates. */
+	private boolean tlClipExpand(Path shape, Region.Op op) {
+		Path s = new Path(shape);
+		Path.FillType ft = s.getFillType();
+		boolean inverse = ft == Path.FillType.INVERSE_WINDING || ft == Path.FillType.INVERSE_EVEN_ODD;
+		if (inverse) {
+			// an inverse path stands for the device minus its fill (Skia)
+			s.setFillType(ft == Path.FillType.INVERSE_WINDING ? Path.FillType.WINDING : Path.FillType.EVEN_ODD);
+			s.transform(state_stack.peek());
+			Path dev = new Path();
+			dev.addRect(tlDeviceRect(), Path.Direction.CW);
+			dev.op(s, Path.Op.DIFFERENCE);
+			s = dev;
+		} else {
+			s.transform(state_stack.peek());
+		}
+		Path clip;
+		if (op == Region.Op.REPLACE) {
+			clip = new Path();
+			clip.addRect(tlDeviceRect(), Path.Direction.CW);
+			clip.op(s, Path.Op.INTERSECT);
+		} else {
+			clip = tlCurrentClipPath();
+			Path.Op pop = op == Region.Op.UNION ? Path.Op.UNION : op == Region.Op.XOR ? Path.Op.XOR : Path.Op.REVERSE_DIFFERENCE;
+			clip.op(s, pop);
+		}
+		// the drawing so far stays where it is; what follows goes into a target with the new clip
+		long dst = 0;
+		if (tlCanCompose()) {
+			dst = tlTakeTarget();
+		} else {
+			tlUnwind(snapshot);
+			tlWidgetOuter = snapshot;
+			tlBaseComposable = true;
+			snapshot = 0;
+		}
+		if (tlClips == null)
+			tlClips = new java.util.ArrayList<>();
+		TlClip c = new TlClip();
+		c.level = getSaveCount();
+		c.kind = TL_CLIP_DEVICE;
+		c.path = clip;
+		c.rule = 0;
+		c.matrix = new float[9];
+		new Matrix().getValues(c.matrix);
+		tlClips.add(c);
+		long t = native_layerBegin();
+		if (dst != 0) {
+			native_appendNode(t, dst);
+			native_nodeUnref(dst);
+		}
+		tlInstallTarget(t);
+		RectF b = new RectF();
+		clip.computeBounds(b, true);
+		tlEnsureClipStack();
+		clip_stack.set(clip_stack.size() - 1, clip.isEmpty() ? new RectF() : b);
+		return !clip.isEmpty();
+	}
+
+	/** After an expanded level is restored: the drawing goes on with the clips of the levels below. */
+	private void tlRetarget() {
+		long dst = tlTakeTarget();
+		long t = native_layerBegin();
+		if (dst != 0) {
+			native_appendNode(t, dst);
+			native_nodeUnref(dst);
+		}
+		tlInstallTarget(t);
 	}
 
 	private static int tlFillRule(Path path) {
@@ -504,7 +682,8 @@ public class GskCanvas extends DisplayListCanvas {
 			}
 			return tlClipOut(path);
 		}
-		throw new IllegalArgumentException("Invalid Region.Op - only INTERSECT and DIFFERENCE are allowed");
+		checkValidClipOp(op);
+		return tlClipExpand(path, op);
 	}
 
 	private boolean tlClipOut(Path path) {
@@ -584,13 +763,13 @@ public class GskCanvas extends DisplayListCanvas {
 			// unclipped: the whole canvas as the framework reports it for an unclipped layer; a widget
 			// snapshot canvas has no bitmap, its extent is the display it is drawn on
 			if (outRect != null) {
-				int w = getWidth(), h = getHeight();
-				if (w <= 0 || h <= 0) {
-					android.util.DisplayMetrics dm = android.content.res.Resources.getSystem().getDisplayMetrics();
-					w = dm.widthPixels;
-					h = dm.heightPixels;
-				}
-				outRect.set(0, 0, w, h);
+				// a bitmap canvas: the bitmap's bounds (in local coordinates under the matrix)
+				RectF dev = tlDeviceRect();
+				Matrix inv = new Matrix();
+				Matrix m = state_stack.peek();
+				if (tlBaseBitmap != null && m != null && !m.isIdentity() && m.invert(inv))
+					inv.mapRect(dev);
+				outRect.set(Math.round(dev.left), Math.round(dev.top), Math.round(dev.right), Math.round(dev.bottom));
 			}
 			return true;
 		}
@@ -827,10 +1006,8 @@ public class GskCanvas extends DisplayListCanvas {
 			snapshot = base;
 	}
 
-	/** Clip pushes are recorded while a composite could have to replay them. */
+	/** Clip pushes are recorded: a composite or an expanded clip replays them in a new target. */
 	void tlRecordClip(int kind, float l, float t, float r, float b, Path path, int rule) {
-		if (!tlCanCompose())
-			return;
 		if (tlClips == null)
 			tlClips = new java.util.ArrayList<>();
 		TlClip c = new TlClip();
@@ -973,11 +1150,19 @@ public class GskCanvas extends DisplayListCanvas {
 			start = 1;
 			cur = new Matrix();
 		}
+		// an expanded clip (TL_CLIP_DEVICE) replaces every clip recorded before it
+		int first = 0;
+		if (tlClips != null)
+			for (int i = 0; i < tlClips.size(); i++)
+				if (tlClips.get(i).kind == TL_CLIP_DEVICE && tlClips.get(i).level >= start)
+					first = i;
 		for (int lvl = start; lvl <= getSaveCount(); lvl++) {
 			if (lvl >= 2)
 				native_save(s);
+			int pushes = 0;
 			if (tlClips != null) {
-				for (TlClip c : tlClips) {
+				for (int i = first; i < tlClips.size(); i++) {
+					TlClip c = tlClips.get(i);
 					if (c.level != lvl)
 						continue;
 					Matrix cm = tlMatrix(c.matrix);
@@ -985,12 +1170,17 @@ public class GskCanvas extends DisplayListCanvas {
 					cur = cm;
 					if (c.kind == TL_CLIP_RECT)
 						native_clipRect(s, c.l, c.t, c.r, c.b);
-					else if (c.kind == TL_CLIP_PATH)
+					else if (c.kind == TL_CLIP_PATH || c.kind == TL_CLIP_DEVICE)
 						native_clipPath(s, c.path.getGskPath(), c.rule);
 					else
 						native_clipOutPath(s, c.path.getGskPath(), c.rule);
+					pushes++;
 				}
 			}
+			// the pushes of this level in s (tlUnwind pops them)
+			if (push_history == null || push_history.length <= lvl)
+				push_history = push_history == null ? new int[lvl + 1] : Arrays.copyOf(push_history, lvl + 1);
+			push_history[lvl] = pushes;
 			Matrix target = state_stack.get(lvl - 1);
 			tlConcatDelta(s, cur, target);
 			cur = new Matrix(target);

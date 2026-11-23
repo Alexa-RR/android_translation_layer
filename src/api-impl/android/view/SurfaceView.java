@@ -282,7 +282,10 @@ public class SurfaceView extends View {
 			if (getWidth() == 0 || getHeight() == 0)
 				return null;
 
-			return new GskCanvas(native_createSnapshot());
+			GskCanvas canvas = new GskCanvas(native_createSnapshot());
+			// the surface's snapshot belongs to the canvas (AOSP: a raster canvas on the buffer)
+			canvas.tlBaseComposable = true;
+			return canvas;
 		}
 
 		/**
@@ -293,6 +296,8 @@ public class SurfaceView extends View {
 		 */
 		@Override
 		public void unlockCanvasAndPost(Canvas canvas) {
+			// AOSP: what the drawing left saved ends with it
+			((GskCanvas)canvas).tlCloseRecording();
 			native_postSnapshot(widget, ((GskCanvas)canvas).snapshot);
 			//		mSurface.unlockCanvasAndPost(canvas);
 			//		mSurfaceLock.unlock();

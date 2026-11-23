@@ -82,6 +82,7 @@ public abstract class Context {
 	private final static String TAG = "Context";
 
 	public static final int MODE_PRIVATE = 0;
+	public static final String ACCESSIBILITY_SERVICE = "accessibility";
 	public static final String ACCOUNT_SERVICE = "account";
 	public static final String ACTIVITY_SERVICE = "activity";
 	public static final String AUDIO_SERVICE = "audio";
@@ -159,6 +160,8 @@ public abstract class Context {
 			application_info.splitNames = android.content.pm.PackageParser.readSplitNames(primary_application.default_resources.getAssets(), application_info.splitSourceDirs);
 		}
 		package_manager = new PackageManager();
+		// AOSP ActivityThread.handleBindApplication: canvas behaviour follows the app's target SDK
+		android.graphics.Canvas.setCompatibilityVersion(application_info.targetSdkVersion);
 
 		android.security.keystore.AndroidKeyStoreProvider.install();
 
