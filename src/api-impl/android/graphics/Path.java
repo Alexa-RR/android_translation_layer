@@ -325,6 +325,18 @@ public class Path {
 	}
 	private static native long native_op(long path1, long path2, int op);
 
+	/**
+	 * AOSP (API 26): the path approximated by line segments within acceptableError, as
+	 * (fraction of the length, x, y) triples; a move adds a point at the same fraction (a jump).
+	 */
+	public float[] approximate(float acceptableError) {
+		if (acceptableError < 0)
+			throw new IllegalArgumentException("AcceptableError must be greater than or equal to 0");
+		return native_approximate(getGskPath(), acceptableError);
+	}
+
+	private static native float[] native_approximate(long path, float acceptableError);
+
 	/** AOSP: true if the path contains no lines or curves (a geometric test, not "never touched"). */
 	public boolean isEmpty() {
 		if (path == 0 && builder == 0)
@@ -681,40 +693,6 @@ public class Path {
 		}
 		// a convex outline turns exactly once around (a star turns more than once, all one way)
 		return collinear || Math.abs(Math.abs(turn) - 2 * Math.PI) < 1e-3;
-	}
-
-	/**
-	 * AOSP API 26: approximates the path with line segments. Three floats per point: the fraction of
-	 * the path's length at the point, then x and y. A moveTo gives two points with the same fraction.
-	 */
-	public float[] approximate(float acceptableError) {
-		if (acceptableError < 0)
-			throw new IllegalArgumentException("AcceptableError must be greater than or equal to 0");
-		java.util.ArrayList<float[]> contours = tlFlatten(tlOps(), acceptableError, false);
-		int count = 0;
-		for (float[] c : contours)
-			count += c.length / 2;
-		if (count == 0)
-			return new float[] { 0, 0, 0, 1, 0, 0 };
-		float[] out = new float[count * 3];
-		float total = 0;
-		for (float[] c : contours)
-			for (int i = 2; i < c.length; i += 2)
-				total += (float) Math.hypot(c[i] - c[i - 2], c[i + 1] - c[i - 1]);
-		float dist = 0;
-		int k = 0;
-		for (float[] c : contours) {
-			for (int i = 0; i < c.length; i += 2) {
-				if (i > 0)
-					dist += (float) Math.hypot(c[i] - c[i - 2], c[i + 1] - c[i - 1]);
-				out[k++] = total > 0 ? dist / total : 0f;
-				out[k++] = c[i];
-				out[k++] = c[i + 1];
-			}
-		}
-		if (total > 0)
-			out[out.length - 3] = 1f;
-		return out;
 	}
 
 	/** AOSP API 34: an iterator over the path's segments. */

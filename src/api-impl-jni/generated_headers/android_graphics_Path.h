@@ -39,6 +39,14 @@ JNIEXPORT jlong JNICALL Java_android_graphics_Path_native_1op
 
 /*
  * Class:     android_graphics_Path
+ * Method:    native_approximate
+ * Signature: (JF)[F
+ */
+JNIEXPORT jfloatArray JNICALL Java_android_graphics_Path_native_1approximate
+  (JNIEnv *, jclass, jlong, jfloat);
+
+/*
+ * Class:     android_graphics_Path
  * Method:    native_is_empty
  * Signature: (J)Z
  */

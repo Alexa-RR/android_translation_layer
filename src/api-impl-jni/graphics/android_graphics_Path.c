@@ -1,4 +1,5 @@
 #include <gsk/gsk.h>
+#include <math.h>
 
 #include "../defines.h"
 
@@ -286,4 +287,186 @@ JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1is_1empty(JNIEnv *
 JNIEXPORT jboolean JNICALL Java_android_graphics_Path_native_1contains(JNIEnv *env, jclass class, jlong path_ptr, jint fill_rule, jboolean inverse, jfloat x, jfloat y)
 {
 	return gsk_path_in_fill(_PTR(path_ptr), &GRAPHENE_POINT_INIT(x, y), fill_rule) ^ inverse;
+}
+
+/*
+ * AOSP Path.approximate (libs/hwui/jni/Path.cpp): the path as line segments within acceptableError
+ * of it, as (fraction of the length, x, y) triples. Lines and closes add their end point (a zero
+ * length line adds nothing), a move adds its point at the length so far (a jump), curves are
+ * subdivided until the midpoint of each piece lies within the error of its chord; cubics are
+ * checked once more at the quarter point, which catches an inflection between the ends.
+ */
+typedef struct {
+	GArray *pts;  /* graphene_point_t */
+	GArray *lens; /* float */
+	float error_squared;
+	float error_conic;
+} Approx;
+
+static void approx_move(Approx *a, graphene_point_t p)
+{
+	float len = a->lens->len ? g_array_index(a->lens, float, a->lens->len - 1) : 0;
+	g_array_append_val(a->pts, p);
+	g_array_append_val(a->lens, len);
+}
+
+static void approx_line(Approx *a, graphene_point_t p)
+{
+	if (!a->pts->len) {
+		graphene_point_t zero = GRAPHENE_POINT_INIT(0, 0);
+		float l0 = 0;
+		g_array_append_val(a->pts, zero);
+		g_array_append_val(a->lens, l0);
+	} else {
+		graphene_point_t last = g_array_index(a->pts, graphene_point_t, a->pts->len - 1);
+		if (last.x == p.x && last.y == p.y)
+			return; /* empty line */
+	}
+	graphene_point_t last = g_array_index(a->pts, graphene_point_t, a->pts->len - 1);
+	float len = g_array_index(a->lens, float, a->lens->len - 1) + hypotf(p.x - last.x, p.y - last.y);
+	g_array_append_val(a->pts, p);
+	g_array_append_val(a->lens, len);
+}
+
+typedef graphene_point_t (*BezierFn)(float t, const graphene_point_t *pts, float weight);
+
+static graphene_point_t quad_at(float t, const graphene_point_t *p, float weight)
+{
+	float mt = 1 - t;
+	return GRAPHENE_POINT_INIT(mt * mt * p[0].x + 2 * mt * t * p[1].x + t * t * p[2].x,
+	                           mt * mt * p[0].y + 2 * mt * t * p[1].y + t * t * p[2].y);
+}
+
+static graphene_point_t cubic_at(float t, const graphene_point_t *p, float weight)
+{
+	float mt = 1 - t, mt2 = mt * mt, mt3 = mt2 * mt, t2 = t * t, t3 = t2 * t;
+	return GRAPHENE_POINT_INIT(mt3 * p[0].x + 3 * mt2 * t * p[1].x + 3 * mt * t2 * p[2].x + t3 * p[3].x,
+	                           mt3 * p[0].y + 3 * mt2 * t * p[1].y + 3 * mt * t2 * p[2].y + t3 * p[3].y);
+}
+
+/* a conic is the rational quadratic Bezier with its middle point weighted */
+static graphene_point_t conic_at(float t, const graphene_point_t *p, float w)
+{
+	float mt = 1 - t;
+	float a = mt * mt, b = 2 * w * mt * t, c = t * t, d = a + b + c;
+	return GRAPHENE_POINT_INIT((a * p[0].x + b * p[1].x + c * p[2].x) / d, (a * p[0].y + b * p[1].y + c * p[2].y) / d);
+}
+
+/* sets the midpoint of [t0, t1]; true if the chord is further than the error from it */
+static gboolean approx_subdivide(const graphene_point_t *pts, float weight, BezierFn fn, float t0, graphene_point_t p0,
+                                 float t1, graphene_point_t p1, float *mid_t, graphene_point_t *mid, float error_squared)
+{
+	*mid_t = (t1 + t0) / 2;
+	float mx = (p1.x + p0.x) / 2, my = (p1.y + p0.y) / 2;
+	*mid = fn(*mid_t, pts, weight);
+	float ex = mid->x - mx, ey = mid->y - my;
+	return ex * ex + ey * ey > error_squared;
+}
+
+typedef struct {
+	float t;
+	graphene_point_t p;
+} TPoint;
+
+static void approx_bezier(Approx *a, const graphene_point_t *pts, float weight, BezierFn fn, float error_squared, gboolean double_check)
+{
+	/* the sorted (t, point) list of AOSP's std::map */
+	GArray *tp = g_array_new(FALSE, FALSE, sizeof(TPoint));
+	TPoint first = { 0, fn(0, pts, weight) }, last = { 1, fn(1, pts, weight) };
+	g_array_append_val(tp, first);
+	g_array_append_val(tp, last);
+	guint i = 0;
+	while (i + 1 < tp->len) {
+		gboolean subdivide;
+		do {
+			TPoint cur = g_array_index(tp, TPoint, i), next = g_array_index(tp, TPoint, i + 1);
+			TPoint mid;
+			subdivide = approx_subdivide(pts, weight, fn, cur.t, cur.p, next.t, next.p, &mid.t, &mid.p, error_squared);
+			if (!subdivide && double_check) {
+				TPoint quarter;
+				subdivide = approx_subdivide(pts, weight, fn, cur.t, cur.p, mid.t, mid.p, &quarter.t, &quarter.p, error_squared);
+				if (subdivide)
+					double_check = FALSE; /* found an inflection point */
+			}
+			if (subdivide) {
+				if (mid.t <= cur.t || mid.t >= next.t || tp->len > (1 << 16))
+					break; /* float resolution reached */
+				g_array_insert_val(tp, i + 1, mid);
+			}
+		} while (subdivide);
+		i++;
+	}
+	for (i = 0; i < tp->len; i++)
+		approx_line(a, g_array_index(tp, TPoint, i).p);
+	g_array_free(tp, TRUE);
+}
+
+static gboolean approx_op(GskPathOperation op, const graphene_point_t *pts, gsize n_pts, float weight, gpointer data)
+{
+	Approx *a = data;
+	switch (op) {
+	case GSK_PATH_MOVE:
+		approx_move(a, pts[0]);
+		break;
+	case GSK_PATH_CLOSE:
+		approx_line(a, pts[1]);
+		break;
+	case GSK_PATH_LINE:
+		approx_line(a, pts[1]);
+		break;
+	case GSK_PATH_QUAD:
+		approx_bezier(a, pts, 0, quad_at, a->error_squared, FALSE);
+		break;
+	case GSK_PATH_CUBIC:
+		approx_bezier(a, pts, 0, cubic_at, a->error_squared, TRUE);
+		break;
+	case GSK_PATH_CONIC:
+		/* AOSP turns the conic into quads with half the error and subdivides those with that
+		 * (unsquared) error; here the conic itself is subdivided with the same bound */
+		approx_bezier(a, pts, weight, conic_at, a->error_conic, FALSE);
+		break;
+	}
+	return TRUE;
+}
+
+JNIEXPORT jfloatArray JNICALL Java_android_graphics_Path_native_1approximate(JNIEnv *env, jclass class, jlong path_ptr, jfloat acceptable_error)
+{
+	Approx a = {
+		.pts = g_array_new(FALSE, FALSE, sizeof(graphene_point_t)),
+		.lens = g_array_new(FALSE, FALSE, sizeof(float)),
+		.error_squared = acceptable_error * acceptable_error,
+		.error_conic = acceptable_error / 2,
+	};
+	GskPath *path = _PTR(path_ptr);
+	if (path)
+		gsk_path_foreach(path, GSK_PATH_FOREACH_ALLOW_QUAD | GSK_PATH_FOREACH_ALLOW_CUBIC | GSK_PATH_FOREACH_ALLOW_CONIC, approx_op, &a);
+	if (!a.pts->len) {
+		/* an empty path falls back to the point (0, 0) (a lone move is kept by the foreach) */
+		graphene_point_t zero = GRAPHENE_POINT_INIT(0, 0);
+		approx_move(&a, zero);
+	}
+	float total = g_array_index(a.lens, float, a.lens->len - 1);
+	if (total == 0) {
+		/* lone moves still animate at the same value */
+		graphene_point_t last = g_array_index(a.pts, graphene_point_t, a.pts->len - 1);
+		float one = 1;
+		g_array_append_val(a.pts, last);
+		g_array_append_val(a.lens, one);
+		total = 1;
+	}
+	jsize n = a.pts->len;
+	float *out = g_malloc((gsize)n * 3 * sizeof(float));
+	for (jsize i = 0; i < n; i++) {
+		graphene_point_t p = g_array_index(a.pts, graphene_point_t, i);
+		out[i * 3] = g_array_index(a.lens, float, i) / total;
+		out[i * 3 + 1] = p.x;
+		out[i * 3 + 2] = p.y;
+	}
+	jfloatArray result = (*env)->NewFloatArray(env, n * 3);
+	if (result)
+		(*env)->SetFloatArrayRegion(env, result, 0, n * 3, out);
+	g_free(out);
+	g_array_free(a.pts, TRUE);
+	g_array_free(a.lens, TRUE);
+	return result;
 }
