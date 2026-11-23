@@ -663,33 +663,124 @@ public final class Choreographer {
 		}
 	}
 
-	/* teslalinux: Choreographer vsync callbacks (API 33), mapped onto the frame callback */
-	public interface VsyncCallback { void onVsync(FrameData data); }
+	/* Choreographer vsync callbacks (API 33): AOSP's VsyncCallback, FrameData and FrameTimeline */
+	public interface VsyncCallback {
+		void onVsync(FrameData data);
+	}
+
+	/** AOSP: one possible frame timeline: when the frame would be shown and when it must be done. */
 	public static final class FrameTimeline {
-		private final long vsync, deadline, present;
-		FrameTimeline(long vsync, long deadline, long present) { this.vsync = vsync; this.deadline = deadline; this.present = present; }
-		public long getVsyncId() { return vsync; }
-		public long getDeadlineNanos() { return deadline; }
-		public long getExpectedPresentationTimeNanos() { return present; }
+		private final long mVsyncId, mDeadlineNanos, mExpectedPresentationTimeNanos;
+
+		FrameTimeline(long vsyncId, long expectedPresentationTimeNanos, long deadlineNanos) {
+			mVsyncId = vsyncId;
+			mExpectedPresentationTimeNanos = expectedPresentationTimeNanos;
+			mDeadlineNanos = deadlineNanos;
+		}
+
+		/** The id of the vsync this timeline belongs to. */
+		public long getVsyncId() {
+			return mVsyncId;
+		}
+
+		/** The time (System.nanoTime base) by which the frame must be submitted to make this timeline. */
+		public long getDeadlineNanos() {
+			return mDeadlineNanos;
+		}
+
+		/** The time (System.nanoTime base) at which the frame is expected to be shown. */
+		public long getExpectedPresentationTimeNanos() {
+			return mExpectedPresentationTimeNanos;
+		}
 	}
+
+	/** AOSP: the data of one vsync: its frame time and the timelines the app can aim for. */
 	public static final class FrameData {
-		private final long frameTimeNanos; private final FrameTimeline[] timelines;
-		FrameData(long t) { frameTimeNanos = t; timelines = new FrameTimeline[] { new FrameTimeline(0, t + 8000000L, t + 16666667L) }; }
-		public long getFrameTimeNanos() { return frameTimeNanos; }
-		public FrameTimeline[] getFrameTimelines() { return timelines; }
-		public FrameTimeline getPreferredFrameTimeline() { return timelines[0]; }
+		/* AOSP DisplayEventReceiver.VsyncEventData: up to this many timelines per vsync */
+		static final int FRAME_TIMELINES_LENGTH = 4;
+		private final long mFrameTimeNanos;
+		private final FrameTimeline[] mFrameTimelines;
+		private final int mPreferredFrameTimelineIndex;
+
+		FrameData(long frameTimeNanos, FrameTimeline[] timelines, int preferred) {
+			mFrameTimeNanos = frameTimeNanos;
+			mFrameTimelines = timelines;
+			mPreferredFrameTimelineIndex = preferred;
+		}
+
+		/** The time (System.nanoTime base) at which the frame started being rendered. */
+		public long getFrameTimeNanos() {
+			return mFrameTimeNanos;
+		}
+
+		/** The possible frame timelines, ordered by presentation time. */
+		public FrameTimeline[] getFrameTimelines() {
+			return mFrameTimelines;
+		}
+
+		/** The timeline the platform suggests (the frame presented at the next refresh). */
+		public FrameTimeline getPreferredFrameTimeline() {
+			return mFrameTimelines[mPreferredFrameTimelineIndex];
+		}
 	}
+
+	/*
+	 * The frame clock's data for the current vsync (tlOnVsync): its number, the predicted
+	 * presentation time and the refresh interval. The frame drawn in this cycle is committed at the
+	 * end of the cycle's paint phase and shown at the predicted presentation time, so that
+	 * timeline's deadline is the start of the next cycle (frame time + one refresh interval), capped
+	 * at the presentation time; each later timeline is one refresh later. A frame paced by the
+	 * fallback timer (the window has no frame clock yet) takes the same layout from the timer's
+	 * period.
+	 */
+	private long mVsyncId;
+	private long mLastExpectedPresentNanos;
+
+	FrameData tlFrameData(long frameTimeNanos) {
+		long interval = mFrameIntervalNanos > 0 ? mFrameIntervalNanos : 16666667L;
+		long present = mLastExpectedPresentNanos;
+		if (present <= frameTimeNanos)
+			present = frameTimeNanos + interval;
+		long deadline = Math.min(frameTimeNanos + interval, present);
+		FrameTimeline[] timelines = new FrameTimeline[FrameData.FRAME_TIMELINES_LENGTH];
+		for (int i = 0; i < timelines.length; i++)
+			timelines[i] = new FrameTimeline(mVsyncId + i, present + i * interval, deadline + i * interval);
+		return new FrameData(frameTimeNanos, timelines, 0);
+	}
+
 	private final java.util.Map<VsyncCallback, FrameCallback> tlVsync = new java.util.HashMap<>();
+
 	public void postVsyncCallback(final VsyncCallback callback) {
-		FrameCallback fc = new FrameCallback() { public void doFrame(long frameTimeNanos) { tlVsync.remove(callback); callback.onVsync(new FrameData(frameTimeNanos)); } };
+		if (callback == null)
+			throw new IllegalArgumentException("callback must not be null");
+		FrameCallback fc = new FrameCallback() {
+			public void doFrame(long frameTimeNanos) {
+				tlVsync.remove(callback);
+				callback.onVsync(tlFrameData(frameTimeNanos));
+			}
+		};
 		tlVsync.put(callback, fc);
 		postFrameCallback(fc);
 	}
+
 	public void removeVsyncCallback(VsyncCallback callback) {
 		FrameCallback fc = tlVsync.remove(callback);
-		if (fc != null) removeFrameCallback(fc);
+		if (fc != null)
+			removeFrameCallback(fc);
 	}
-	public long getVsyncId() { return 0; }
+
+	/** AOSP (hidden): the id of the vsync of the frame being processed. */
+	public long getVsyncId() {
+		return mVsyncId;
+	}
+
+	/** AOSP (hidden): the refresh interval in nanoseconds (the frame clock's, once it has reported one). */
+	public long getFrameIntervalNanos() {
+		synchronized (mLock) {
+			return mFrameIntervalNanos;
+		}
+	}
+
 	/* teslalinux: AOSP's FrameDisplayEventReceiver over the toplevel's GTK frame clock */
 	private long mTimestampNanos;
 
@@ -726,12 +817,20 @@ public final class Choreographer {
 	 * change and the recomposition that animates it showed the end state for a frame (Waze's menu
 	 * flashed open before sliding in).
 	 */
-	private void tlOnVsync(long timestampNanos) {
+	private void tlOnVsync(long timestampNanos, long vsyncId, long expectedPresentNanos, long frameIntervalNanos) {
 		long now = System.nanoTime();
 		if (timestampNanos > now) {
 			timestampNanos = now;
 		}
 		mTimestampNanos = timestampNanos;
+		mVsyncId = vsyncId;
+		mLastExpectedPresentNanos = expectedPresentNanos;
+		/* AOSP doFrame: the frame interval follows the display's (VsyncEventData.frameInterval) */
+		if (frameIntervalNanos > 0) {
+			synchronized (mLock) {
+				mFrameIntervalNanos = frameIntervalNanos;
+			}
+		}
 		doFrame(timestampNanos, 0);
 	}
 

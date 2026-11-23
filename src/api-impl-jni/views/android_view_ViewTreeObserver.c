@@ -84,7 +84,23 @@ static void tl_on_frame_update(GdkFrameClock *clock, gpointer data)
 			t0 = t;
 		}
 	}
-	(*env)->CallVoidMethod(env, tl_vsync_choreographer, tl_vsync_method, frame_time_ns);
+	/* AOSP DisplayEventReceiver.VsyncEventData from the frame clock: this frame's number (the vsync
+	 * id), its predicted presentation time and the refresh interval, from the frame's timings where
+	 * the clock has them (presentation feedback from the compositor), else from the clock's history
+	 * (gdk_frame_clock_get_refresh_info: the last presentation time and interval, or 1/60 s) */
+	gint64 counter = gdk_frame_clock_get_frame_counter(clock);
+	GdkFrameTimings *timings = gdk_frame_clock_get_timings(clock, counter);
+	gint64 interval_us = timings ? gdk_frame_timings_get_refresh_interval(timings) : 0;
+	gint64 present_us = timings ? gdk_frame_timings_get_predicted_presentation_time(timings) : 0;
+	if (interval_us <= 0 || present_us <= 0) {
+		gint64 ri = 0, pt = 0;
+		gdk_frame_clock_get_refresh_info(clock, gdk_frame_clock_get_frame_time(clock), &ri, &pt);
+		if (interval_us <= 0)
+			interval_us = ri;
+		if (present_us <= 0)
+			present_us = pt;
+	}
+	(*env)->CallVoidMethod(env, tl_vsync_choreographer, tl_vsync_method, frame_time_ns, (jlong)counter, (jlong)present_us * 1000, (jlong)interval_us * 1000);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
 }
@@ -133,7 +149,7 @@ JNIEXPORT jboolean JNICALL Java_android_view_Choreographer_nativeScheduleVsync(J
 		if (tl_vsync_choreographer)
 			(*env)->DeleteGlobalRef(env, tl_vsync_choreographer);
 		tl_vsync_choreographer = (*env)->NewGlobalRef(env, this);
-		tl_vsync_method = _METHOD(_CLASS(this), "tlOnVsync", "(J)V");
+		tl_vsync_method = _METHOD(_CLASS(this), "tlOnVsync", "(JJJJ)V");
 	}
 	tl_vsync_pending = TRUE;
 	gdk_frame_clock_request_phase(clock, GDK_FRAME_CLOCK_PHASE_UPDATE);
