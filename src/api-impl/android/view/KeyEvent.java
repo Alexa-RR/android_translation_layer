@@ -2240,14 +2240,77 @@ public class KeyEvent extends InputEvent implements Parcelable {
 	 * TODO: should the dpad keys be here?  arguably, because they also shouldn't be menu shortcuts
 	 */
 	public final boolean isSystem() {
-		return native_isSystemKey(mKeyCode);
+		return isSystemKey(mKeyCode);
 	}
 
-	/**
+	/** @hide */
+	public final boolean isWakeKey() {
+		return isWakeKey(mKeyCode);
+	}
+
+	/*
+	 * AOSP 14's lists (KeyEvent.isSystemKey/isWakeKey, Java there too; the old native
+	 * hasDefaultAction is gone from AOSP). Key codes above KEYCODE_MEDIA_AUDIO_TRACK are written
+	 * as numbers: this KeyEvent does not declare them yet.
+	 */
+	/** Is this a system key? System keys can not be used for menu shortcuts.
 	 * @hide
 	 */
-	public final boolean hasDefaultAction() {
-		return native_hasDefaultAction(mKeyCode);
+	public static final boolean isSystemKey(int keyCode) {
+		switch (keyCode) {
+			case KeyEvent.KEYCODE_MENU:
+			case KeyEvent.KEYCODE_SOFT_RIGHT:
+			case KeyEvent.KEYCODE_HOME:
+			case 312: // KEYCODE_RECENT_APPS
+			case KeyEvent.KEYCODE_BACK:
+			case KeyEvent.KEYCODE_CALL:
+			case KeyEvent.KEYCODE_ENDCALL:
+			case KeyEvent.KEYCODE_VOLUME_UP:
+			case KeyEvent.KEYCODE_VOLUME_DOWN:
+			case KeyEvent.KEYCODE_VOLUME_MUTE:
+			case KeyEvent.KEYCODE_MUTE:
+			case KeyEvent.KEYCODE_POWER:
+			case KeyEvent.KEYCODE_HEADSETHOOK:
+			case KeyEvent.KEYCODE_MEDIA_PLAY:
+			case KeyEvent.KEYCODE_MEDIA_PAUSE:
+			case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+			case KeyEvent.KEYCODE_MEDIA_STOP:
+			case KeyEvent.KEYCODE_MEDIA_NEXT:
+			case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+			case KeyEvent.KEYCODE_MEDIA_REWIND:
+			case KeyEvent.KEYCODE_MEDIA_RECORD:
+			case KeyEvent.KEYCODE_MEDIA_FAST_FORWARD:
+			case KeyEvent.KEYCODE_CAMERA:
+			case KeyEvent.KEYCODE_FOCUS:
+			case KeyEvent.KEYCODE_SEARCH:
+			case KeyEvent.KEYCODE_BRIGHTNESS_DOWN:
+			case KeyEvent.KEYCODE_BRIGHTNESS_UP:
+			case 305: // KEYCODE_KEYBOARD_BACKLIGHT_DOWN
+			case 306: // KEYCODE_KEYBOARD_BACKLIGHT_UP
+			case 307: // KEYCODE_KEYBOARD_BACKLIGHT_TOGGLE
+			case KeyEvent.KEYCODE_MEDIA_AUDIO_TRACK:
+			case 280: // KEYCODE_SYSTEM_NAVIGATION_UP
+			case 281: // KEYCODE_SYSTEM_NAVIGATION_DOWN
+			case 282: // KEYCODE_SYSTEM_NAVIGATION_LEFT
+			case 283: // KEYCODE_SYSTEM_NAVIGATION_RIGHT
+				return true;
+		}
+		return false;
+	}
+
+	/** @hide */
+	public static final boolean isWakeKey(int keyCode) {
+		switch (keyCode) {
+			case KeyEvent.KEYCODE_CAMERA:
+			case KeyEvent.KEYCODE_MENU:
+			case 225: // KEYCODE_PAIRING
+			case 265: // KEYCODE_STEM_1
+			case 266: // KEYCODE_STEM_2
+			case 267: // KEYCODE_STEM_3
+			case 224: // KEYCODE_WAKEUP
+				return true;
+		}
+		return false;
 	}
 
 	/**
@@ -3323,12 +3386,17 @@ public class KeyEvent extends InputEvent implements Parcelable {
 			throw new IllegalArgumentException("symbolicName must not be null");
 		}
 
+		// AOSP: the name with or without its "KEYCODE_" prefix (nativeKeyCodeFromString looks up
+		// the label after the prefix is removed)
+		if (!symbolicName.startsWith("KEYCODE_"))
+			symbolicName = "KEYCODE_" + symbolicName;
 		final int count = KEYCODE_SYMBOLIC_NAMES.size();
 		for (int i = 0; i < count; i++) {
 			if (symbolicName.equals(KEYCODE_SYMBOLIC_NAMES.valueAt(i))) {
-				return i;
+				return KEYCODE_SYMBOLIC_NAMES.keyAt(i);
 			}
 		}
+		symbolicName = symbolicName.substring("KEYCODE_".length());
 
 		try {
 			return Integer.parseInt(symbolicName, 10);
@@ -3372,9 +3440,6 @@ public class KeyEvent extends InputEvent implements Parcelable {
 		}
 		return result.toString();
 	}
-
-	private native boolean native_isSystemKey(int keyCode);
-	private native boolean native_hasDefaultAction(int keyCode);
 
 	/* teslalinux: KeyEvent additions */
 	public boolean isFromSource(int source) { return (getSource() & source) == source; }

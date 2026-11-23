@@ -112,6 +112,12 @@ install_data([
              ],
              install_dir: join_paths(get_option('prefix'), get_option('datadir')) + '/atl/system/etc')
 
+# AOSP's key character maps (frameworks/base/data/keyboards), where a device has them
+# (/system/usr/keychars), in the runtime's system directory next to api-impl.jar (ATLPaths.system_dir):
+# KeyCharacterMap loads Virtual.kcm for the virtual keyboard and Generic.kcm for keyboards
+install_data(['res/keychars/Generic.kcm', 'res/keychars/Virtual.kcm'],
+             install_dir: get_option('libdir') / 'java/dex/android_translation_layer/system/usr/keychars')
+
 #tools
 subdir('tools/jni_upcall_gen')
 

@@ -1004,6 +1004,7 @@ srcs = [
 	'android/view/SurfaceView.java',
 	'android/view/TextureView.java',
 	'android/view/ThreadedRenderer.java',
+	'android/view/TlKeyCharacterMapFile.java',
 	'android/view/TouchDelegate.java',
 	'android/view/VelocityTracker.java',
 	'android/view/View.java',
