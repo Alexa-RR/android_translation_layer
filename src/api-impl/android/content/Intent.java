@@ -1189,6 +1189,44 @@ public class Intent implements Parcelable {
 		return extras == null ? def : extras.getFloat(name, def);
 	}
 
+	/** AOSP: the byte extra, or defaultValue when there is none (or it is of another type). */
+	public byte getByteExtra(String name, byte defaultValue) {
+		return extras == null ? defaultValue : extras.getByte(name, defaultValue);
+	}
+
+	/** AOSP: the short extra, or defaultValue. */
+	public short getShortExtra(String name, short defaultValue) {
+		return extras == null ? defaultValue : extras.getShort(name, defaultValue);
+	}
+
+	/** AOSP: the double extra, or defaultValue. */
+	public double getDoubleExtra(String name, double defaultValue) {
+		return extras == null ? defaultValue : extras.getDouble(name, defaultValue);
+	}
+
+	/** AOSP (deprecated): the extra of any type, or null. */
+	@Deprecated
+	public Object getExtra(String name) {
+		return getExtra(name, null);
+	}
+
+	/** AOSP (hidden): the extra of any type, or defaultValue. */
+	public Object getExtra(String name, Object defaultValue) {
+		Object result = defaultValue;
+		if (extras != null) {
+			Object result2 = extras.get(name);
+			if (result2 != null)
+				result = result2;
+		}
+		return result;
+	}
+
+	/** AOSP (deprecated, hidden): the IBinder extra, or null. */
+	@Deprecated
+	public android.os.IBinder getIBinderExtra(String name) {
+		return extras == null ? null : extras.getIBinder(name);
+	}
+
 	/** AOSP: the MIME type in its canonical form: trimmed, lower case, without parameters. */
 	public static String normalizeMimeType(String type) {
 		if (type == null) {
