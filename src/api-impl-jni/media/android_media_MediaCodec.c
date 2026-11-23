@@ -80,8 +80,9 @@ JNIEXPORT void JNICALL Java_android_media_MediaCodec_native_1configure_1audio(JN
 	else if (nb_channels == 2)
 		codec_ctx->ch_layout = (AVChannelLayout)AV_CHANNEL_LAYOUT_STEREO;
 	else {
-		av_channel_layout_default(&codec_ctx->ch_layout, nb_channels); /* AOSP: any channel count */
-		exit(0);
+		/* AOSP: any channel count; the decoded frames keep it (the resampler output below has the
+		 * same layout), as the MediaFormat's channel-count reports */
+		av_channel_layout_default(&codec_ctx->ch_layout, nb_channels);
 	}
 
 	if (extradata) {

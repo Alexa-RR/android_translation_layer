@@ -699,12 +699,14 @@ public class View implements Drawable.Callback {
 		public void onViewDetachedFromWindow(View v);
 	}
 
+	/** AOSP: called when a generic motion event is dispatched to a view (before onGenericMotionEvent). */
 	public interface OnGenericMotionListener {
-		// TODO
+		boolean onGenericMotion(View v, MotionEvent event);
 	}
 
+	/** AOSP: called when the status bar changes visibility (the window's system UI flags change). */
 	public interface OnSystemUiVisibilityChangeListener {
-		// TODO
+		void onSystemUiVisibilityChange(int visibility);
 	}
 
 	public static interface OnKeyListener {
@@ -715,8 +717,9 @@ public class View implements Drawable.Callback {
 		public boolean onLongClick(View v);
 	}
 
+	/** AOSP: called when a hover event is dispatched to a view (before onHoverEvent). */
 	public interface OnHoverListener {
-		// TODO
+		boolean onHover(View v, MotionEvent event);
 	}
 
 	public interface OnApplyWindowInsetsListener {
@@ -729,8 +732,9 @@ public class View implements Drawable.Callback {
 		void onLayoutChange(View v, int left, int top, int right, int bottom, int oldLeft, int oldTop, int oldRight, int oldBottom);
 	}
 
+	/** AOSP: called with a key event that the view hierarchy and the window did not handle. */
 	public interface OnUnhandledKeyEventListener {
-		// TODO
+		boolean onUnhandledKeyEvent(View v, KeyEvent event);
 	}
 
 	public interface OnFocusChangeListener {
@@ -752,7 +756,10 @@ public class View implements Drawable.Callback {
 		//void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo);
 	}
 
-	public interface OnDragListener {}
+	/** AOSP: called when a drag event is dispatched to a view (before onDragEvent). */
+	public interface OnDragListener {
+		boolean onDrag(View v, DragEvent event);
+	}
 	// --- end of interfaces
 
 	// --- subclasses
@@ -1444,7 +1451,54 @@ public class View implements Drawable.Callback {
 		on_scroll_change_listener = l;
 	}
 
-	public /*native*/ void setOnSystemUiVisibilityChangeListener(OnSystemUiVisibilityChangeListener l) {}
+	private OnSystemUiVisibilityChangeListener mOnSystemUiVisibilityChangeListener;
+
+	public void setOnSystemUiVisibilityChangeListener(OnSystemUiVisibilityChangeListener l) {
+		mOnSystemUiVisibilityChangeListener = l;
+	}
+
+	/**
+	 * AOSP: the window's system UI visibility changed; the listener gets the public flags (whether the
+	 * status bar is hidden). Returns whether the view requested something of the window (AOSP: true
+	 * when a listener changed the flags), which this view never does here.
+	 */
+	public boolean dispatchSystemUiVisibilityChanged(int visibility) {
+		if (mOnSystemUiVisibilityChangeListener != null)
+			mOnSystemUiVisibilityChangeListener.onSystemUiVisibilityChange(visibility & PUBLIC_STATUS_BAR_VISIBILITY_MASK);
+		return false;
+	}
+
+	/** AOSP: the window's global system UI flags changed. */
+	public void dispatchWindowSystemUiVisiblityChanged(int visible) {
+		onWindowSystemUiVisibilityChanged(visible);
+	}
+
+	/** AOSP (ViewRootImpl.dispatchCollectViewAttributes): the flags every view of the window asks for. */
+	int tlCollectSystemUiVisibility() {
+		return system_ui_visibility;
+	}
+
+	/** AOSP: the flags that apps can see in onSystemUiVisibilityChange. */
+	public static final int PUBLIC_STATUS_BAR_VISIBILITY_MASK = 0x00003FF7;
+
+	/** A view's flags changed: the window's global flags go to every view of the window (posted). */
+	private void tlSystemUiVisibilityChanged() {
+		post(new Runnable() {
+			public void run() {
+				View root = getRootView();
+				if (root == null || !root.isAttachedToWindow())
+					return;
+				int global = root.tlCollectSystemUiVisibility();
+				if (root.tlLastGlobalSystemUi == global)
+					return;
+				root.tlLastGlobalSystemUi = global;
+				root.dispatchSystemUiVisibilityChanged(global);
+				root.dispatchWindowSystemUiVisiblityChanged(global);
+			}
+		});
+	}
+
+	private int tlLastGlobalSystemUi = 0;
 	public final int getWidth() {
 		return right - left;
 	}
@@ -1559,7 +1613,10 @@ public class View implements Drawable.Callback {
 		/* LAYOUT_FULLSCREEN mode would make the app window continue behind semi-transparent status bar.
 		   Such a mode doesn't exist on desktop Linux, so we just use normal fullscreen for both modes. */
 		nativeSetFullscreen(widget, (visibility & (View.SYSTEM_UI_FLAG_FULLSCREEN | SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)) != 0);
-		system_ui_visibility = visibility;
+		if (system_ui_visibility != visibility) {
+			system_ui_visibility = visibility;
+			tlSystemUiVisibilityChanged();
+		}
 	}
 	public int getSystemUiVisibility() {
 		return system_ui_visibility;
@@ -1884,7 +1941,16 @@ public class View implements Drawable.Callback {
 		}, delayMilliseconds);
 	}
 
-	public void setOnGenericMotionListener(View.OnGenericMotionListener l) {}
+	private OnGenericMotionListener mOnGenericMotionListener;
+
+	public void setOnGenericMotionListener(View.OnGenericMotionListener l) {
+		mOnGenericMotionListener = l;
+		if (l != null)
+			nativeTlEnablePointerEvents(widget, false, true);
+	}
+
+	/** Adds the GTK controllers that deliver hover and scroll events to this view (once). */
+	private native void nativeTlEnablePointerEvents(long widget, boolean hover, boolean scroll);
 
 	/** the token of the window this view is the root of (created on first use) */
 	private IBinder tlWindowToken;
@@ -2193,7 +2259,13 @@ public class View implements Drawable.Callback {
 			nativeSetOnTouchListener(widget);
 	}
 
-	public void setOnHoverListener(OnHoverListener listener) {}
+	private OnHoverListener mOnHoverListener;
+
+	public void setOnHoverListener(OnHoverListener listener) {
+		mOnHoverListener = listener;
+		if (listener != null)
+			nativeTlEnablePointerEvents(widget, true, false);
+	}
 
 	@Export
 	public final void measure(int widthMeasureSpec, int heightMeasureSpec) {
@@ -2662,8 +2734,22 @@ public class View implements Drawable.Callback {
 	@Export
 	public boolean onGenericMotionEvent(MotionEvent event) { return false; }
 
+	/**
+	 * AOSP: hover actions of a pointer go to dispatchHoverEvent; the rest to the generic motion listener
+	 * (if the view is enabled), then onGenericMotionEvent. GTK delivers the event to the view under the
+	 * pointer, so there is no child routing (dispatchGenericPointerEvent/FocusedEvent) to do here.
+	 */
 	@Export
 	public boolean dispatchGenericMotionEvent(MotionEvent event) {
+		if ((event.getSource() & InputDevice.SOURCE_CLASS_POINTER) != 0) {
+			final int action = event.getAction();
+			if (action == MotionEvent.ACTION_HOVER_ENTER || action == MotionEvent.ACTION_HOVER_MOVE || action == MotionEvent.ACTION_HOVER_EXIT) {
+				if (dispatchHoverEvent(event))
+					return true;
+			}
+		}
+		if (mOnGenericMotionListener != null && isEnabled() && mOnGenericMotionListener.onGenericMotion(this, event))
+			return true;
 		return onGenericMotionEvent(event);
 	}
 
@@ -2868,8 +2954,9 @@ public class View implements Drawable.Callback {
 		rect.bottom = getScrollY() + getHeight();
 	}
 
+	/** AOSP: the display the view's window is on; null while the view is not attached to a window. */
 	public Display getDisplay() {
-		return new Display();
+		return isAttachedToWindow() ? new Display() : null;
 	}
 
 	private int importantForAccessibility;
@@ -3384,8 +3471,10 @@ public class View implements Drawable.Callback {
 		}
 	}
 
+	/** AOSP: the window's global system UI flags (what all its views ask for), 0 while detached. */
 	public int getWindowSystemUiVisibility() {
-		return 0;
+		View root = getRootView();
+		return root != null && isAttachedToWindow() ? root.tlCollectSystemUiVisibility() : 0;
 	}
 
 	/** AOSP: the scroll indicators in mask are set to indicators (drawing is TODO-real, like scroll bars) */
@@ -3595,7 +3684,23 @@ public class View implements Drawable.Callback {
 		return mTouchDelegate;
 	}
 
-	public void setOnDragListener(OnDragListener onDragListener) {}
+	private OnDragListener mOnDragListener;
+
+	public void setOnDragListener(OnDragListener onDragListener) {
+		mOnDragListener = onDragListener;
+	}
+
+	/** AOSP: a drag event goes to the listener first (if the view is enabled), then to onDragEvent. */
+	public boolean dispatchDragEvent(DragEvent event) {
+		if (mOnDragListener != null && isEnabled() && mOnDragListener.onDrag(this, event))
+			return true;
+		return onDragEvent(event);
+	}
+
+	/** AOSP: a view does not take part in drag and drop unless it overrides this. */
+	public boolean onDragEvent(DragEvent event) {
+		return false;
+	}
 
 	public void setTransitionName(String transitionName) {
 		tlTransitionName = transitionName;
@@ -3988,7 +4093,12 @@ public class View implements Drawable.Callback {
 	}
 
 	@Export
-	protected boolean dispatchHoverEvent(MotionEvent event) { return false; }
+	/** AOSP: the hover listener (if the view is enabled) then onHoverEvent. */
+	protected boolean dispatchHoverEvent(MotionEvent event) {
+		if (mOnHoverListener != null && isEnabled() && mOnHoverListener.onHover(this, event))
+			return true;
+		return onHoverEvent(event);
+	}
 
 	public ActionMode startActionMode(ActionMode.Callback callback, int type) { return null; }
 
@@ -4147,8 +4257,57 @@ public class View implements Drawable.Callback {
 			tlTransformChanged();
 		}
 	}
-	public void addOnUnhandledKeyEventListener(OnUnhandledKeyEventListener listener) {}
-	public void removeOnUnhandledKeyEventListener(OnUnhandledKeyEventListener listener) {}
+	private java.util.ArrayList<OnUnhandledKeyEventListener> mUnhandledKeyListeners;
+
+	public void addOnUnhandledKeyEventListener(OnUnhandledKeyEventListener listener) {
+		if (mUnhandledKeyListeners == null)
+			mUnhandledKeyListeners = new java.util.ArrayList<>();
+		mUnhandledKeyListeners.add(listener);
+	}
+
+	public void removeOnUnhandledKeyEventListener(OnUnhandledKeyEventListener listener) {
+		if (mUnhandledKeyListeners != null)
+			mUnhandledKeyListeners.remove(listener);
+	}
+
+	/** AOSP: the view's unhandled-key listeners, newest first; true if one took the event. */
+	boolean onUnhandledKeyEvent(KeyEvent event) {
+		if (mUnhandledKeyListeners != null)
+			for (int i = mUnhandledKeyListeners.size() - 1; i >= 0; --i)
+				if (mUnhandledKeyListeners.get(i).onUnhandledKeyEvent(this, event))
+					return true;
+		return false;
+	}
+
+	/** AOSP: the view that takes an unhandled key event (a group asks its children first, topmost first). */
+	View dispatchUnhandledKeyEvent(KeyEvent event) {
+		return onUnhandledKeyEvent(event) ? this : null;
+	}
+
+	/** The views that took the down of an unhandled key, by key code: they get its up (on the root). */
+	private android.util.SparseArray<java.lang.ref.WeakReference<View>> tlUnhandledKeyCaptures;
+
+	/**
+	 * @hide AOSP ViewRootImpl's UnhandledKeyManager, on the window's root view: a key event that the
+	 * window did not handle goes to the unhandled-key listeners; the up of a key goes to the view that
+	 * took its down.
+	 */
+	public boolean tlDispatchUnhandledKeyEvent(KeyEvent event) {
+		if (tlUnhandledKeyCaptures == null)
+			tlUnhandledKeyCaptures = new android.util.SparseArray<>();
+		final int code = event.getKeyCode();
+		if (event.getAction() == KeyEvent.ACTION_UP) {
+			java.lang.ref.WeakReference<View> ref = tlUnhandledKeyCaptures.get(code);
+			tlUnhandledKeyCaptures.remove(code);
+			View captured = ref != null ? ref.get() : null;
+			if (captured != null)
+				return captured.onUnhandledKeyEvent(event);
+		}
+		View consumer = dispatchUnhandledKeyEvent(event);
+		if (consumer != null && event.getAction() == KeyEvent.ACTION_DOWN)
+			tlUnhandledKeyCaptures.put(code, new java.lang.ref.WeakReference<>(consumer));
+		return consumer != null;
+	}
 	/** AOSP: a copy of the clip bounds, null when there are none */
 	public android.graphics.Rect getClipBounds() { return tlClipBounds != null ? new Rect(tlClipBounds) : null; }
 	/** AOSP: the clip bounds into outRect; false when there are none */

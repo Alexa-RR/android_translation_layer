@@ -479,6 +479,44 @@ public class ViewGroup extends View implements ViewParent, ViewManager {
 
 	// (layout) isChildrenDrawingOrderEnabled: see ViewGroup+layout.frag
 
+	/* ---- unhandled keys and system UI visibility (AOSP ViewGroup) ---- */
+
+	@Override
+	View dispatchUnhandledKeyEvent(KeyEvent event) {
+		for (int i = getChildCount() - 1; i >= 0; --i) {
+			View consumer = getChildAt(i).dispatchUnhandledKeyEvent(event);
+			if (consumer != null)
+				return consumer;
+		}
+		return super.dispatchUnhandledKeyEvent(event);
+	}
+
+	@Override
+	public boolean dispatchSystemUiVisibilityChanged(int visible) {
+		boolean changed = super.dispatchSystemUiVisibilityChanged(visible);
+		for (int i = 0; i < getChildCount(); i++)
+			changed |= getChildAt(i).dispatchSystemUiVisibilityChanged(visible);
+		return changed;
+	}
+
+	@Override
+	public void dispatchWindowSystemUiVisiblityChanged(int visible) {
+		super.dispatchWindowSystemUiVisiblityChanged(visible);
+		for (int i = 0; i < getChildCount(); i++)
+			getChildAt(i).dispatchWindowSystemUiVisiblityChanged(visible);
+	}
+
+	@Override
+	int tlCollectSystemUiVisibility() {
+		int v = super.tlCollectSystemUiVisibility();
+		for (int i = 0; i < getChildCount(); i++) {
+			View c = getChildAt(i);
+			if (c.getVisibility() == VISIBLE)
+				v |= c.tlCollectSystemUiVisibility();
+		}
+		return v;
+	}
+
 	/* ---- accessibility (AOSP ViewGroup) ---- */
 
 	/** AOSP: the group may veto a child's event (onRequestSendAccessibilityEvent), then passes it up. */

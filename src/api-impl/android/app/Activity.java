@@ -851,6 +851,13 @@ public class Activity extends ContextThemeWrapper implements Window.Callback, Ke
 		return event.dispatch(this, tlKeyDispatchState, this);
 	}
 
+	/** A key event the window did not handle: its views' unhandled-key listeners (AOSP ViewRootImpl). */
+	@android.atl.annotation.Export
+	public boolean tlDispatchUnhandledKeyEvent(KeyEvent event) {
+		android.view.View decor = getWindow() != null ? getWindow().peekDecorView() : null;
+		return decor != null && decor.tlDispatchUnhandledKeyEvent(event);
+	}
+
 	/**
 	 * AOSP: the permission controller asks the user, then onRequestPermissionsResult gets the
 	 * grants. ATL's PackageManager decides every permission without a prompt, so the result is

@@ -514,6 +514,12 @@ gboolean current_activity_dispatch_key(guint keyval, GdkModifierType state, int 
 	gboolean ret = (*env)->CallBooleanMethod(env, activity_current, dispatch, key_event);
 	if ((*env)->ExceptionCheck(env))
 		(*env)->ExceptionDescribe(env);
+	if (!ret) {
+		/* AOSP ViewRootImpl: what the window did not handle goes to the unhandled-key listeners */
+		ret = J__Activity__tlDispatchUnhandledKeyEvent(env, activity_current, key_event);
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionDescribe(env);
+	}
 	(*env)->DeleteLocalRef(env, key_event);
 	return ret;
 }

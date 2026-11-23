@@ -494,10 +494,8 @@ static gboolean on_pointer_event(GtkEventControllerLegacy *event_controller, Gdk
 	GtkPropagationPhase phase = gtk_event_controller_get_propagation_phase(GTK_EVENT_CONTROLLER(event_controller));
 	guint32 timestamp = gdk_event_get_time(event);
 
-	if (id >= MAX_POINTERS) {
-		fprintf(stderr, "exiting - event sequence %w64d larger than %d, did Gtk implementation change?", id, MAX_POINTERS);
-		exit(1);
-	}
+	/* a sequence id beyond the pointer slots was left out above (id > MAX_POINTERS - 1: a drag and
+	 * drop pointer), so every id here has a slot */
 
 	double raw_x;
 	double raw_y;
@@ -664,6 +662,30 @@ static void hover_motion_cb(GtkEventControllerMotion *controller, double x, doub
 	wrapper->hover_x = x;
 	wrapper->hover_y = y;
 	call_hover_callback(wrapper->jobj, ACTION_HOVER_MOVE, x, y, raw_x, raw_y);
+}
+
+/* the scroll wheel as ACTION_SCROLL generic motion events (View.dispatchGenericMotionEvent), once per view */
+static void tl_add_scroll_controller(WrapperWidget *wrapper)
+{
+	if (g_object_get_data(G_OBJECT(wrapper), "tl-scroll-controller"))
+		return;
+	GtkEventController *controller = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
+	g_signal_connect(controller, "scroll", G_CALLBACK(scroll_cb), wrapper->jobj);
+	gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
+	g_object_set_data(G_OBJECT(wrapper), "tl-scroll-controller", controller);
+}
+
+/* pointer enter/leave/motion as hover events (View.dispatchHoverEvent), once per view */
+static void tl_add_hover_controller(WrapperWidget *wrapper)
+{
+	if (g_object_get_data(G_OBJECT(wrapper), "tl-hover-controller"))
+		return;
+	GtkEventController *controller = gtk_event_controller_motion_new();
+	g_signal_connect(controller, "enter", G_CALLBACK(hover_enter_cb), wrapper);
+	g_signal_connect(controller, "leave", G_CALLBACK(hover_leave_cb), wrapper);
+	g_signal_connect(controller, "motion", G_CALLBACK(hover_motion_cb), wrapper);
+	gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
+	g_object_set_data(G_OBJECT(wrapper), "tl-hover-controller", controller);
 }
 
 void _setOnTouchListener(JNIEnv *env, jobject this, GtkWidget *widget)
@@ -887,22 +909,34 @@ JNIEXPORT jlong JNICALL Java_android_view_View_native_1constructor(JNIEnv *env, 
 	(*env)->ReleaseStringUTFChars(env, name_jstr, name);
 
 	if (_METHOD(class, "onGenericMotionEvent", "(Landroid/view/MotionEvent;)Z") != _CACHED_METHOD(View__onGenericMotionEvent)
-	    || _METHOD(class, "dispatchGenericMotionEvent", "(Landroid/view/MotionEvent;)Z") != _CACHED_METHOD(View__dispatchGenericMotionEvent)) {
-		GtkEventController *controller = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_VERTICAL);
-
-		g_signal_connect(controller, "scroll", G_CALLBACK(scroll_cb), wrapper->jobj);
-		gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
+	    || _METHOD(class, "dispatchGenericMotionEvent", "(Landroid/view/MotionEvent;)Z") != _CACHED_METHOD(View__dispatchGenericMotionEvent))
+		tl_add_scroll_controller(wrapper);
+	static jmethodID view_on_hover;
+	if (!view_on_hover) {
+		jclass view_class = (*env)->FindClass(env, "android/view/View");
+		view_on_hover = _METHOD(view_class, "onHoverEvent", "(Landroid/view/MotionEvent;)Z");
+		(*env)->DeleteLocalRef(env, view_class);
 	}
-	if (_METHOD(class, "dispatchHoverEvent", "(Landroid/view/MotionEvent;)Z") != _CACHED_METHOD(View__dispatchHoverEvent)) {
-		GtkEventController *controller = gtk_event_controller_motion_new();
-
-		g_signal_connect(controller, "enter", G_CALLBACK(hover_enter_cb), wrapper);
-		g_signal_connect(controller, "leave", G_CALLBACK(hover_leave_cb), wrapper);
-		g_signal_connect(controller, "motion", G_CALLBACK(hover_motion_cb), wrapper);
-		gtk_widget_add_controller(GTK_WIDGET(wrapper), controller);
-	}
+	/* AOSP: dispatchHoverEvent hands the event to onHoverEvent, so a class overriding either gets them */
+	if (_METHOD(class, "dispatchHoverEvent", "(Landroid/view/MotionEvent;)Z") != _CACHED_METHOD(View__dispatchHoverEvent)
+	    || _METHOD(class, "onHoverEvent", "(Landroid/view/MotionEvent;)Z") != view_on_hover)
+		tl_add_hover_controller(wrapper);
 
 	return _INTPTR(widget);
+}
+
+/* View.setOnHoverListener / setOnGenericMotionListener: a listener needs the events whatever the class
+ * overrides (the controllers are added once per view) */
+JNIEXPORT void JNICALL Java_android_view_View_nativeTlEnablePointerEvents(JNIEnv *env, jobject this, jlong widget_ptr, jboolean hover, jboolean scroll)
+{
+	GtkWidget *widget = _PTR(widget_ptr);
+	GtkWidget *wrapper = widget ? gtk_widget_get_parent(widget) : NULL;
+	if (!wrapper || !WRAPPER_IS_WIDGET(wrapper))
+		return;
+	if (hover)
+		tl_add_hover_controller(WRAPPER_WIDGET(wrapper));
+	if (scroll)
+		tl_add_scroll_controller(WRAPPER_WIDGET(wrapper));
 }
 
 JNIEXPORT void JNICALL Java_android_view_View_nativeInvalidate(JNIEnv *env, jclass class, jlong widget_ptr)
