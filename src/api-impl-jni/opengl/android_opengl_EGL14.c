@@ -157,7 +157,7 @@ JNIEXPORT void JNICALL Java_android_opengl_EGL14__1nativeClassInit(JNIEnv *env, 
 
 JNIEXPORT jint JNICALL Java_android_opengl_EGL14_eglGetError(JNIEnv *env, jclass this)
 {
-	return eglGetError();
+	return bionic_eglGetError();
 }
 
 JNIEXPORT jobject JNICALL Java_android_opengl_EGL14_eglGetDisplay__I(JNIEnv *env, jclass this, jint display_id)
@@ -420,7 +420,7 @@ JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglSurfaceAttrib(JNIEnv *en
 	EGLSurface surface_native = (EGLSurface)fromEGLHandle(env, eglsurfaceGetHandleID, surface);
 	if ((*env)->ExceptionCheck(env))
 		return JNI_FALSE;
-	return eglSurfaceAttrib(dpy_native, surface_native, attribute, value);
+	return bionic_eglSurfaceAttrib(dpy_native, surface_native, attribute, value);
 }
 
 JNIEXPORT jboolean JNICALL Java_android_opengl_EGL14_eglBindTexImage(JNIEnv *env, jclass this, jobject dpy, jobject surface, jint buffer)

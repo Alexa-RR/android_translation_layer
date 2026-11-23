@@ -108,7 +108,7 @@ JNIEXPORT jstring JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglQ
 
 JNIEXPORT jint JNICALL Java_com_google_android_gles_1jni_EGLImpl_native_1eglGetError(JNIEnv *env, jobject this)
 {
-	return eglGetError();
+	return bionic_eglGetError();
 }
 
 /* ---- configs ------------------------------------------------------------------------------------ */

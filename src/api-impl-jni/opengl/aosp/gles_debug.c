@@ -59,9 +59,78 @@ struct debug_proc {
 	uint32_t magic;
 	jobject callback; /* global reference to the DebugProc / DebugProcKHR */
 	jmethodID on_message;
+	void *context;    /* the EGLContext it is set on */
+	struct debug_proc *next;
 };
 
 static JavaVM *java_vm;
+
+/* the callbacks set, per context: a context destroyed with its callback still set lets go of it
+ * (libandroid's bionic_eglDestroyContext calls tl_egl_context_destroyed_hook) */
+#include <EGL/egl.h>
+#include <pthread.h>
+static pthread_mutex_t debug_procs_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct debug_proc *debug_procs;
+extern void (*tl_egl_context_destroyed_hook)(EGLContext context);
+
+static void debug_procs_add(struct debug_proc *p)
+{
+	pthread_mutex_lock(&debug_procs_lock);
+	p->next = debug_procs;
+	debug_procs = p;
+	pthread_mutex_unlock(&debug_procs_lock);
+}
+
+static void debug_procs_remove(struct debug_proc *p)
+{
+	pthread_mutex_lock(&debug_procs_lock);
+	for (struct debug_proc **pp = &debug_procs; *pp; pp = &(*pp)->next) {
+		if (*pp == p) {
+			*pp = p->next;
+			break;
+		}
+	}
+	pthread_mutex_unlock(&debug_procs_lock);
+}
+
+static void debug_context_destroyed(EGLContext context)
+{
+	pthread_mutex_lock(&debug_procs_lock);
+	struct debug_proc *gone = NULL;
+	for (struct debug_proc **pp = &debug_procs; *pp;) {
+		struct debug_proc *p = *pp;
+		if (p->context == context) {
+			*pp = p->next;
+			p->next = gone;
+			gone = p;
+		} else {
+			pp = &p->next;
+		}
+	}
+	pthread_mutex_unlock(&debug_procs_lock);
+	if (!gone || !java_vm)
+		return;
+	JNIEnv *env;
+	int attached = 0;
+	if ((*java_vm)->GetEnv(java_vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+		if ((*java_vm)->AttachCurrentThreadAsDaemon(java_vm, (void **)&env, NULL) != JNI_OK)
+			return;
+		attached = 1;
+	}
+	/* a destroyed context still current on this thread lives on until it is released: no more
+	 * messages to the callback from it */
+	if (eglGetCurrentContext() == context)
+		glDebugMessageCallback(NULL, NULL);
+	while (gone) {
+		struct debug_proc *p = gone;
+		gone = p->next;
+		p->magic = 0;
+		(*env)->DeleteGlobalRef(env, p->callback);
+		free(p);
+	}
+	if (attached)
+		(*java_vm)->DetachCurrentThread(java_vm);
+}
 
 static void GL_APIENTRY debug_trampoline(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length,
                                          const GLchar *message, const void *user)
@@ -135,10 +204,14 @@ static void set_debug_callback(JNIEnv *env, jobject callback)
 		p->magic = DEBUG_PROC_MAGIC;
 		p->callback = (*env)->NewGlobalRef(env, callback);
 		p->on_message = on_message;
+		p->context = eglGetCurrentContext();
+		tl_egl_context_destroyed_hook = debug_context_destroyed;
+		debug_procs_add(p);
 	}
 	/* with no callback, messages go to the context's message log again */
 	glDebugMessageCallback(p ? debug_trampoline : NULL, p);
 	if (old) {
+		debug_procs_remove(old);
 		old->magic = 0;
 		(*env)->DeleteGlobalRef(env, old->callback);
 		free(old);

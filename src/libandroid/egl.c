@@ -177,14 +177,40 @@ EGLContext bionic_eglCreateContext(EGLDisplay display, EGLConfig config, EGLCont
 }
 
 static void tl_forget_context(EGLContext context);
+/* set by api-impl's GL bindings: a context is gone (the KHR_debug Java callback set on it lets go) */
+void (*tl_egl_context_destroyed_hook)(EGLContext context) = NULL;
 EGLBoolean bionic_eglDestroyContext(EGLDisplay display, EGLContext context)
 {
 	EGLBoolean ret = eglDestroyContext(display, context);
 	if (ret) {
 		tl_gl_context_destroyed(context);
 		tl_forget_context(context); /* a later context can get the same handle */
+		if (tl_egl_context_destroyed_hook)
+			tl_egl_context_destroyed_hook(context);
 	}
 	return ret;
+}
+
+/* The error of an EGL call ATL answers itself (ATLSurfaces are not Mesa's): eglGetError reports it
+ * (and Mesa's state is cleared) until the next call ATL answers; calls that go to Mesa set Mesa's. */
+static __thread EGLint tl_egl_error;
+static __thread gboolean tl_egl_error_set;
+
+static EGLBoolean tl_egl_result(EGLint error)
+{
+	tl_egl_error = error;
+	tl_egl_error_set = TRUE;
+	return error == EGL_SUCCESS ? EGL_TRUE : EGL_FALSE;
+}
+
+EGLint bionic_eglGetError(void)
+{
+	EGLint mesa = eglGetError();
+	if (tl_egl_error_set) {
+		tl_egl_error_set = FALSE;
+		return tl_egl_error;
+	}
+	return mesa;
 }
 
 EGLBoolean bionic_eglReleaseThread(void)
@@ -357,6 +383,7 @@ struct _ATLSurface {
 		EGLSync tl_frame_fence;          /* native-egl-import-fence.sh: the app's commands for this frame */
 		EGLDisplay tl_frame_fence_display;
 		void *tl_gtk_sync;               /* the GLsync GTK waits on (import context) */
+		guint64 tl_frame;                /* the frame the buffer was last queued with (0: none yet) */
 		/* tl_present_time: when the frame is to be shown (CLOCK_MONOTONIC ns): the time
 		 * eglPresentationTimeANDROID gave it, else the time it was queued (auto timestamp) */
 		gint64 present_ns;
@@ -386,6 +413,13 @@ struct _ATLSurface {
 	 * are destroyed with the surface object (on the display they were made on) */
 	struct tl_surface_texture *surface_texture;
 	EGLDisplay tl_image_display;
+	/* eglQuerySurface/eglSurfaceAttrib: the config and display the surface was made with, and its
+	 * attributes (EGL defaults, or the attribute list and eglSurfaceAttrib) */
+	EGLDisplay tl_display;
+	EGLConfig tl_config;
+	EGLint tl_render_buffer, tl_swap_behavior, tl_multisample_resolve, tl_gl_colorspace;
+	EGLBoolean tl_timestamps;
+	guint64 tl_frames; /* frames queued (EGL_BUFFER_AGE_EXT: a buffer's age is counted in them) */
 };
 G_DECLARE_FINAL_TYPE(ATLSurface, atl_surface, ATL, SURFACE, GObject);
 
@@ -552,6 +586,20 @@ EGLSurface bionic_eglCreateWindowSurface(EGLDisplay display, EGLConfig config, s
 		} else if (stencil_size > 0) {
 			atl_surface->renderbuffer_format = GL_STENCIL_INDEX8;
 			atl_surface->renderbuffer_attachment = GL_STENCIL_ATTACHMENT;
+		}
+		/* EGL's defaults for a window surface; the attribute list may ask for the render buffer
+		 * (the frames are always queued at eglSwapBuffers: AOSP's single-buffer mode needs
+		 * EGL_KHR_mutable_render_buffer, which is not offered). The colorspace is the buffers'
+		 * real one: they are linear RGBA textures. */
+		atl_surface->tl_display = display;
+		atl_surface->tl_config = config;
+		atl_surface->tl_render_buffer = EGL_BACK_BUFFER;
+		atl_surface->tl_swap_behavior = EGL_BUFFER_DESTROYED;
+		atl_surface->tl_multisample_resolve = EGL_MULTISAMPLE_RESOLVE_DEFAULT;
+		atl_surface->tl_gl_colorspace = EGL_GL_COLORSPACE_LINEAR;
+		for (const EGLint *a = attrib_list; a && a[0] != EGL_NONE; a += 2) {
+			if (a[0] == EGL_RENDER_BUFFER && (a[1] == EGL_BACK_BUFFER || a[1] == EGL_SINGLE_BUFFER))
+				atl_surface->tl_render_buffer = a[1];
 		}
 		surface = atl_surface;
 	}
@@ -1181,6 +1229,11 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	for (int i = 0; i < NUM_BUFFERS; i++)
 		app_default_framebuffer |= atl_surface->buffers[i].gl_framebuffer && (GLint)atl_surface->buffers[i].gl_framebuffer == app_framebuffer;
 
+	/* the frame queued now: its number (EXT_buffer_age), and it is what EGL_BUFFER_PRESERVED
+	 * starts the next buffer with */
+	struct atl_surface_buffer *frame_buffer = atl_surface->back_buffer;
+	if (frame_buffer)
+		frame_buffer->tl_frame = ++atl_surface->tl_frames;
 	if (atl_surface->back_buffer) { /* native-egl-import-fence.sh */
 		struct atl_surface_buffer *b = atl_surface->back_buffer;
 		if (b->tl_frame_fence)
@@ -1253,8 +1306,24 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	 * (as dequeueBuffer's release fence wait) */
 	tl_swap_gpu_throttle(atl_surface, gpu_fence_display, gpu_fence);
 	atl_surface->back_buffer = g_async_queue_timeout_pop(atl_surface->unused_buffers, 100000); // 100ms
+	if (atl_surface->tl_swap_behavior == EGL_BUFFER_PRESERVED && frame_buffer && atl_surface->back_buffer
+	    && atl_surface->back_buffer != frame_buffer && atl_surface->back_buffer->gl_texture && frame_buffer->gl_framebuffer) {
+		/* EGL_BUFFER_PRESERVED: the next buffer starts with the frame just queued (its colour; the
+		 * depth and stencil buffer is the one every buffer shares) */
+		GLint previous_texture, previous_active;
+		glGetIntegerv(GL_ACTIVE_TEXTURE, &previous_active);
+		glActiveTexture(GL_TEXTURE0);
+		glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+		glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer->gl_framebuffer);
+		glBindTexture(GL_TEXTURE_2D, atl_surface->back_buffer->gl_texture);
+		glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, atl_surface->width, atl_surface->height);
+		glBindTexture(GL_TEXTURE_2D, previous_texture);
+		glActiveTexture(previous_active);
+		glBindFramebuffer(GL_FRAMEBUFFER, app_default_framebuffer ? 0 : (GLuint)app_framebuffer);
+		atl_surface->back_buffer->tl_frame = frame_buffer->tl_frame;
+	}
 	/* AOSP: a frame for a released SurfaceTexture fails the swap (EGL_BAD_SURFACE) */
-	EGLBoolean swapped = tl_abandoned ? EGL_FALSE : EGL_TRUE;
+	EGLBoolean swapped = tl_abandoned ? tl_egl_result(EGL_BAD_SURFACE) : tl_egl_result(EGL_SUCCESS);
 	if (!app_default_framebuffer)
 		return swapped; /* the app's own framebuffer stays bound; binding 0 later gets the new buffer */
 	if (atl_surface->back_buffer)
@@ -1265,20 +1334,108 @@ EGLBoolean bionic_eglSwapBuffers(EGLDisplay display, EGLSurface surface)
 	return swapped;
 }
 
+#ifndef EGL_BUFFER_AGE_EXT
+#define EGL_BUFFER_AGE_EXT 0x313D
+#endif
+/* eglQuerySurface for an ATLSurface, as EGL 1.5 (section 3.5.6) answers for a window surface: the
+ * attributes of a pbuffer or a texture binding are left unchanged, the display resolution and
+ * aspect ratio are EGL_UNKNOWN (a Wayland surface has no fixed pixel pitch), the rest are the
+ * surface's (its config, size, render buffer, swap behavior, multisample resolve, colorspace) and
+ * EXT_buffer_age's age of the buffer drawn into now */
 EGLBoolean bionic_eglQuerySurface(EGLDisplay display, EGLSurface surface, EGLint attribute, EGLint *value)
 {
 	struct ANativeWindow *native_window = tl_atl_surface_window(surface);
-	if (!native_window)
-		return eglQuerySurface(display, surface, attribute, value);
-	if (attribute == EGL_WIDTH) {
-		*value = native_window->width;
-	} else if (attribute == EGL_HEIGHT) {
-		*value = native_window->height;
-	} else {
-		printf("bionic_eglQuerySurface(%p, %p, %d, %p): attribute not implemented\n", display, surface, attribute, value);
+	if (!native_window) {
+		tl_egl_error_set = FALSE;
 		return eglQuerySurface(display, surface, attribute, value);
 	}
-	return EGL_TRUE;
+	ATLSurface *atl_surface = surface;
+	if (!value)
+		return tl_egl_result(EGL_BAD_PARAMETER);
+	switch (attribute) {
+		case EGL_WIDTH:
+			*value = native_window->width;
+			break;
+		case EGL_HEIGHT:
+			*value = native_window->height;
+			break;
+		case EGL_CONFIG_ID:
+			if (!eglGetConfigAttrib(atl_surface->tl_display, atl_surface->tl_config, EGL_CONFIG_ID, value))
+				return tl_egl_result(EGL_BAD_CONFIG);
+			break;
+		case EGL_HORIZONTAL_RESOLUTION:
+		case EGL_VERTICAL_RESOLUTION:
+		case EGL_PIXEL_ASPECT_RATIO:
+			*value = EGL_UNKNOWN;
+			break;
+		case EGL_LARGEST_PBUFFER:
+		case EGL_MIPMAP_TEXTURE:
+		case EGL_MIPMAP_LEVEL:
+		case EGL_TEXTURE_FORMAT:
+		case EGL_TEXTURE_TARGET:
+			break; /* not a pbuffer: not an error, the value is not modified */
+		case EGL_RENDER_BUFFER:
+			*value = atl_surface->tl_render_buffer;
+			break;
+		case EGL_SWAP_BEHAVIOR:
+			*value = atl_surface->tl_swap_behavior;
+			break;
+		case EGL_MULTISAMPLE_RESOLVE:
+			*value = atl_surface->tl_multisample_resolve;
+			break;
+		case EGL_VG_ALPHA_FORMAT:
+			*value = EGL_VG_ALPHA_FORMAT_NONPRE;
+			break;
+		case EGL_VG_COLORSPACE:
+			*value = EGL_VG_COLORSPACE_sRGB;
+			break;
+		case EGL_GL_COLORSPACE:
+			*value = atl_surface->tl_gl_colorspace;
+			break;
+		case EGL_BUFFER_AGE_EXT: {
+			/* the frames since the buffer drawn into now was queued (its content is that
+			 * frame's), 0 when it holds no frame yet */
+			struct atl_surface_buffer *b = atl_surface->back_buffer;
+			*value = (b && b->tl_frame) ? (EGLint)(atl_surface->tl_frames + 1 - b->tl_frame) : 0;
+			break;
+		}
+		default:
+			return tl_egl_result(EGL_BAD_ATTRIBUTE);
+	}
+	return tl_egl_result(EGL_SUCCESS);
+}
+
+/* eglSurfaceAttrib for an ATLSurface (EGL 1.5 section 3.5.6) */
+EGLBoolean bionic_eglSurfaceAttrib(EGLDisplay display, EGLSurface surface, EGLint attribute, EGLint value)
+{
+	if (!tl_atl_surface_window(surface)) {
+		tl_egl_error_set = FALSE;
+		return eglSurfaceAttrib(display, surface, attribute, value);
+	}
+	ATLSurface *atl_surface = surface;
+	EGLint surface_type = 0;
+	eglGetConfigAttrib(atl_surface->tl_display, atl_surface->tl_config, EGL_SURFACE_TYPE, &surface_type);
+	switch (attribute) {
+		case EGL_MIPMAP_LEVEL:
+			break; /* used by pbuffers bound as mipmapped textures only */
+		case EGL_SWAP_BEHAVIOR:
+			if (value != EGL_BUFFER_PRESERVED && value != EGL_BUFFER_DESTROYED)
+				return tl_egl_result(EGL_BAD_PARAMETER);
+			if (value == EGL_BUFFER_PRESERVED && !(surface_type & EGL_SWAP_BEHAVIOR_PRESERVED_BIT))
+				return tl_egl_result(EGL_BAD_MATCH);
+			atl_surface->tl_swap_behavior = value;
+			break;
+		case EGL_MULTISAMPLE_RESOLVE:
+			if (value != EGL_MULTISAMPLE_RESOLVE_DEFAULT && value != EGL_MULTISAMPLE_RESOLVE_BOX)
+				return tl_egl_result(EGL_BAD_PARAMETER);
+			if (value == EGL_MULTISAMPLE_RESOLVE_BOX && !(surface_type & EGL_MULTISAMPLE_RESOLVE_BOX_BIT))
+				return tl_egl_result(EGL_BAD_MATCH);
+			atl_surface->tl_multisample_resolve = value;
+			break;
+		default:
+			return tl_egl_result(EGL_BAD_ATTRIBUTE);
+	}
+	return tl_egl_result(EGL_SUCCESS);
 }
 
 EGLSurface bionic_eglGetCurrentSurface(EGLint readdraw)
