@@ -138,11 +138,12 @@ final class ATLCarAppChannel {
 
 	/**
 	 * Tells the renderers the car's UX restrictions (state: new renderers get it too): whether
-	 * they apply, no keyboard input, the longest list a renderer shows, the longest string.
+	 * they apply, no keyboard input, the longest list a renderer shows, the longest string, and
+	 * the car's restriction mode they come from (a mode name: letters, digits, '_', '-', '.').
 	 */
-	void sendRestrictions(boolean active, boolean noKeyboard, int maxItems, int maxString) {
+	void sendRestrictions(boolean active, boolean noKeyboard, int maxItems, int maxString, String mode) {
 		String msg = "{\"type\":\"restrictions\",\"active\":" + active + ",\"noKeyboard\":" + noKeyboard
-		             + ",\"maxItems\":" + maxItems + ",\"maxString\":" + maxString + "}";
+		             + ",\"maxItems\":" + maxItems + ",\"maxString\":" + maxString + ",\"mode\":\"" + mode + "\"}";
 		synchronized (this) {
 			restrictionsMessage = msg;
 		}

@@ -1,6 +1,7 @@
 package android.atl.carhost;
 
 import android.atl.car.ATLCarService;
+import android.atl.car.UxRestrictionsConfigStore;
 import android.car.drivingstate.CarDrivingStateEvent;
 import android.car.drivingstate.CarUxRestrictions;
 import android.car.drivingstate.CarUxRestrictionsConfiguration;
@@ -21,9 +22,13 @@ import android.util.Log;
  * <ul>
  * <li>Driving state: from the vehicle speed, here the speed of the location feed (the car's GPS):
  *     moving above zero, idling at zero, as AOSP's CarDrivingStateService without gear and
- *     parking brake signals. The restrictions are AOSP's default map
- *     ({@link ATLCarService#defaultUxRestrictionsConfiguration}). Until a speed is known the car
- *     is not restricted: a head unit that reports no speed does not lock its host's input.</li>
+ *     parking brake signals. The restrictions follow the car's UX restrictions configuration, as
+ *     the car service loads it ({@link ATLCarService#loadUxRestrictionsConfigs}: the production
+ *     file, else AOSP's default map with this runtime's passenger mode), in the car's restriction
+ *     mode (AOSP CarUxRestrictionsManager.setRestrictionMode): "baseline" unless the driver chose
+ *     another on the car page ({@link #setRestrictionMode}, e.g. "passenger": typing while moving),
+ *     applied at once and kept for the next starts. Until a speed is known the car is not
+ *     restricted: a head unit that reports no speed does not lock its host's input.</li>
  * <li>Night: the sun below the horizon (the elevation of sunrise and sunset, -0.833 degrees) at
  *     the car's position, checked every minute; the position is the last fix of the location
  *     feed. Without any position the host keeps day. ATL_CAR_DAY_NIGHT=day|night fixes it, and
@@ -45,8 +50,14 @@ final class ATLCarVehicle implements LocationListener {
 
 	private final Handler handler;
 	private final Listener listener;
-	private final CarUxRestrictionsConfiguration config = ATLCarService.defaultUxRestrictionsConfiguration();
+	private final UxRestrictionsConfigStore store = UxRestrictionsConfigStore.forSystem();
+	private final CarUxRestrictionsConfiguration config = ATLCarService.configurationForDisplay(ATLCarService.loadUxRestrictionsConfigs(store));
 	private CarUxRestrictions restrictions = new CarUxRestrictions.Builder(false, CarUxRestrictions.UX_RESTRICTIONS_BASELINE, SystemClock.elapsedRealtimeNanos()).build();
+	/* the restriction mode (AOSP UX_RESTRICTION_MODE_BASELINE unless chosen) */
+	private String restrictionMode;
+	/* the last driving state and speed (UNKNOWN until the first speed) */
+	private int drivingState = CarDrivingStateEvent.DRIVING_STATE_UNKNOWN;
+	private float speed;
 	private boolean night;
 	private double latitude = Double.NaN;
 	private double longitude = Double.NaN;
@@ -66,7 +77,15 @@ final class ATLCarVehicle implements LocationListener {
 		this.listener = listener;
 		String m = System.getenv("ATL_CAR_DAY_NIGHT");
 		mode = "day".equals(m) || "night".equals(m) ? m : "auto";
+		String kept;
+		synchronized (store) {
+			kept = store.readHostMode();
+		}
+		restrictionMode = kept != null ? kept : MODE_BASELINE;
 	}
+
+	/** AOSP CarUxRestrictionsManager.UX_RESTRICTION_MODE_BASELINE */
+	static final String MODE_BASELINE = "baseline";
 
 	void start(Context context) {
 		LocationManager lm = (LocationManager)context.getSystemService(Context.LOCATION_SERVICE);
@@ -89,6 +108,44 @@ final class ATLCarVehicle implements LocationListener {
 		return restrictions;
 	}
 
+	/** the car's restriction mode ("baseline", "passenger", ...) */
+	String restrictionMode() {
+		return restrictionMode;
+	}
+
+	/**
+	 * AOSP CarUxRestrictionsManager.setRestrictionMode: the restrictions of the current driving
+	 * state in this mode apply at once (a mode the configuration does not define for a driving
+	 * state falls back to the baseline's); the listener hears the change, also when only the mode
+	 * changed. The mode is kept for the next starts. False for a name that is not a mode name.
+	 */
+	boolean setRestrictionMode(String m) {
+		if (!UxRestrictionsConfigStore.isValidModeName(m))
+			return false;
+		if (m.equals(restrictionMode))
+			return true;
+		restrictionMode = m;
+		boolean kept;
+		synchronized (store) {
+			kept = store.saveHostMode(m);
+		}
+		if (!kept)
+			Log.w(TAG, "restriction mode " + m + " applies to this start only");
+		updateRestrictions(true);
+		return true;
+	}
+
+	/* the restrictions of the driving state and speed in the mode; to the listener when they changed */
+	private void updateRestrictions(boolean modeChanged) {
+		CarUxRestrictions next = drivingState == CarDrivingStateEvent.DRIVING_STATE_UNKNOWN
+		    ? restrictions /* no speed yet: not restricted, whatever the mode */
+		    : config.getUxRestrictions(drivingState, speed, restrictionMode);
+		if (!modeChanged && next.isSameRestrictions(restrictions))
+			return;
+		restrictions = next;
+		listener.onRestrictionsChanged(next);
+	}
+
 	boolean isNight() {
 		return night;
 	}
@@ -104,13 +161,9 @@ final class ATLCarVehicle implements LocationListener {
 		latitude = location.getLatitude();
 		longitude = location.getLongitude();
 		if (location.hasSpeed()) {
-			float speed = Math.max(0f, location.getSpeed());
-			int state = speed > 0f ? CarDrivingStateEvent.DRIVING_STATE_MOVING : CarDrivingStateEvent.DRIVING_STATE_IDLING;
-			CarUxRestrictions next = config.getUxRestrictions(state, speed, "baseline");
-			if (!next.isSameRestrictions(restrictions)) {
-				restrictions = next;
-				listener.onRestrictionsChanged(next);
-			}
+			speed = Math.max(0f, location.getSpeed());
+			drivingState = speed > 0f ? CarDrivingStateEvent.DRIVING_STATE_MOVING : CarDrivingStateEvent.DRIVING_STATE_IDLING;
+			updateRestrictions(false);
 		}
 		updateNight();
 	}

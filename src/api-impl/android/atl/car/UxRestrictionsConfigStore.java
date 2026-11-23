@@ -59,7 +59,14 @@ public final class UxRestrictionsConfigStore {
 	public static final String CONFIG_FILENAME_PRODUCTION = "ux_restrictions_prod_config.json";
 	/** AOSP: the configuration saved for the next boot */
 	public static final String CONFIG_FILENAME_STAGED = "ux_restrictions_staged_config.json";
-
+	/**
+	 * Not AOSP: the restriction mode the car app host's car keeps across app starts (AOSP's car
+	 * service keeps its mode in memory and starts each boot in the baseline; the host's car is
+	 * the driver's, who chooses its mode on the car page, and the choice holds until changed).
+	 */
+	public static final String MODE_FILENAME_HOST = "ux_restrictions_host_mode";
+	/** the longest restriction mode name the mode file keeps */
+	private static final int MODE_MAX_LENGTH = 64;
 
 	private final File mDir;
 
@@ -106,6 +113,62 @@ public final class UxRestrictionsConfigStore {
 	public boolean saveForNextBoot(List<CarUxRestrictionsConfiguration> configs) {
 		validateConfigs(configs);
 		return persistConfig(configs, CONFIG_FILENAME_STAGED);
+	}
+
+	/**
+	 * Whether a restriction mode name can be kept: the names configurations use (AOSP's are
+	 * "baseline" and "passenger"; a configuration may define others), letters, digits, '_', '-'
+	 * and '.', at most 64 of them.
+	 */
+	public static boolean isValidModeName(String mode) {
+		if (mode == null || mode.isEmpty() || mode.length() > MODE_MAX_LENGTH)
+			return false;
+		for (int i = 0; i < mode.length(); i++) {
+			char c = mode.charAt(i);
+			if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_' && c != '-' && c != '.')
+				return false;
+		}
+		return true;
+	}
+
+	/** The car app host's kept restriction mode ({@link #MODE_FILENAME_HOST}), or null when none is kept. */
+	public String readHostMode() {
+		File file = getFile(MODE_FILENAME_HOST);
+		if (!file.exists())
+			return null;
+		try {
+			byte[] data = new AtomicFile(file).readFully();
+			String mode = new String(data, StandardCharsets.UTF_8).trim();
+			if (isValidModeName(mode))
+				return mode;
+			Slog.w(TAG, "Ignoring an invalid restriction mode in " + file.getName());
+		} catch (IOException e) {
+			Slog.e(TAG, "Could not read " + file.getName(), e);
+		}
+		return null;
+	}
+
+	/** Keeps the car app host's restriction mode for its next starts; false when it could not be written. */
+	public boolean saveHostMode(String mode) {
+		if (!isValidModeName(mode))
+			throw new IllegalArgumentException("invalid restriction mode " + mode);
+		if (!mDir.isDirectory() && !mDir.mkdirs()) {
+			Slog.e(TAG, "Could not create " + mDir);
+			return false;
+		}
+		AtomicFile file = new AtomicFile(getFile(MODE_FILENAME_HOST));
+		FileOutputStream fos = null;
+		try {
+			fos = file.startWrite();
+			fos.write((mode + "\n").getBytes(StandardCharsets.UTF_8));
+			file.finishWrite(fos);
+			return true;
+		} catch (IOException e) {
+			Slog.e(TAG, "Could not keep the restriction mode", e);
+			if (fos != null)
+				file.failWrite(fos);
+			return false;
+		}
 	}
 
 	/** AOSP getStagedConfigs: the staged configurations, or null when nothing is staged. */

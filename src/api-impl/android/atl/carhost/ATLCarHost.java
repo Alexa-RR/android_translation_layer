@@ -481,11 +481,12 @@ public final class ATLCarHost {
 		int active = r.getActiveRestrictions();
 		boolean limitContent = (active & android.car.drivingstate.CarUxRestrictions.UX_RESTRICTIONS_LIMIT_CONTENT) != 0;
 		boolean limitString = (active & android.car.drivingstate.CarUxRestrictions.UX_RESTRICTIONS_LIMIT_STRING_LENGTH) != 0;
-		log("car UX restrictions: 0x" + Integer.toHexString(active));
+		String mode = vehicle != null ? vehicle.restrictionMode() : ATLCarVehicle.MODE_BASELINE;
+		log("car UX restrictions: 0x" + Integer.toHexString(active) + " (mode " + mode + ")");
 		channel.sendRestrictions(r.isRequiresDistractionOptimization(),
 		                         (active & android.car.drivingstate.CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD) != 0,
 		                         limitContent ? r.getMaxCumulativeContentItems() : 0,
-		                         limitString ? r.getMaxRestrictedStringLength() : 0);
+		                         limitString ? r.getMaxRestrictedStringLength() : 0, mode);
 	}
 
 	private ATLCarVehicle vehicle;
@@ -671,6 +672,16 @@ public final class ATLCarHost {
 				/* the driver's choice on the car page: "day", "night" or "auto" (the sun) */
 				if (vehicle != null)
 					vehicle.setMode(m.optString("mode", "auto"));
+				return;
+			}
+			if ("restrictionMode".equals(type)) {
+				/* the car's UX restriction mode chosen on the car page ("baseline", or "passenger":
+				 * typing while moving), applied at once and kept (ATLCarVehicle.setRestrictionMode) */
+				String mode = m.optString("mode", "");
+				if (vehicle != null && vehicle.setRestrictionMode(mode))
+					log("car UX restriction mode " + mode);
+				else
+					Log.w(TAG, "renderer: not a restriction mode: " + mode);
 				return;
 			}
 			if ("mapScale".equals(type)) {

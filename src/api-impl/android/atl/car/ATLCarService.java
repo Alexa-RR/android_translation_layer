@@ -302,15 +302,27 @@ public final class ATLCarService extends ICar.Stub {
 	/* ---- CarUxRestrictionsManagerService ---- */
 
 	/**
+	 * The restriction mode for a passenger at the screen (AOSP: the name a configuration set for a
+	 * passenger before Android R goes by, CarUxRestrictionsManager.setRestrictionMode). In this
+	 * runtime's map it is the baseline with keyboard input allowed while moving.
+	 */
+	public static final String UX_RESTRICTION_MODE_PASSENGER = "passenger";
+
+	/**
 	 * The vehicle's UX restrictions configuration: AOSP's default map
-	 * (service/res/xml/car_ux_restrictions_map.xml). The car service applies it on an automotive
-	 * device; the car app host applies the same map for the car it projects to.
+	 * (service/res/xml/car_ux_restrictions_map.xml) as the baseline mode, plus a passenger mode
+	 * ({@link #UX_RESTRICTION_MODE_PASSENGER}) with the same restrictions while moving except
+	 * UX_RESTRICTIONS_NO_KEYBOARD, for a passenger who types while the driver drives. Parked and
+	 * idling have no entry of their own in the passenger mode and fall back to the baseline (AOSP
+	 * getUxRestrictions). The car service applies it on an automotive device; the car app host
+	 * applies the same map for the car it projects to.
 	 */
 	public static CarUxRestrictionsConfiguration defaultUxRestrictionsConfiguration() {
 		int moving = CarUxRestrictions.UX_RESTRICTIONS_NO_DIALPAD | CarUxRestrictions.UX_RESTRICTIONS_NO_FILTERING
 		    | CarUxRestrictions.UX_RESTRICTIONS_LIMIT_STRING_LENGTH | CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD
 		    | CarUxRestrictions.UX_RESTRICTIONS_NO_VIDEO | CarUxRestrictions.UX_RESTRICTIONS_LIMIT_CONTENT
 		    | CarUxRestrictions.UX_RESTRICTIONS_NO_SETUP | CarUxRestrictions.UX_RESTRICTIONS_NO_TEXT_MESSAGE;
+		int movingPassenger = moving & ~CarUxRestrictions.UX_RESTRICTIONS_NO_KEYBOARD;
 		CarUxRestrictionsConfiguration.Builder b = new CarUxRestrictionsConfiguration.Builder();
 		b.setUxRestrictions(CarDrivingStateEvent.DRIVING_STATE_PARKED, false, CarUxRestrictions.UX_RESTRICTIONS_BASELINE);
 		b.setUxRestrictions(CarDrivingStateEvent.DRIVING_STATE_IDLING, false, CarUxRestrictions.UX_RESTRICTIONS_BASELINE);
@@ -320,10 +332,42 @@ public final class ATLCarService extends ICar.Stub {
 		b.setUxRestrictions(CarDrivingStateEvent.DRIVING_STATE_MOVING, new CarUxRestrictionsConfiguration.DrivingStateRestrictions()
 		    .setDistractionOptimizationRequired(true).setRestrictions(moving)
 		    .setSpeedRange(new CarUxRestrictionsConfiguration.Builder.SpeedRange(5.0f)));
+		b.setUxRestrictions(CarDrivingStateEvent.DRIVING_STATE_MOVING, new CarUxRestrictionsConfiguration.DrivingStateRestrictions()
+		    .setMode(UX_RESTRICTION_MODE_PASSENGER).setDistractionOptimizationRequired(true).setRestrictions(movingPassenger)
+		    .setSpeedRange(new CarUxRestrictionsConfiguration.Builder.SpeedRange(0f, 5.0f)));
+		b.setUxRestrictions(CarDrivingStateEvent.DRIVING_STATE_MOVING, new CarUxRestrictionsConfiguration.DrivingStateRestrictions()
+		    .setMode(UX_RESTRICTION_MODE_PASSENGER).setDistractionOptimizationRequired(true).setRestrictions(movingPassenger)
+		    .setSpeedRange(new CarUxRestrictionsConfiguration.Builder.SpeedRange(5.0f)));
 		b.setMaxStringLength(120);
 		b.setMaxCumulativeContentItems(21);
 		b.setMaxContentDepth(3);
 		return b.build();
+	}
+
+	/**
+	 * The car's UX restrictions configurations (AOSP CarUxRestrictionsManagerService.loadConfig
+	 * without the promotion): the store's production file, else the default map.
+	 */
+	public static List<CarUxRestrictionsConfiguration> loadUxRestrictionsConfigs(UxRestrictionsConfigStore store) {
+		List<CarUxRestrictionsConfiguration> configs;
+		synchronized (store) {
+			configs = store.readProductionConfig();
+		}
+		if (configs != null && !configs.isEmpty())
+			return configs;
+		return new ArrayList<>(Collections.singletonList(defaultUxRestrictionsConfiguration()));
+	}
+
+	/**
+	 * AOSP CarUxRestrictionsManagerService.init: one configuration per display port; the single
+	 * display of this device takes the configuration without a port, else the first.
+	 */
+	public static CarUxRestrictionsConfiguration configurationForDisplay(List<CarUxRestrictionsConfiguration> configs) {
+		for (CarUxRestrictionsConfiguration c : configs) {
+			if (c.getPhysicalPort() == null)
+				return c;
+		}
+		return configs.get(0);
 	}
 
 	private final class UxRestrictionsService extends ICarUxRestrictionsManager.Stub {
@@ -346,27 +390,12 @@ public final class ATLCarService extends ICar.Stub {
 		}
 
 		private List<CarUxRestrictionsConfiguration> loadConfigs() {
-			List<CarUxRestrictionsConfiguration> configs;
-			synchronized (mStore) {
-				configs = mStore.readProductionConfig();
-			}
-			if (configs != null && !configs.isEmpty())
-				return configs;
-			return new ArrayList<>(Collections.singletonList(defaultUxRestrictionsConfiguration()));
+			return loadUxRestrictionsConfigs(mStore);
 		}
 
-		/* AOSP CarUxRestrictionsManagerService.init: one configuration per display port; the
-		 * single display of this device takes the configuration without a port, else the first */
 		private synchronized void applyConfigs(List<CarUxRestrictionsConfiguration> configs) {
 			mConfigs = configs;
-			CarUxRestrictionsConfiguration chosen = null;
-			for (CarUxRestrictionsConfiguration c : configs) {
-				if (c.getPhysicalPort() == null) {
-					chosen = c;
-					break;
-				}
-			}
-			mConfig = chosen != null ? chosen : configs.get(0);
+			mConfig = configurationForDisplay(configs);
 		}
 
 		/*
