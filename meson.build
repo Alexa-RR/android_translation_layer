@@ -199,6 +199,7 @@ libtranslationlayer_so = shared_library('translation_layer_main', [
                                                                   	'src/api-impl-jni/android_os_MemoryFile.c',
                                                                   	'src/api-impl-jni/android_os_MessageQueue.c',
                                                                   	'src/api-impl-jni/android_os_SystemClock.c',
+                                                                  	'src/api-impl-jni/android_os_Trace.c',
                                                                   	'src/api-impl-jni/android_os_Vibrator.c',
                                                                   	'src/api-impl-jni/android_util_Log.c',
                                                                   	'src/api-impl-jni/android_view_Window.c',

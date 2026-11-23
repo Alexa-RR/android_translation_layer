@@ -293,6 +293,14 @@ JNIEXPORT jintArray JNICALL Java_android_os_Process_getPids
 
 /*
  * Class:     android_os_Process
+ * Method:    readProcFile
+ * Signature: (Ljava/lang/String;[I[Ljava/lang/String;[J[F)Z
+ */
+JNIEXPORT jboolean JNICALL Java_android_os_Process_readProcFile
+  (JNIEnv *, jclass, jstring, jintArray, jobjectArray, jlongArray, jfloatArray);
+
+/*
+ * Class:     android_os_Process
  * Method:    parseProcLine
  * Signature: ([BII[I[Ljava/lang/String;[J[F)Z
  */

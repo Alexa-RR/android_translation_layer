@@ -332,28 +332,27 @@ public class BitmapFactory {
 		 */
 		public byte[] inTempStorage;
 
-		private native void requestCancel();
-
 		/**
+		 * @deprecated As of {@link android.os.Build.VERSION_CODES#N}, see
+		 * comments on {@link #requestCancelDecode()}.
+		 *
 		 * Flag to indicate that cancel has been called on this object.  This
 		 * is useful if there's an intermediary that wants to first decode the
 		 * bounds and then decode the image.  In that case the intermediary
 		 * can check, inbetween the bounds decode and the image decode, to see
 		 * if the operation is canceled.
 		 */
+		@Deprecated
 		public boolean mCancel;
 
 		/**
-		 *  This can be called from another thread while this options object is
-		 *  inside a decode... call. Calling this will notify the decoder that
-		 *  it should cancel its operation. This is not guaranteed to cancel
-		 *  the decode, but if it does, the decoder... operation will return
-		 *  null, or if inJustDecodeBounds is true, will set outWidth/outHeight
-		 *  to -1
+		 *  @deprecated As of {@link android.os.Build.VERSION_CODES#N}, this
+		 *  will not affect the decode, though it will still set mCancel.
+		 *  (AOSP N+ has no native cancel any more; neither does this runtime.)
 		 */
+		@Deprecated
 		public void requestCancelDecode() {
 			mCancel = true;
-			requestCancel();
 		}
 
 		public ColorSpace inPreferredColorSpace;
@@ -649,21 +648,33 @@ public class BitmapFactory {
 
 		Trace.traceBegin(Trace.TRACE_TAG_GRAPHICS, "decodeFileDescriptor");
 		try {
-			//if (nativeIsSeekable(fd)) {
-			//	bm = nativeDecodeFileDescriptor(fd, outPadding, opts);
-			//} else {
-			FileInputStream fis = new FileInputStream(fd);
+			/* AOSP decodes a seekable descriptor in place and leaves its position as it was
+			 * (nativeIsSeekable: lseek(fd, 0, SEEK_CUR) works); here every source goes through the
+			 * one stream decoder, and a seekable descriptor's position is put back after it */
+			long position = -1;
 			try {
-				bm = decodeStreamInternal(fis, outPadding, opts);
+				position = android.system.Os.lseek(fd, 0, android.system.OsConstants.SEEK_CUR);
+			} catch (android.system.ErrnoException e) {
+				// a pipe or socket: read as a stream, as AOSP does
+			}
+			FileInputStream fis = new FileInputStream(fd); // not the descriptor's owner: close() keeps it open
+			try {
+				bm = opts != null ? decodeStream(fis, outPadding, opts) : decodeStreamInternal(fis, outPadding, opts);
 			} finally {
 				try {
 					fis.close();
 				} catch (Throwable t) { /* ignore */
 				}
+				if (position >= 0) {
+					try {
+						android.system.Os.lseek(fd, position, android.system.OsConstants.SEEK_SET);
+					} catch (android.system.ErrnoException e) {
+						// the descriptor was closed meanwhile
+					}
+				}
 			}
-			//}
 
-			if (bm == null && opts != null && opts.inBitmap != null) {
+			if (bm == null && opts != null && opts.inBitmap != null && !opts.inJustDecodeBounds) {
 				throw new IllegalArgumentException("Problem decoding into existing bitmap");
 			}
 
@@ -686,14 +697,12 @@ public class BitmapFactory {
 		return decodeFileDescriptor(fd, null, null);
 	}
 
+	/* the one decoder (GdkPixbuf) every source reads through: AOSP's per-source natives
+	 * (nativeDecodeFileDescriptor, nativeDecodeAsset, nativeDecodeByteArray, nativeIsSeekable) are
+	 * Skia codec entry points this runtime has no counterpart for; their Java callers read through
+	 * a stream instead, with the same results */
 	private static native long nativeDecodeStream(InputStream is, byte[] storage,
 	                                              Rect padding, Options opts);
-	private static native Bitmap nativeDecodeFileDescriptor(FileDescriptor fd,
-	                                                        Rect padding, Options opts);
-	private static native Bitmap nativeDecodeAsset(int asset, Rect padding, Options opts);
-	private static native Bitmap nativeDecodeByteArray(byte[] data, int offset,
-	                                                   int length, Options opts);
-	private static native boolean nativeIsSeekable(FileDescriptor fd);
 
 	/* ---- teslalinux (gfx): BitmapFactory.Options as AOSP applies them ---- */
 

@@ -17,38 +17,6 @@ extern "C" {
 JNIEXPORT jlong JNICALL Java_android_graphics_BitmapFactory_nativeDecodeStream
   (JNIEnv *, jclass, jobject, jbyteArray, jobject, jobject);
 
-/*
- * Class:     android_graphics_BitmapFactory
- * Method:    nativeDecodeFileDescriptor
- * Signature: (Ljava/io/FileDescriptor;Landroid/graphics/Rect;Landroid/graphics/BitmapFactory/Options;)Landroid/graphics/Bitmap;
- */
-JNIEXPORT jobject JNICALL Java_android_graphics_BitmapFactory_nativeDecodeFileDescriptor
-  (JNIEnv *, jclass, jobject, jobject, jobject);
-
-/*
- * Class:     android_graphics_BitmapFactory
- * Method:    nativeDecodeAsset
- * Signature: (ILandroid/graphics/Rect;Landroid/graphics/BitmapFactory/Options;)Landroid/graphics/Bitmap;
- */
-JNIEXPORT jobject JNICALL Java_android_graphics_BitmapFactory_nativeDecodeAsset
-  (JNIEnv *, jclass, jint, jobject, jobject);
-
-/*
- * Class:     android_graphics_BitmapFactory
- * Method:    nativeDecodeByteArray
- * Signature: ([BIILandroid/graphics/BitmapFactory/Options;)Landroid/graphics/Bitmap;
- */
-JNIEXPORT jobject JNICALL Java_android_graphics_BitmapFactory_nativeDecodeByteArray
-  (JNIEnv *, jclass, jbyteArray, jint, jint, jobject);
-
-/*
- * Class:     android_graphics_BitmapFactory
- * Method:    nativeIsSeekable
- * Signature: (Ljava/io/FileDescriptor;)Z
- */
-JNIEXPORT jboolean JNICALL Java_android_graphics_BitmapFactory_nativeIsSeekable
-  (JNIEnv *, jclass, jobject);
-
 #ifdef __cplusplus
 }
 #endif

@@ -21,17 +21,23 @@
 ** Rewritten from C++ to C for Android Translation Layer:
 */
 
+#define _GNU_SOURCE
 #include <assert.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <sqlite3.h>
 
 #include "../defines.h"
 #include "../util.h"
 #include "../generated_headers/android_database_sqlite_SQLiteConnection.h"
+#include "../generated_headers/android_database_sqlite_SQLiteDebug.h"
 #include "android_database_SQLiteCommon.h"
 
 enum {
@@ -495,6 +501,69 @@ JNIEXPORT jstring JNICALL Java_android_database_sqlite_SQLiteConnection_nativeEx
 		}
 	}
 	return NULL;
+}
+
+/* AOSP createAshmemRegionWithData: a read-only shared memory file holding DATA. Linux has no ashmem:
+ * a memfd, sealed against writes and size changes once filled (ashmem_set_prot_region(PROT_READ)) */
+static int create_shared_region_with_data(JNIEnv *env, const void *data, size_t length)
+{
+	int error = 0;
+	int fd = memfd_create("sqlite-blob", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+	if (fd < 0) {
+		error = errno;
+	} else {
+		if (ftruncate(fd, length) < 0) {
+			error = errno;
+		} else if (length > 0) {
+			void *ptr = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+			if (ptr == MAP_FAILED) {
+				error = errno;
+			} else {
+				memcpy(ptr, data, length);
+				munmap(ptr, length);
+			}
+		}
+		if (!error) {
+			if (fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL) < 0)
+				error = errno;
+			else
+				return fd;
+		}
+		close(fd);
+	}
+	(*env)->ThrowNew(env, (*env)->FindClass(env, "java/io/IOException"), strerror(error));
+	return -1;
+}
+
+JNIEXPORT jint JNICALL Java_android_database_sqlite_SQLiteConnection_nativeExecuteForBlobFileDescriptor(JNIEnv *env, jclass clazz, jlong connectionPtr, jlong statementPtr)
+{
+	struct SQLiteConnection *connection = _PTR(connectionPtr);
+	sqlite3_stmt *statement = _PTR(statementPtr);
+
+	int err = executeOneRowQuery(env, connection, statement);
+	if (err == SQLITE_ROW && sqlite3_column_count(statement) >= 1) {
+		const void *blob = sqlite3_column_blob(statement, 0);
+		if (blob) {
+			int length = sqlite3_column_bytes(statement, 0);
+			if (length >= 0)
+				return create_shared_region_with_data(env, blob, length);
+		}
+	}
+	return -1;
+}
+
+/* SQLiteDebug.getDatabaseInfo's pager statistics (AOSP android_database_SQLiteDebug.cpp) */
+JNIEXPORT void JNICALL Java_android_database_sqlite_SQLiteDebug_nativeGetPagerStats(JNIEnv *env, jclass clazz, jobject stats)
+{
+	int memory_used, page_cache_overflow, largest_mem_alloc, unused;
+	sqlite3_status(SQLITE_STATUS_MEMORY_USED, &memory_used, &unused, 0);
+	sqlite3_status(SQLITE_STATUS_MALLOC_SIZE, &unused, &largest_mem_alloc, 0);
+	sqlite3_status(SQLITE_STATUS_PAGECACHE_OVERFLOW, &page_cache_overflow, &unused, 0);
+	jclass cls = (*env)->GetObjectClass(env, stats);
+	(*env)->SetIntField(env, stats, (*env)->GetFieldID(env, cls, "memoryUsed", "I"), memory_used);
+	(*env)->SetIntField(env, stats, (*env)->GetFieldID(env, cls, "pageCacheOverflow", "I"), page_cache_overflow);
+	(*env)->SetIntField(env, stats, (*env)->GetFieldID(env, cls, "largestMemAlloc", "I"), largest_mem_alloc);
+	(*env)->DeleteLocalRef(env, cls);
 }
 
 JNIEXPORT jint JNICALL Java_android_database_sqlite_SQLiteConnection_nativeExecuteForChangedRowCount(JNIEnv *env, jclass clazz, jlong connectionPtr, jlong statementPtr)

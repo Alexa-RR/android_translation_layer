@@ -214,6 +214,10 @@ public class Paint {
 		} else {
 			native_set_color_filter_mode(paint, -1, 0);
 		}
+		if (color_filter != null && color_filter != colorFilter)
+			color_filter.tlDetached(this);
+		if (colorFilter != null)
+			colorFilter.tlAttached(this);
 		color_filter = colorFilter;
 		return colorFilter;
 	}

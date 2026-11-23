@@ -60,6 +60,9 @@ JNIEXPORT jlong JNICALL Java_android_graphics_BitmapFactory_nativeDecodeStream(J
 
 	GdkPixbuf *pixbuf = gdk_pixbuf_new_from_stream(stream, NULL, NULL);
 	g_object_unref(stream);
+	/* data no decoder recognises: AOSP's decode returns null (BitmapFactory then returns null) */
+	if (!pixbuf)
+		return 0;
 	GdkTexture *texture = gdk_texture_new_for_pixbuf(pixbuf);
 	g_object_unref(pixbuf);
 	return _INTPTR(texture);

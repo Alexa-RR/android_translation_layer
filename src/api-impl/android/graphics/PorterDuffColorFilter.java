@@ -98,9 +98,9 @@ public class PorterDuffColorFilter extends ColorFilter {
 		update();
 	}
 
+	/** AOSP discardNativeInstance: the paints using this filter take its new colour and mode */
 	private void update() {
-		// destroyFilter(native_instance);
-		// native_instance = native_CreatePorterDuffFilter(mColor, mMode.nativeInt);
+		tlChanged();
 	}
 
 	@Override
@@ -122,6 +122,4 @@ public class PorterDuffColorFilter extends ColorFilter {
 	public int hashCode() {
 		return 31 * mMode.hashCode() + mColor;
 	}
-
-	private static native long native_CreatePorterDuffFilter(int srcColor, int porterDuffMode);
 }

@@ -56,11 +56,6 @@ public final class BlendModeColorFilter extends ColorFilter {
 		return mMode;
 	}
 
-	//@Override
-	long createNativeInstance() {
-		return native_CreateBlendModeFilter(mColor, mMode.getXfermode().porterDuffMode);
-	}
-
 	@Override
 	public boolean equals(Object object) {
 		if (this == object) {
@@ -77,6 +72,4 @@ public final class BlendModeColorFilter extends ColorFilter {
 	public int hashCode() {
 		return 31 * mMode.hashCode() + mColor;
 	}
-
-	private static native long native_CreateBlendModeFilter(int srcColor, int blendmode);
 }

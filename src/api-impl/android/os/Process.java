@@ -366,9 +366,10 @@ public class Process {
 	                                             int targetSdkVersion,
 	                                             String seInfo,
 	                                             String[] zygoteArgs) {
-		System.out.println("NOT starting a process");
-
-		return null;
+		/* AOSP starts the process through the zygote's socket and throws when that fails; this
+		 * runtime runs one app process and has no zygote to ask, as a device whose zygote is down */
+		throw new RuntimeException("Starting VM process through Zygote failed",
+		                           new IllegalStateException("no zygote in this runtime: cannot start " + processClass + " (" + niceName + ")"));
 	}
 
 	/**
@@ -784,11 +785,8 @@ public class Process {
 	/**
 	 * @hide
 	 */
-	public static final /*native*/ boolean readProcFile(String file, int[] format,
-	                                                    String[] outStrings, long[] outLongs, float[] outFloats) {
-		System.out.println("readProcFile(" + file + ") called");
-		return false;
-	}
+	public static final native boolean readProcFile(String file, int[] format,
+	                                                String[] outStrings, long[] outLongs, float[] outFloats);
 
 	/**
 	 * @hide
