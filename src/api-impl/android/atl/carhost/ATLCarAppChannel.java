@@ -33,10 +33,16 @@ import java.util.Map;
  *     {"type":"dayNight","night":B} (the car's night mode), {"type":"mapScale","scale":S,"set":B}
  *     (the map's scale, and whether a renderer chose it since the app started) and
  *     {"type":"speedometer","speed":S,"units":U,"speedLimit":L,"speedKph":K,"miles":B} (the app's
- *     speedometer, ATLCarSpeedometer, when the app reports one);</li>
+ *     speedometer, ATLCarSpeedometer, when the app reports one) and {"type":"trip","trip":T} (the
+ *     app's trip while it navigates, NavigationManager.updateTrip; null after);</li>
  * <li>from the renderer: {"type":"click","cb":ID}, {"type":"selected","cb":ID,"index":I},
  *     {"type":"checked","cb":ID,"checked":B}, {"type":"search","cb":ID,"text":T,"submit":B},
- *     {"type":"back"}, {"type":"mapScale","scale":S}, {"type":"renderScale","scale":S} (the map
+ *     {"type":"back"}, {"type":"stopNavigation","id":N?}, {"type":"navigate","uri":GEO,"id":N?}
+ *     (a destination for the app: CarContext.ACTION_NAVIGATE through ICarApp.onNewIntent; a
+ *     request with an id is answered to its renderer alone with {"type":"navigateResult" or
+ *     "stopNavigationResult","id":N,"ok":B,"error":S}), {"type":"hold","on":B,"id":N?} (the
+ *     renderer works on the app's screens out of sight: templates go to it alone until it
+ *     releases, see {@link #hold}), {"type":"mapScale","scale":S}, {"type":"renderScale","scale":S} (the map
  *     drawn in that fraction of the display's pixels, 0.5 to 1), {"type":"appSettings","state":S}
  *     (where the renderer is with the app's settings shown in a page of its own: "open", "closed",
  *     "abandon"; ATLCarHost pops abandoned ones); CarAppChannelListener receives them on the
@@ -185,6 +191,28 @@ final class ATLCarAppChannel {
 	private String navigationMessage;
 
 	/**
+	 * Tells the renderers the app's trip (NavigationManager.updateTrip, as CarModelJson; null when
+	 * navigation ended). State: new renderers get the latest trip too.
+	 */
+	void sendTrip(String tripJson) {
+		String msg = "{\"type\":\"trip\",\"trip\":" + (tripJson != null ? tripJson : "null") + "}";
+		synchronized (this) {
+			if (msg.equals(tripMessage))
+				return;
+			tripMessage = msg;
+		}
+		broadcast(msg);
+	}
+
+	private String tripMessage;
+
+	/** Sends a message to one renderer (the answer to its request), if it is still connected. */
+	void sendTo(Object renderer, String json) {
+		if (renderer instanceof Client)
+			((Client)renderer).send(json);
+	}
+
+	/**
 	 * Tells the renderers the car's UX restrictions (state: new renderers get it too): whether
 	 * they apply, no keyboard input, the longest list a renderer shows, the longest string, and
 	 * the car's restriction mode they come from (a mode name: letters, digits, '_', '-', '.').
@@ -269,10 +297,71 @@ final class ATLCarAppChannel {
 	/** Sends the current template to every renderer. */
 	void sendTemplate(int seq, String templateJson) {
 		String msg = "{\"type\":\"template\",\"seq\":" + seq + ",\"template\":" + templateJson + "}";
+		Client to;
 		synchronized (this) {
 			templateMessage = msg;
+			to = holder;
+			if (to == null)
+				shownTemplateMessage = msg;
 		}
-		broadcast(msg);
+		if (to != null)
+			to.send(msg);
+		else
+			broadcast(msg);
+	}
+
+	/* the renderer holding the app's screens out of sight (hold), or null */
+	private Client holder;
+	/* the last template every renderer was sent: what the others keep showing while one holds */
+	private String shownTemplateMessage;
+
+	/**
+	 * A renderer works on the app's screens out of the driver's sight (a search run for someone
+	 * else): while it holds, new templates go to it alone, and the other renderers keep the one
+	 * they show. Released by the holder, or when it goes; then every renderer gets the current
+	 * template. A second holder waits its turn: false while another renderer holds.
+	 */
+	boolean hold(Object renderer, boolean on) {
+		if (!(renderer instanceof Client))
+			return false;
+		String release = null;
+		synchronized (this) {
+			if (on) {
+				if (holder != null && holder != renderer)
+					return false;
+				holder = (Client)renderer;
+				return true;
+			}
+			if (holder != renderer)
+				return false;
+			holder = null;
+			release = shownTemplateMessage = templateMessage;
+		}
+		if (release != null)
+			broadcast(release);
+		return true;
+	}
+
+	/** whether this renderer holds the app's screens */
+	synchronized boolean holds(Object renderer) {
+		return renderer != null && holder == renderer;
+	}
+
+	/**
+	 * Ends the hold of a renderer that went while it held (the host calls it once it has popped the
+	 * screens that renderer left, so the others never see them): every renderer gets the current
+	 * template. Templates meanwhile went to the gone renderer, that is nowhere.
+	 */
+	void releaseHoldOf(Object renderer) {
+		String release;
+		synchronized (this) {
+			if (renderer == null || holder != renderer)
+				return;
+			holder = null;
+			release = shownTemplateMessage = templateMessage;
+		}
+		if (release != null)
+			broadcast(release);
 	}
 
 	private void broadcast(String msg) {
@@ -376,8 +465,13 @@ final class ATLCarAppChannel {
 				if (speedometerMessage != null)
 					initial.add(speedometerMessage);
 				initial.addAll(iconMessages.values());
-				if (templateMessage != null)
-					initial.add(templateMessage);
+				/* after the icons it refers to */
+				if (tripMessage != null)
+					initial.add(tripMessage);
+				/* while a renderer holds the app's screens, a new one gets what the others show */
+				String t = holder != null ? shownTemplateMessage : templateMessage;
+				if (t != null)
+					initial.add(t);
 			}
 			synchronized (clients) {
 				clients.add(client);

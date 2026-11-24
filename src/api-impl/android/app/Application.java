@@ -43,6 +43,8 @@ public class Application extends ContextWrapper {
 	@Export
 	private static void tlStartedWithoutActivity() {
 		android.atl.carhost.ATLCarHost.onProcessStarted();
+		/* intents from outside the process (ATL_INTENT_CHANNEL_PORT) */
+		android.atl.ATLIntentChannel.onProcessStarted();
 	}
 
 	@Export

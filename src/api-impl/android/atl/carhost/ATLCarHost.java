@@ -170,7 +170,12 @@ public final class ATLCarHost {
 					public void onRendererGone(Object renderer) {
 						if (renderer == settingsOwner) {
 							log("the renderer showing the app's settings is gone: back to the map");
+							if (channel.holds(renderer))
+								goneHolder = renderer;
 							abandonAppSettings();
+						} else {
+							/* a holder whose screens are not the host's to pop (none above the base) */
+							channel.releaseHoldOf(renderer);
 						}
 					}
 				});
@@ -784,7 +789,14 @@ public final class ATLCarHost {
 		sendBack();
 	}
 
+	/* a renderer that went while it held the app's screens: its hold ends once its screens are popped */
+	private Object goneHolder;
+
 	private void endAppSettings() {
+		if (goneHolder != null) {
+			channel.releaseHoldOf(goneHolder);
+			goneHolder = null;
+		}
 		handler.removeCallbacks(settingsStepTimeout);
 		settingsOwner = null;
 		settingsClosing = false;
@@ -928,7 +940,18 @@ public final class ATLCarHost {
 				return;
 			}
 			if ("stopNavigation".equals(type)) {
-				stopNavigation();
+				stopNavigation(renderer, m.has("id") ? m.optInt("id") : null);
+				return;
+			}
+			if ("hold".equals(type)) {
+				/* a renderer works on the app's screens out of sight (ATLCarAppChannel.hold): the
+				 * screens it pushes are popped back by the host if it goes without releasing */
+				hold(renderer, m.optBoolean("on"), m.has("id") ? m.optInt("id") : null);
+				return;
+			}
+			if ("navigate".equals(type)) {
+				/* a destination for the app, as a car's host hands one over (CarContext.ACTION_NAVIGATE) */
+				navigate(renderer, m.optString("uri", ""), m.has("id") ? m.optInt("id") : null);
 				return;
 			}
 			if ("back".equals(type)) {
@@ -1030,17 +1053,36 @@ public final class ATLCarHost {
 		handler.post(new Runnable() {
 			@Override
 			public void run() {
-				if (channel != null)
+				if (channel != null) {
 					channel.sendNavigation(active);
+					/* the trip ends with the navigation */
+					if (!active)
+						publishTrip(null);
+				}
 			}
 		});
 	}
 
+	/* host thread: the answer to a renderer's request that carried an id ({"type":T+"Result","id":N,
+	 * "ok":B,"error":S}); a request without an id gets none */
+	private void reply(Object renderer, String type, Integer id, boolean ok, String error) {
+		if (channel == null || id == null)
+			return;
+		StringBuilder sb = new StringBuilder("{\"type\":\"").append(type).append("Result\",\"id\":").append(id).append(",\"ok\":").append(ok);
+		if (error != null) {
+			sb.append(",\"error\":");
+			CarModelJson.quote(sb, error);
+		}
+		channel.sendTo(renderer, sb.append('}').toString());
+	}
+
 	/* host thread: the driver stopped navigation with the host's control: the app hears
 	 * NavigationManagerCallback.onStopNavigation (INavigationManager.onStopNavigation) */
-	private void stopNavigation() {
+	private void stopNavigation(final Object renderer, final Integer id) {
 		if (navigationManager == null || !navigating) {
-			log("stop navigation: " + (navigationManager == null ? "no navigation manager" : "the app is not navigating"));
+			String why = navigationManager == null ? "no navigation manager" : "the app is not navigating";
+			log("stop navigation: " + why);
+			reply(renderer, "stopNavigation", id, false, why);
 			return;
 		}
 		log("stop navigation: INavigationManager.onStopNavigation");
@@ -1053,11 +1095,126 @@ public final class ATLCarHost {
 					 * that follows is not sent to the host: navigation ends here */
 					if (navigating)
 						setNavigating(false);
+					reply(renderer, "stopNavigation", id, true, null);
+				}
+
+				@Override
+				void failure(String why) {
+					reply(renderer, "stopNavigation", id, false, "the app refused: " + why);
 				}
 			});
 		} catch (RemoteException | RuntimeException e) {
 			Log.e(TAG, "onStopNavigation failed", e);
+			reply(renderer, "stopNavigation", id, false, String.valueOf(e));
 		}
+	}
+
+	/**
+	 * host thread: a renderer hands the app a destination, as a car's host does when the driver
+	 * asks its assistant for one: ICarApp.onNewIntent with CarContext.ACTION_NAVIGATE
+	 * ("androidx.car.app.action.NAVIGATE") and a geo: URI ("geo:0,0?q=ADDRESS" or
+	 * "geo:LAT,LON?q=LAT,LON"), which reaches the app's Session.onNewIntent. The app decides what
+	 * it does with it (Waze searches the query and starts driving to it).
+	 */
+	private void navigate(final Object renderer, String uri, final Integer id) {
+		android.net.Uri data = android.net.Uri.parse(uri);
+		if (!"geo".equals(data.getScheme())) {
+			reply(renderer, "navigate", id, false, "not a geo: URI: " + uri);
+			return;
+		}
+		if (carApp == null || !created) {
+			reply(renderer, "navigate", id, false, "the app's car session is not running yet");
+			return;
+		}
+		Intent intent = new Intent(ACTION_NAVIGATE, data);
+		intent.setComponent(serviceName);
+		log("navigate: ICarApp.onNewIntent(" + intent + ")");
+		try {
+			carApp.onNewIntent(intent, new Done("onNewIntent") {
+				@Override
+				void success(Object response) {
+					reply(renderer, "navigate", id, true, null);
+				}
+
+				@Override
+				void failure(String why) {
+					reply(renderer, "navigate", id, false, "the app refused the intent: " + why);
+				}
+			});
+		} catch (RemoteException | RuntimeException e) {
+			Log.e(TAG, "onNewIntent failed", e);
+			reply(renderer, "navigate", id, false, String.valueOf(e));
+		}
+	}
+
+	/**
+	 * host thread: {"type":"hold","on":B}: while a renderer holds, the app's new templates go to it
+	 * alone and the driver's screens keep what they show; the app's screen stack when it took the
+	 * hold is remembered as with the app's settings, so that a holder that goes away (its socket
+	 * closed, or silent) has the screens it pushed popped back by the host. A holder that releases
+	 * the hold leaves the app's screens as they are (it popped them itself, or a drive it started is
+	 * on screen now). One renderer holds at a time, and none while a renderer shows the app's
+	 * settings.
+	 */
+	private void hold(Object renderer, boolean on, Integer id) {
+		if (on) {
+			if (settingsOwner != null && settingsOwner != renderer) {
+				reply(renderer, "hold", id, false, "the car screen shows the app's settings now");
+				return;
+			}
+			if (settingsClosing) {
+				reply(renderer, "hold", id, false, "the host is still closing screens a renderer left open");
+				return;
+			}
+			if (!channel.hold(renderer, true)) {
+				reply(renderer, "hold", id, false, "another renderer holds the app's screens");
+				return;
+			}
+			onAppSettingsMessage(renderer, "open");
+			log("a renderer holds the app's screens");
+			reply(renderer, "hold", id, true, null);
+			return;
+		}
+		if (!channel.holds(renderer)) {
+			reply(renderer, "hold", id, false, "this renderer does not hold the app's screens");
+			return;
+		}
+		if (renderer == settingsOwner && !settingsClosing)
+			endAppSettings();
+		channel.hold(renderer, false);
+		log("the renderer released the app's screens");
+		reply(renderer, "hold", id, true, null);
+	}
+
+	/** CarContext.ACTION_NAVIGATE: a host's intent for a navigation app to drive to a geo: URI */
+	public static final String ACTION_NAVIGATE = "androidx.car.app.action.NAVIGATE";
+
+	/* host thread: the app's trip (NavigationManager.updateTrip: destinations with their names and
+	 * travel estimates, steps, the current road) to the renderers as state, its icons first; null
+	 * once navigation ends */
+	private void publishTrip(Bundleable trip) {
+		if (channel == null)
+			return;
+		if (trip == null) {
+			channel.sendTrip(null);
+			return;
+		}
+		Object model;
+		try {
+			model = trip.get(appClassLoader);
+		} catch (ReflectiveOperationException | RuntimeException e) {
+			Log.e(TAG, "trip not readable", e);
+			return;
+		}
+		String json = modelJson.toJson(model);
+		for (java.util.Map.Entry<Integer, Object> e : new java.util.ArrayList<>(modelJson.icons.entrySet())) {
+			if (channel.hasIcon(e.getKey()))
+				continue;
+			byte[] png = renderIcon(e.getValue());
+			if (png != null)
+				channel.sendIcon(e.getKey(), png);
+		}
+		channel.sendTrip(json);
 	}
 
 	/* host thread: an alert (car API 5) shown by the renderer over the template, its icons first;
@@ -1147,6 +1304,11 @@ public final class ATLCarHost {
 		void failure() {
 		}
 
+		/* the app's failure response, described */
+		void failure(String why) {
+			failure();
+		}
+
 		@Override
 		public void onSuccess(final Bundleable response) {
 			handler.post(new Runnable() {
@@ -1172,8 +1334,9 @@ public final class ATLCarHost {
 			handler.post(new Runnable() {
 				@Override
 				public void run() {
-					log(what + " failed: " + describe(failureResponse));
-					failure();
+					String why = describe(failureResponse);
+					log(what + " failed: " + why);
+					failure(why);
 				}
 			});
 		}
@@ -1338,8 +1501,16 @@ public final class ATLCarHost {
 		}
 
 		@Override
-		public void updateTrip(Bundleable trip) {
+		public void updateTrip(final Bundleable trip) {
 			log("INavigationHost.updateTrip(" + describe(trip) + ")");
+			handler.post(new Runnable() {
+				@Override
+				public void run() {
+					/* a trip while navigating; one that arrives after the end is not kept */
+					if (navigating)
+						publishTrip(trip);
+				}
+			});
 		}
 
 		@Override

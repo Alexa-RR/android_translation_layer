@@ -379,6 +379,7 @@ srcs = [
 	'android/atl/ATLActiveServices.java',
 	'android/atl/ATLFrameRateLimiter.java',
 	'android/atl/ATLGStub.java',
+	'android/atl/ATLIntentChannel.java',
 	'android/atl/ATLKeyboardDialog.java',
 	'android/atl/ATLKeyboardViewer.java',
 	'android/atl/ATLLoadedApp.java',

@@ -635,10 +635,20 @@ public final class ContextImpl extends Context {
 		for (PackageParser.Activity activity : atl_loaded_app.pkg.activities) {
 			for (PackageParser.ActivityIntentInfo info : activity.intents) {
 				if (info.match(intent.getAction(), type, intent.getScheme(), intent.getData(), intent.getCategories(), TAG) >= 0)
-					return activity.className;
+					/* AOSP: an <activity-alias> starts its targetActivity */
+					return activity.info != null && activity.info.targetActivity != null ? activity.info.targetActivity : activity.className;
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * The app's activity that startActivity starts for a view intent (its own activities' intent
+	 * filters, an alias's target), or null when none takes it: ATLIntentChannel answers with it
+	 * before it starts the intent.
+	 */
+	public String tlResolveActivityFor(Intent intent) {
+		return tlResolveViewIntent(intent);
 	}
 
 	/** AOSP: singleTask/singleInstance activities and FLAG_ACTIVITY_SINGLE_TOP reuse a running instance (onNewIntent). */
